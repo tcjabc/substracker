@@ -81,6 +81,7 @@
   --header-h: 56px;
   --container: 960px;
   --sheet-max: 560px;
+  --sheet-body-min: 120px;
   --bar-h: 8px;
   --control-sm: 34px;
   --control-md: 38px;
@@ -502,26 +503,40 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
    Dialogs
    ========================================================================== */
 dialog { color: var(--text); padding: 0; border: 0; }
+dialog:not([open]) { display: none; } /* also covers browsers without native <dialog> */
 dialog::backdrop { background: var(--scrim); }
 
 .sheet {
   width: 100%; max-width: var(--sheet-max);
-  max-height: min(92dvh, 100%);
+  max-height: 92vh;
   margin: auto auto 0; /* bottom sheet on phones */
   background: var(--surface);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
-.sheet[open] { display: flex; flex-direction: column; animation: sheet-in var(--dur) var(--ease); }
-.sheet form { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+@supports (height: 100dvh) {
+  .sheet { max-height: 92dvh; }
+}
+.sheet[open] {
+  position: fixed; inset: auto 0 0 0;
+  display: flex; flex-direction: column;
+  animation: sheet-in var(--dur) var(--ease);
+}
+/* flex: auto (not flex: 1 / 0% basis) so iOS WebKit can't size the form to zero. */
+.sheet form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.sheet-head, .sheet-foot { flex: none; }
 .sheet-head {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
   border-bottom: var(--border-width) solid var(--border);
 }
 .sheet-head h2 { flex: 1; font-size: var(--text-md); font-weight: var(--weight-semibold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-body { padding: var(--space-4); display: grid; gap: var(--space-4); overflow-y: auto; overscroll-behavior: contain; }
+.sheet-body {
+  flex: 1 1 auto; min-height: var(--sheet-body-min);
+  padding: var(--space-4); display: grid; gap: var(--space-4);
+  overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
 .sheet-foot {
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
@@ -529,8 +544,12 @@ dialog::backdrop { background: var(--scrim); }
 }
 .spacer { flex: 1; }
 @media (min-width: 640px) {
-  .sheet { margin: auto; border-radius: var(--radius-xl); max-height: 88dvh; }
+  .sheet { margin: auto; border-radius: var(--radius-xl); max-height: 88vh; }
+  .sheet[open] { inset: 0; }
   .sheet-foot { padding-bottom: var(--space-3); }
+}
+@supports (height: 100dvh) {
+  @media (min-width: 640px) { .sheet { max-height: 88dvh; } }
 }
 
 .alert {
@@ -543,6 +562,14 @@ dialog::backdrop { background: var(--scrim); }
 .alert p { color: var(--text-muted); font-size: var(--text-base); }
 .alert-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 .alert-actions.stacked { flex-direction: column; align-items: stretch; }
+
+/* No native showModal(): JS sets [open] + this class. Above tab bar/FAB, below toast. */
+.dialog-fallback {
+  position: fixed; inset: 0; z-index: 25;
+  margin: auto; height: -webkit-fit-content; height: fit-content;
+  box-shadow: var(--shadow-lg), 0 0 0 100vmax var(--scrim);
+}
+.dialog-fallback.alert { display: block; }
 
 @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } }
 @keyframes pop-in { from { transform: scale(0.96); opacity: 0; } }
