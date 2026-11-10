@@ -6,7 +6,7 @@ import {
   nextRenewal, daysUntil, renewalText, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const EXPORT_FORMAT = 'substracker';
 const LS = { theme: 'substracker.theme', view: 'substracker.view', tab: 'substracker.tab' };
 
@@ -26,6 +26,67 @@ function lsGet(k) { try { return localStorage.getItem(k); } catch { return null;
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 
 /* --------------------------------------------------------------------------
+   On-screen error reporter — an installed PWA has no console to look at.
+   -------------------------------------------------------------------------- */
+function reportError(prefix, err) {
+  const msg = (err && (err.message || String(err))) || 'Unknown error';
+  try {
+    toast(`${prefix}: ${msg}`, { label: 'Dismiss', sticky: true, run: () => {} });
+  } catch { /* toast markup missing — nothing more we can do */ }
+}
+window.addEventListener('error', (e) => {
+  const where = e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '';
+  reportError('Error', { message: `${e.message || e.error?.message || 'Script error'}${where}` });
+});
+window.addEventListener('unhandledrejection', (e) => reportError('Unhandled', e.reason));
+
+/* --------------------------------------------------------------------------
+   Dialog helpers — fall back to a positioned [open] element where
+   HTMLDialogElement.showModal is missing (older iOS Safari).
+   -------------------------------------------------------------------------- */
+const HAS_MODAL = typeof HTMLDialogElement === 'function'
+  && typeof HTMLDialogElement.prototype.showModal === 'function';
+
+function openDialog(dlg) {
+  if (HAS_MODAL) { dlg.showModal(); return; }
+  dlg.setAttribute('open', '');
+  dlg.classList.add('dialog-fallback');
+}
+
+function closeDialog(dlg, returnValue) {
+  if (HAS_MODAL) { if (returnValue === undefined) dlg.close(); else dlg.close(returnValue); return; }
+  if (!dlg.hasAttribute('open')) return;
+  if (returnValue !== undefined) dlg.returnValue = returnValue;
+  dlg.removeAttribute('open');
+  dlg.classList.remove('dialog-fallback');
+  dlg.dispatchEvent(new Event('close'));
+}
+
+// Without native dialogs, method="dialog" forms would navigate. Emulate them,
+// except #sub-form, whose own submit handler validates and closes.
+function bindDialogFormFallback() {
+  if (HAS_MODAL) return;
+  $$('dialog form[method="dialog"]').forEach((f) => {
+    if (f.id === 'sub-form') return;
+    let last = '';
+    f.addEventListener('click', (e) => {
+      const b = e.target.closest('button[type="submit"]');
+      if (b) last = b.value;
+    });
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      closeDialog(f.closest('dialog'), e.submitter?.value ?? last);
+      last = '';
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = $$('dialog.dialog-fallback[open]').pop();
+    if (open) closeDialog(open);
+  });
+}
+
+/* --------------------------------------------------------------------------
    Boot
    -------------------------------------------------------------------------- */
 async function init() {
@@ -34,6 +95,8 @@ async function init() {
   bindViewToggle();
   bindForm();
   bindSettings();
+  bindEditTaps();
+  bindDialogFormFallback();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
 
   try {
@@ -173,13 +236,18 @@ function rowHTML(s) {
     </button>`;
 }
 
-// Tap a card / row / ranked item to edit.
-document.addEventListener('click', (e) => {
-  const el = e.target.closest('[data-id]');
-  if (!el || el.closest('dialog')) return;
-  const sub = state.subs.find((s) => s.id === el.dataset.id);
-  if (sub) openForm(sub);
-});
+// Tap a card / row / ranked item to edit. Bound on the list containers
+// (which persist across re-renders) rather than on document.
+function bindEditTaps() {
+  const onTap = (e) => {
+    const el = e.target.closest('[data-id]');
+    if (!el || !e.currentTarget.contains(el)) return;
+    const sub = state.subs.find((s) => s.id === el.dataset.id);
+    if (sub) openForm(sub);
+  };
+  $('#subs-list').addEventListener('click', onTap);
+  $('#insights').addEventListener('click', onTap);
+}
 
 /* Insights ------------------------------------------------------------------ */
 function currenciesInUse() {
@@ -322,30 +390,35 @@ function fillCategoryList() {
 }
 
 function openForm(sub = null) {
-  state.editingId = sub?.id ?? null;
-  form.reset();
-  clearErrors();
-  const f = form.elements;
-  fillCurrencySelect(f.currency, sub?.currency || state.settings.defaultCurrency);
+  try {
+    state.editingId = sub?.id ?? null;
+    form.reset();
+    clearErrors();
+    const f = form.elements;
+    fillCurrencySelect(f.currency, sub?.currency || state.settings.defaultCurrency);
 
-  if (sub) {
-    f.name.value = sub.name;
-    f.domain.value = sub.domain || '';
-    f.plan.value = sub.plan || '';
-    f.price.value = sub.price;
-    f.cycle.value = sub.cycle;
-    f.nextRenewal.value = sub.nextRenewal || '';
-    f.category.value = sub.category || '';
-    f.notes.value = sub.notes || '';
+    if (sub) {
+      f.name.value = sub.name;
+      f.domain.value = sub.domain || '';
+      f.plan.value = sub.plan || '';
+      f.price.value = sub.price;
+      f.cycle.value = sub.cycle;
+      f.nextRenewal.value = sub.nextRenewal || '';
+      f.category.value = sub.category || '';
+      f.notes.value = sub.notes || '';
+    }
+    auto.domain = !f.domain.value;
+    auto.category = !f.category.value;
+
+    $('#sub-dialog-title').textContent = sub ? 'Edit subscription' : 'Add subscription';
+    $('#btn-delete').hidden = !sub;
+    updateFormLogo();
+    openDialog(dialog);
+    if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
+  } catch (err) {
+    console.error(err);
+    reportError('Could not open the form', err);
   }
-  auto.domain = !f.domain.value;
-  auto.category = !f.category.value;
-
-  $('#sub-dialog-title').textContent = sub ? 'Edit subscription' : 'Add subscription';
-  $('#btn-delete').hidden = !sub;
-  updateFormLogo();
-  dialog.showModal();
-  if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
 }
 
 function updateFormLogo() {
@@ -372,9 +445,9 @@ function bindForm() {
   f.category.addEventListener('input', () => { auto.category = !f.category.value; });
   f.price.addEventListener('input', () => clearErrors('price'));
 
-  $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => dialog.close()));
+  $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => closeDialog(dialog)));
   // Tap on the backdrop closes the sheet.
-  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) closeDialog(dialog); });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -384,7 +457,7 @@ function bindForm() {
       await db.putSub(sub);
       const i = state.subs.findIndex((s) => s.id === sub.id);
       if (i >= 0) state.subs[i] = sub; else state.subs.push(sub);
-      dialog.close();
+      closeDialog(dialog);
       render();
       toast(i >= 0 ? `Saved ${sub.name}` : `Added ${sub.name}`);
       requestPersistence();
@@ -405,7 +478,7 @@ function bindForm() {
     if (!ok) return;
     await db.deleteSub(sub.id);
     state.subs = state.subs.filter((s) => s.id !== sub.id);
-    dialog.close();
+    closeDialog(dialog);
     render();
     toast(`Deleted ${sub.name}`);
   });
@@ -471,7 +544,7 @@ function confirmDialog({ title, message, actions, stacked = false }) {
     wrap.append(b);
   });
   dlg.returnValue = '';
-  dlg.showModal();
+  openDialog(dlg);
   // Focus the least destructive option.
   wrap.querySelector('button')?.focus();
   return new Promise((resolve) => {
