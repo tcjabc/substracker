@@ -143,6 +143,8 @@ async function init() {
     }
     Object.assign(state.settings, settings);
     state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
+    // Ask for persistent storage once there's data worth keeping (a first save asks too).
+    if (subs.length) storage.requestPersistence();
   } catch (err) {
     console.error(err);
     toast('Could not open local storage. Data will not be saved in this browser mode.');
