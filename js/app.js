@@ -8,7 +8,7 @@ import {
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 
 // Group colour swatches: keys map to --group-1 â€¦ --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
@@ -148,11 +148,17 @@ async function init() {
     if (subs.length) storage.requestPersistence();
   } catch (err) {
     console.error(err);
-    toast('Could not open local storage. Data will not be saved in this browser mode.');
+    toast(isNative()
+      ? 'Could not open local storage. Data will not be saved on this device.'
+      : 'Could not open local storage. Data will not be saved in this browser mode.');
   }
 
-  // The native app has no install step and no use for the PWA install instructions.
-  if (isNative()) $$('[data-web-only]').forEach((el) => { el.hidden = true; });
+  if (isNative()) {
+    // The native app has no install step and no use for the PWA install instructions.
+    $$('[data-web-only]').forEach((el) => { el.hidden = true; });
+    // App wording where the web copy talks about the browser or downloads (data-native-text).
+    $$('[data-native-text]').forEach((el) => { el.textContent = el.dataset.nativeText; });
+  }
   fillStaticLists();
   applyTheme(storage.getPref('theme') || 'system');
   setTab(state.tab, { focus: false });

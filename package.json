@@ -1,6 +1,6 @@
 {
   "name": "peek-budget",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "Native (Capacitor) wrapper for the Peek Budget PWA. The web app itself needs no build step.",
   "license": "MIT",
