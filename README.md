@@ -118,3 +118,7 @@ Your data exists only in the browser on that device. Clearing site data, or unin
 ## Privacy note
 
 The only network requests the app makes are for its own files and for favicon images from Google. A favicon request includes the domain you entered (for example `netflix.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
