@@ -1,4 +1,5 @@
-import * as db from './db.js';
+import * as storage from './storage.js';
+import { deliverFile } from './files.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
@@ -7,12 +8,6 @@ import {
 } from './util.js';
 
 const APP_VERSION = '1.2.1';
-const EXPORT_FORMAT = 'substracker';
-const EXPORT_VERSION = 2; // v2 adds `type` (income/expense), the "once" cycle and `date`. Import reads v1 and v2.
-const LS = {
-  theme: 'substracker.theme', view: 'substracker.view', tab: 'substracker.tab', period: 'substracker.period',
-  catView: 'substracker.catView',
-};
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
@@ -31,11 +26,11 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
-  view: lsGet(LS.view) === 'list' ? 'list' : 'grid',
-  catView: lsGet(LS.catView) === 'list' ? 'list' : 'donut', // Insights "By category"
+  view: storage.getPref('view') === 'list' ? 'list' : 'grid',
+  catView: storage.getPref('catView') === 'list' ? 'list' : 'donut', // Insights "By category"
   donutActive: null, // highlighted donut slice key, or null
-  tab: ['subs', 'insights', 'settings'].includes(lsGet(LS.tab)) ? lsGet(LS.tab) : 'subs',
-  period: lsGet(LS.period) === 'annual' ? 'annual' : 'monthly', // Money summary strip
+  tab: ['subs', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
+  period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
   insightsMonth: startOfMonth(new Date()),
   editingId: null,
@@ -43,9 +38,6 @@ const state = {
 };
 
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
-
-function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 
 /* --------------------------------------------------------------------------
    On-screen error reporter — an installed PWA has no console to look at.
@@ -128,18 +120,18 @@ async function init() {
     const b = e.target.closest('[data-period]');
     if (!b) return;
     state.period = b.dataset.period;
-    lsSet(LS.period, state.period);
+    storage.setPref('period', state.period);
     renderSubs();
   });
 
   try {
-    const [subs, settings] = await Promise.all([db.getAllSubs(), db.getAllSettings()]);
+    const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
     state.subs = subs;
     // Before 1.2.1 the default was always TWD and only stored once changed. Existing data keeps TWD so the
     // summary strip doesn't switch currency; a fresh install takes the device's locale. Stored either way.
     if (!settings.defaultCurrency) {
       settings.defaultCurrency = subs.length ? 'TWD' : localeCurrency('TWD');
-      db.setSetting('defaultCurrency', settings.defaultCurrency).catch(console.error);
+      storage.saveSettings({ defaultCurrency: settings.defaultCurrency }).catch(console.error);
     }
     Object.assign(state.settings, settings);
     state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
@@ -149,7 +141,7 @@ async function init() {
   }
 
   fillStaticLists();
-  applyTheme(lsGet(LS.theme) || 'system');
+  applyTheme(storage.getPref('theme') || 'system');
   setTab(state.tab, { focus: false });
   render();
   registerSW();
@@ -176,7 +168,7 @@ function bindTabs() {
 
 function setTab(tab, { focus = true } = {}) {
   state.tab = tab;
-  lsSet(LS.tab, tab);
+  storage.setPref('tab', tab);
   $$('.tab').forEach((t) => {
     const on = t.dataset.tab === tab;
     t.setAttribute('aria-selected', on);
@@ -197,7 +189,7 @@ function bindViewToggle() {
   $$('.seg-btn[data-view]').forEach((b) =>
     b.addEventListener('click', () => {
       state.view = b.dataset.view;
-      lsSet(LS.view, state.view);
+      storage.setPref('view', state.view);
       renderSubs();
     })
   );
@@ -238,7 +230,7 @@ function ensureGroupColors() {
     map[name] = SWATCHES.reduce((best, s) => (uses.get(s.key) < uses.get(best) ? s.key : best), SWATCHES[0].key);
     changed = true;
   }
-  if (changed) db.setSetting('groupColors', map).catch((err) => console.error(err));
+  if (changed) storage.saveSettings({ groupColors: map }).catch((err) => console.error(err));
 }
 
 const groupSwatch = (name) => (SWATCH_KEYS.has(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'g1');
@@ -299,7 +291,7 @@ function bindGroupColors() {
     close(false);
     renderSubs();
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
-    try { await db.setSetting('groupColors', state.settings.groupColors); } catch (err) {
+    try { await storage.saveSettings({ groupColors: state.settings.groupColors }); } catch (err) {
       console.error(err);
       toast('Could not save the colour.');
     }
@@ -622,7 +614,7 @@ function renderInsights() {
   }));
   $$('[data-catview]', root).forEach((b) => b.addEventListener('click', () => {
     state.catView = b.dataset.catview;
-    lsSet(LS.catView, state.catView);
+    storage.setPref('catView', state.catView);
     renderInsights();
   }));
   // Tap a slice or legend row to highlight it; tap it again to clear.
@@ -863,13 +855,13 @@ function bindForm() {
     const sub = readForm();
     if (!sub) return;
     try {
-      await db.putSub(sub);
+      await storage.save(sub);
       const i = state.subs.findIndex((s) => s.id === sub.id);
       if (i >= 0) state.subs[i] = sub; else state.subs.push(sub);
       closeDialog(dialog);
       render();
       toast(i >= 0 ? `Saved ${sub.name}` : `Added ${sub.name}`);
-      requestPersistence();
+      storage.requestPersistence();
     } catch (err) {
       console.error(err);
       toast('Could not save. Is storage full or disabled?');
@@ -885,7 +877,13 @@ function bindForm() {
       actions: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger' }],
     });
     if (!ok) return;
-    await db.deleteSub(sub.id);
+    try {
+      await storage.remove(sub.id);
+    } catch (err) {
+      console.error(err);
+      toast('Could not delete. Is storage full or disabled?');
+      return;
+    }
     state.subs = state.subs.filter((s) => s.id !== sub.id);
     closeDialog(dialog);
     render();
@@ -980,14 +978,14 @@ function confirmDialog({ title, message, actions, stacked = false }) {
 function bindSettings() {
   $('#set-currency').addEventListener('change', async (e) => {
     state.settings.defaultCurrency = e.target.value;
-    await db.setSetting('defaultCurrency', e.target.value);
+    await storage.saveSettings({ defaultCurrency: e.target.value });
     state.insightsCurrency = null;
     render();
     toast(`Default currency set to ${e.target.value}`);
   });
 
   $('#set-theme').addEventListener('change', (e) => {
-    lsSet(LS.theme, e.target.value);
+    storage.setPref('theme', e.target.value);
     applyTheme(e.target.value);
   });
 
@@ -1030,99 +1028,39 @@ function applyTheme(mode) {
   });
 }
 
-function exportData() {
-  const payload = {
-    format: EXPORT_FORMAT,
-    version: EXPORT_VERSION,
-    exportedAt: new Date().toISOString(),
-    settings: { defaultCurrency: state.settings.defaultCurrency, groupColors: state.settings.groupColors },
-    // Renamed from v1's `subscriptions`, so older app versions (which would turn income
-    // into expenses) refuse a v2 file instead of importing it wrongly.
-    items: [...state.subs].sort(byName),
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `substracker-${todayStamp()}.json`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(`Exported ${plural(state.subs.length, 'item')}`);
+async function exportData() {
+  try {
+    const payload = await storage.exportAll();
+    payload.items.sort(byName);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    await deliverFile(blob, `substracker-${todayStamp()}.json`);
+    toast(`Exported ${plural(payload.items.length, 'item')}`);
+  } catch (err) {
+    console.error(err);
+    toast('Export failed.');
+  }
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-/** Coerce an imported record (v1 or v2) into a valid item, or null if unusable. */
-function sanitize(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const name = String(raw.name ?? raw.serviceName ?? '').trim().slice(0, 80);
-  const price = Number(raw.price);
-  if (!name || !Number.isFinite(price) || price < 0) return null;
-  const type = raw.type === 'income' ? 'income' : 'expense';
-  const currency = /^[A-Za-z]{3}$/.test(raw.currency ?? '') ? raw.currency.toUpperCase() : state.settings.defaultCurrency;
-  const rawCycle = String(raw.cycle ?? raw.billingCycle ?? '');
-  const cycle = /^(once|one-?off)$/i.test(rawCycle) ? 'once'
-    : /^(annual|yearly|year)$/i.test(rawCycle) ? 'annual' : 'monthly';
-  const nextRenewal = cycle !== 'once' && isDay(raw.nextRenewal) ? raw.nextRenewal : '';
-  // A one-off needs a date to be counted anywhere; fall back to when it was created, then today.
-  const date = cycle !== 'once' ? ''
-    : isDay(raw.date) ? raw.date
-    : isDay(String(raw.createdAt ?? '').slice(0, 10)) ? raw.createdAt.slice(0, 10) : todayStamp();
-  const now = new Date().toISOString();
-  return {
-    id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 64) : uid(),
-    type,
-    name,
-    domain: cleanDomain(String(raw.domain ?? '')).slice(0, 120),
-    emoji: firstEmoji(raw.emoji),
-    plan: String(raw.plan ?? raw.planName ?? '').trim().slice(0, 80),
-    price: Math.round(price * 100) / 100,
-    currency,
-    cycle,
-    nextRenewal,
-    date,
-    category: String(raw.category ?? '').trim().slice(0, 40),
-    notes: String(raw.notes ?? '').trim().slice(0, 1000),
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
-    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
-  };
-}
-
 async function importFile(file) {
-  let data;
+  const text = await file.text();
+  let preview;
   try {
-    data = JSON.parse(await file.text());
-  } catch {
-    toast("That file isn't valid JSON.");
-    return;
-  }
-  if (!Array.isArray(data) && Number(data?.version) > EXPORT_VERSION) {
-    toast('That backup is from a newer version of SubsTracker. Update the app, then import it.');
-    return;
-  }
-  // v2 files hold `items`; v1 files and bare arrays hold subscriptions.
-  const rows = Array.isArray(data) ? data : (data?.items ?? data?.subscriptions);
-  if (!Array.isArray(rows)) {
-    toast('No items found in that file.');
-    return;
-  }
-  const subs = rows.map(sanitize).filter(Boolean);
-  const skipped = rows.length - subs.length;
-  if (!subs.length) {
-    toast('No valid items found in that file.');
+    preview = await storage.importAll(text, 'merge', { dryRun: true });
+  } catch (err) {
+    if (!(err instanceof storage.ImportError)) console.error(err);
+    toast(err instanceof storage.ImportError ? err.message : 'Import failed. Nothing was changed.');
     return;
   }
 
-  const existingIds = new Set(state.subs.map((s) => s.id));
-  const updates = subs.filter((s) => existingIds.has(s.id)).length;
+  const { total, updated, skipped, existing } = preview;
   const skippedNote = skipped ? ` ${skipped} invalid entr${skipped === 1 ? 'y' : 'ies'} will be skipped.` : '';
   const mode = await confirmDialog({
-    title: `Import ${plural(subs.length, 'item')}?`,
-    message: state.subs.length
-      ? `Merge adds new entries and updates ${updates} with matching IDs, keeping the rest of your ${state.subs.length}. Replace deletes everything here first.${skippedNote}`
+    title: `Import ${plural(total, 'item')}?`,
+    message: existing
+      ? `Merge adds new entries and updates ${updated} with matching IDs, keeping the rest of your ${existing}. Replace deletes everything here first.${skippedNote}`
       : `Your list is empty, so both options give the same result.${skippedNote}`,
     stacked: true,
     actions: [
@@ -1134,27 +1072,19 @@ async function importFile(file) {
   if (!mode) return;
 
   try {
-    await db.bulkPutSubs(subs, { replace: mode === 'replace' });
-    if (mode === 'replace' && data?.settings?.defaultCurrency && /^[A-Z]{3}$/.test(data.settings.defaultCurrency)) {
-      state.settings.defaultCurrency = data.settings.defaultCurrency;
-      await db.setSetting('defaultCurrency', state.settings.defaultCurrency);
-    }
-    // Group colours: files without them (v1, early v2) import fine; render() auto-assigns any gaps.
-    // Replace takes the file's colours; merge lets the file's colours win for groups it names.
-    const importedColors = sanitizeGroupColors(data?.settings?.groupColors);
-    state.settings.groupColors = mode === 'replace'
-      ? importedColors
-      : { ...state.settings.groupColors, ...importedColors };
-    await db.setSetting('groupColors', state.settings.groupColors);
-    state.subs = await db.getAllSubs();
+    await storage.importAll(text, mode);
+    const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
+    state.subs = subs;
+    Object.assign(state.settings, settings);
+    state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
     fillStaticLists();
     state.insightsCurrency = null;
     render();
-    toast(`${mode === 'replace' ? 'Replaced with' : 'Merged'} ${plural(subs.length, 'item')}${skipped ? `, skipped ${skipped}` : ''}`);
-    requestPersistence();
+    toast(`${mode === 'replace' ? 'Replaced with' : 'Merged'} ${plural(total, 'item')}${skipped ? `, skipped ${skipped}` : ''}`);
+    storage.requestPersistence();
   } catch (err) {
     console.error(err);
-    toast('Import failed. Nothing was changed.');
+    toast(err instanceof storage.ImportError ? err.message : 'Import failed. Nothing was changed.');
   }
 }
 
@@ -1172,14 +1102,6 @@ function toast(text, action) {
   el.hidden = false;
   clearTimeout(toastTimer);
   if (!action?.sticky) toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
-}
-
-// Ask the browser not to evict our data under storage pressure (best effort).
-let persistAsked = false;
-async function requestPersistence() {
-  if (persistAsked || !navigator.storage?.persist) return;
-  persistAsked = true;
-  try { if (!(await navigator.storage.persisted())) await navigator.storage.persist(); } catch { /* ignore */ }
 }
 
 function registerSW() {
