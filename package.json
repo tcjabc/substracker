@@ -1,0 +1,24 @@
+{
+  "name": "peek-budget",
+  "version": "1.4.0",
+  "private": true,
+  "description": "Native (Capacitor) wrapper for the Peek Budget PWA. The web app itself needs no build step.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "copy:web": "node scripts/copy-web.mjs",
+    "sync:web": "node scripts/copy-web.mjs && cap sync",
+    "assets": "capacitor-assets generate --android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/status-bar": "8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "4.0.0",
+    "@capacitor/cli": "8.6.2"
+  }
+}

@@ -6,3 +6,25 @@ node_modules/
 .vscode/
 .idea/
 .claude/
+
+# Native (Capacitor) build: generated copy of the web app
+www/
+
+# Signing material and machine-specific config: never commit
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+local.properties
+
+# Android build output
+*.apk
+*.aab
+.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/.idea/
+android/*.iml
+android/app/release/
