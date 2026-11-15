@@ -8,10 +8,11 @@ A private, offline-first household income and expense tracker (it started as a s
 
 ## Features
 
-- **Money tab:** a summary strip shows Income, Outgoings and Left over, with a **Monthly | Annual** toggle. Monthly counts recurring items at their monthly equivalent (annual ÷ 12) plus one-offs dated this month. Annual counts monthly × 12, annual items, and one-offs dated this year. The strip uses the default currency only. Below it, income streams have their own section, followed by expenses grouped by category, shown as a card grid or compact list (toggle in the header). Tap any item to edit it, and delete it from the edit sheet after a confirmation. The floating **+** button adds an expense and **+ Income stream** adds income.
+- **Money tab:** a summary strip shows Income, Outgoings and Left over, with a **Monthly | Annual** toggle. Monthly counts recurring items at their monthly equivalent (annual ÷ 12) plus one-offs dated this month. Annual counts monthly × 12, annual items, and one-offs dated this year. The strip uses the default currency only. Below it, income streams have their own section, followed by expenses grouped by category, shown as a card grid or compact list (toggle in the header). Tap any item to edit it, and delete it from the edit sheet after a confirmation. Two stacked floating buttons add items: the large **−** at the bottom adds an expense, the small green **+** above it adds income. The form has an **Expense | Income** toggle, so a wrong tap can be switched without losing what you typed; switching it while editing converts the item when you save.
+- **Group colours:** each expense group gets a colour from a muted set of ten, shown as a dot beside its heading on the Money page. Tap the dot to pick another colour. New groups take the next unused colour; existing groups were assigned in A–Z order the first time. Income has no colour.
 - **One-off items:** set the cycle to **Once** and pick a date instead of a renewal. They're tagged "One-off" and only count in the month and year of their date.
-- **Insights tab:** step through months with the arrows. A headline shows "Outgoings X of Y income (Z%)" for the selected month. Below it are that month's total, the calendar-year total, a breakdown by category, and a ranking. One-offs count in the month of their date, and income is never part of the category views. If you use several currencies, a chip switches between them. Totals are never converted between currencies.
-- **Logos:** loaded from `https://www.google.com/s2/favicons?domain={domain}&sz=128`. When there's no domain, the request fails, or Google only has a generic icon, a coloured initial-letter avatar is shown instead. Logos you've already seen are cached for offline use.
+- **Insights tab:** step through months with the arrows. A headline shows "Outgoings X of Y income (Z%)" for the selected month. Below it are that month's total, the calendar-year total, a breakdown by category, and a ranking. The breakdown has a **Donut | List** toggle (remembered on the device, Donut by default). The donut uses the group colours with the month's total in the centre, and the legend below lists each category's amount and share, largest first. Tap a slice or legend row to highlight it, and tap again to clear. Categories under 3% are pooled into a neutral "Other" when there are two or more of them. One-offs count in the month of their date, and income is never part of the category views. If you use several currencies, a chip switches between them. Totals are never converted between currencies.
+- **Logos:** an emoji typed into the item's **Emoji** field wins everywhere the logo appears (one emoji only, from the phone's emoji keyboard; clear it to go back). Otherwise logos are loaded from `https://www.google.com/s2/favicons?domain={domain}&sz=128`. When there's no domain, the request fails, or Google only has a generic icon, a coloured initial-letter avatar is shown instead. Logos you've already seen are cached for offline use.
 - **Domain auto-suggest:** typing a known service fills in the domain and category. Known services: Netflix, Spotify, YouTube Premium, Disney+, iCloud, Google One, ChatGPT, Claude, Adobe, Microsoft 365, Nintendo, PlayStation, Xbox, Notion and Canva. Edit `js/services.js` to add more.
 - **Renewal dates:** optional. Dates in the past roll forward by the billing cycle automatically, and renewals within 7 days are highlighted.
 - **Settings:** default currency (TWD out of the box), light/dark/system appearance, JSON export, and JSON import with **Merge** (adds new entries and updates ones with matching IDs) or **Replace all**.
@@ -26,6 +27,7 @@ Each item (expense or income) is stored as:
   "type": "expense",
   "name": "Netflix",
   "domain": "netflix.com",
+  "emoji": "",
   "plan": "Premium",
   "price": 390,
   "currency": "TWD",
@@ -42,9 +44,10 @@ Each item (expense or income) is stored as:
 - `type` is `"expense"` or `"income"`. Records without it (everything saved before 1.1.0) are expenses.
 - `cycle` is `"monthly"`, `"annual"` or `"once"`. One-off items use `date` (YYYY-MM-DD) and leave `nextRenewal` empty. Recurring items leave `date` empty.
 - Income uses the same shape. The name says where it comes from (e.g. "My salary"), and `domain`, `plan` and `category` stay empty.
-- `nextRenewal`, `date`, `category`, `plan`, `domain` and `notes` can be empty strings.
+- `emoji` is a single emoji (one grapheme, so flags and skin tones count) or empty. Records without it use the favicon or initial.
+- `nextRenewal`, `date`, `category`, `plan`, `domain`, `emoji` and `notes` can be empty strings.
 
-The export file (version 2) has this shape: `{ "format": "substracker", "version": 2, "exportedAt": "…", "settings": { "defaultCurrency": "TWD" }, "items": [ … ] }`. Import accepts version 2 files, version 1 files (which list records under `subscriptions`), and a bare array of records. It refuses files from a newer version.
+The export file (version 2) has this shape: `{ "format": "substracker", "version": 2, "exportedAt": "…", "settings": { "defaultCurrency": "TWD", "groupColors": { "Entertainment": "g1" } }, "items": [ … ] }`. `groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`); files without it import fine and get colours assigned automatically. Import accepts version 2 files, version 1 files (which list records under `subscriptions`), and a bare array of records. It refuses files from a newer version.
 
 ## Project structure
 

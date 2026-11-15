@@ -59,7 +59,7 @@
         <h2>Nothing here yet</h2>
         <p>Add your income and the things you pay for. Everything is stored on this device only.</p>
         <div class="empty-actions">
-          <button type="button" class="btn" data-action="add-income">Add income stream</button>
+          <button type="button" class="btn" data-action="add-income">Add income</button>
           <button type="button" class="btn btn-primary" data-action="add">Add expense</button>
         </div>
       </div>
@@ -125,13 +125,13 @@
     </section>
   </main>
 
-  <div class="fab-dock" id="fab-dock">
-    <button type="button" class="btn fab-pill" data-action="add-income">
+  <!-- Expense sits at the bottom, nearest the thumb: it's the most-used action. -->
+  <div class="fab-stack" id="fab-stack">
+    <button type="button" class="fab fab-sm fab-income" data-action="add-income" aria-label="Add income">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      Income stream
     </button>
     <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
     </button>
   </div>
 
@@ -155,21 +155,35 @@
     <form id="sub-form" method="dialog" novalidate>
       <div class="sheet-head">
         <span id="form-logo"></span>
-        <h2 id="sub-dialog-title">Add expense</h2>
+        <h2 id="sub-dialog-title">New expense</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
       <div class="sheet-body">
+        <fieldset class="field">
+          <legend class="sr-only">Type</legend>
+          <div class="segmented segmented-wide">
+            <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span>Expense</span></label>
+            <label class="seg-option"><input type="radio" name="kind" value="income"><span>Income</span></label>
+          </div>
+        </fieldset>
         <label class="field">
           <span class="field-label">Name</span>
           <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix">
           <span class="field-error" data-error-for="name"></span>
         </label>
-        <label class="field" data-expense-only>
-          <span class="field-label">Website domain <span class="optional">for logo</span></span>
-          <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. netflix.com">
-        </label>
+        <div class="field-row">
+          <label class="field field-grow" data-expense-only>
+            <span class="field-label">Website domain <span class="optional">for logo</span></span>
+            <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. netflix.com">
+          </label>
+          <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
+          <label class="field">
+            <span class="field-label">Emoji <span class="optional">optional</span></span>
+            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜">
+          </label>
+        </div>
         <label class="field" data-expense-only>
           <span class="field-label">Plan <span class="optional">optional</span></span>
           <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium">
@@ -230,6 +244,12 @@
       <div class="alert-actions" id="confirm-actions"></div>
     </form>
   </dialog>
+
+  <!-- Group colour picker, positioned under the tapped group dot on the Money page -->
+  <div class="swatch-pop" id="swatch-pop" role="dialog" aria-labelledby="swatch-pop-title" hidden>
+    <p class="swatch-pop-title" id="swatch-pop-title"></p>
+    <div class="swatch-grid" id="swatch-grid"></div>
+  </div>
 
   <datalist id="service-names"></datalist>
   <datalist id="category-names"></datalist>

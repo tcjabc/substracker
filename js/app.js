@@ -2,24 +2,38 @@ import * as db from './db.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
-  CURRENCIES, uid, esc, money, cycleLabel, isIncome, isOnce,
+  CURRENCIES, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const EXPORT_FORMAT = 'substracker';
 const EXPORT_VERSION = 2; // v2 adds `type` (income/expense), the "once" cycle and `date`. Import reads v1 and v2.
 const LS = {
   theme: 'substracker.theme', view: 'substracker.view', tab: 'substracker.tab', period: 'substracker.period',
+  catView: 'substracker.catView',
 };
+
+// Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
+// auto-assign order, most distinct first (including for colour-blind viewers).
+const SWATCHES = [
+  { key: 'g1', name: 'Gold' }, { key: 'g2', name: 'Steel blue' }, { key: 'g3', name: 'Terracotta' },
+  { key: 'g4', name: 'Sky' }, { key: 'g5', name: 'Rose' }, { key: 'g6', name: 'Plum' },
+  { key: 'g7', name: 'Olive' }, { key: 'g8', name: 'Brown' }, { key: 'g9', name: 'Teal' },
+  { key: 'g10', name: 'Brick' },
+];
+const SWATCH_KEYS = new Set(SWATCHES.map((s) => s.key));
+const swatchVar = (key) => `var(--group-${String(key).slice(1)})`;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const state = {
   subs: [],
-  settings: { defaultCurrency: 'TWD' },
+  settings: { defaultCurrency: 'TWD', groupColors: {} }, // groupColors: category name → swatch key
   view: lsGet(LS.view) === 'list' ? 'list' : 'grid',
+  catView: lsGet(LS.catView) === 'list' ? 'list' : 'donut', // Insights "By category"
+  donutActive: null, // highlighted donut slice key, or null
   tab: ['subs', 'insights', 'settings'].includes(lsGet(LS.tab)) ? lsGet(LS.tab) : 'subs',
   period: lsGet(LS.period) === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
@@ -56,6 +70,8 @@ const HAS_MODAL = typeof HTMLDialogElement === 'function'
   && typeof HTMLDialogElement.prototype.showModal === 'function';
 
 function openDialog(dlg) {
+  // The add/edit sheet hides the floating buttons; see .sheet-open in app.css.
+  if (dlg.classList.contains('sheet')) document.body.classList.add('sheet-open');
   if (HAS_MODAL) { dlg.showModal(); return; }
   dlg.setAttribute('open', '');
   dlg.classList.add('dialog-fallback');
@@ -104,6 +120,7 @@ async function init() {
   bindForm();
   bindSettings();
   bindEditTaps();
+  bindGroupColors();
   bindDialogFormFallback();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
   $$('[data-action="add-income"]').forEach((b) => b.addEventListener('click', () => openForm(null, 'income')));
@@ -119,6 +136,7 @@ async function init() {
     const [subs, settings] = await Promise.all([db.getAllSubs(), db.getAllSettings()]);
     state.subs = subs;
     Object.assign(state.settings, settings);
+    state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
   } catch (err) {
     console.error(err);
     toast('Could not open local storage. Data will not be saved in this browser mode.');
@@ -162,7 +180,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
-  $('#fab-dock').hidden = tab === 'settings';
+  $('#fab-stack').hidden = tab === 'settings';
   $('#page-title').textContent = TAB_TITLES[tab];
   document.title = tab === 'subs' ? 'SubsTracker' : `${TAB_TITLES[tab]} · SubsTracker`;
   if (focus) window.scrollTo({ top: 0 });
@@ -183,12 +201,110 @@ function bindViewToggle() {
    Rendering
    -------------------------------------------------------------------------- */
 function render() {
+  ensureGroupColors();
   renderSubs();
   if (state.tab === 'insights') renderInsights();
   fillCategoryList();
 }
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+const UNCATEGORISED = 'Uncategorised';
+const groupOf = (s) => s.category?.trim() || UNCATEGORISED;
+// Group display order: A–Z, with Uncategorised last.
+const byGroupName = (a, b) =>
+  (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' });
+
+/* Group colours ------------------------------------------------------------- */
+/**
+ * Give every expense group a swatch, in display order so the first assignment is stable.
+ * Groups keep the colour they have; a new group takes the next unused swatch (the least used
+ * one once all ten are taken). Income has no colour.
+ */
+function ensureGroupColors() {
+  const map = state.settings.groupColors;
+  const names = [...new Set(state.subs.filter((s) => !isIncome(s)).map(groupOf))].sort(byGroupName);
+  let changed = false;
+  for (const name of names) {
+    if (SWATCH_KEYS.has(map[name])) continue;
+    const uses = new Map(SWATCHES.map((s) => [s.key, 0]));
+    for (const n of names) if (SWATCH_KEYS.has(map[n])) uses.set(map[n], uses.get(map[n]) + 1);
+    map[name] = SWATCHES.reduce((best, s) => (uses.get(s.key) < uses.get(best) ? s.key : best), SWATCHES[0].key);
+    changed = true;
+  }
+  if (changed) db.setSetting('groupColors', map).catch((err) => console.error(err));
+}
+
+const groupSwatch = (name) => (SWATCH_KEYS.has(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'g1');
+const swatchName = (key) => SWATCHES.find((s) => s.key === key)?.name ?? '';
+
+/** Keep only valid `name → swatch key` pairs from an imported settings.groupColors. */
+function sanitizeGroupColors(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw)
+    .filter(([k, v]) => typeof k === 'string' && k.trim() && k.length <= 40 && SWATCH_KEYS.has(v))
+    .map(([k, v]) => [k.trim(), v]));
+}
+
+// Swatch popover: opened from the colour dot beside a group heading on the Money page.
+function bindGroupColors() {
+  const pop = $('#swatch-pop');
+  let group = null;
+  let opener = null;
+
+  const close = (refocus) => {
+    if (pop.hidden) return;
+    pop.hidden = true;
+    opener?.setAttribute('aria-expanded', 'false');
+    if (refocus) opener?.focus();
+    group = null;
+  };
+
+  const open = (dot) => {
+    group = dot.dataset.group;
+    opener = dot;
+    const current = groupSwatch(group);
+    $('#swatch-pop-title').textContent = `Colour for ${group}`;
+    $('#swatch-grid').innerHTML = SWATCHES.map((s) => `
+      <button type="button" class="swatch" data-swatch="${s.key}" style="--swatch: ${swatchVar(s.key)}"
+        aria-label="${esc(s.name)}" title="${esc(s.name)}" aria-pressed="${s.key === current}"></button>`).join('');
+    pop.hidden = false;
+    dot.setAttribute('aria-expanded', 'true');
+    // Below the dot, kept inside the viewport's side gutters.
+    const r = dot.getBoundingClientRect();
+    const gutter = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const left = Math.min(Math.max(gutter, r.left - gutter / 2), innerWidth - pop.offsetWidth - gutter);
+    pop.style.left = `${left + scrollX}px`;
+    pop.style.top = `${r.bottom + scrollY + gutter / 4}px`;
+    $('.swatch[aria-pressed="true"]', pop)?.focus();
+  };
+
+  $('#subs-list').addEventListener('click', (e) => {
+    const dot = e.target.closest('.group-dot');
+    if (!dot) return;
+    if (!pop.hidden && group === dot.dataset.group) close(true); else { close(false); open(dot); }
+  });
+
+  pop.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-swatch]');
+    if (!b || !group) return;
+    const name = group;
+    state.settings.groupColors[name] = b.dataset.swatch;
+    close(false);
+    renderSubs();
+    $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
+    try { await db.setSetting('groupColors', state.settings.groupColors); } catch (err) {
+      console.error(err);
+      toast('Could not save the colour.');
+    }
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('.group-dot')) close(false);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !pop.hidden) close(true); });
+  window.addEventListener('resize', () => close(false));
+}
 
 function renewalTag(sub) {
   const d = nextRenewal(sub);
@@ -197,7 +313,6 @@ function renewalTag(sub) {
   return `<span class="tag${soon ? ' tag-soon' : ''}">${esc(renewalText(d))}</span>`;
 }
 
-const UNCATEGORISED = 'Uncategorised';
 const ONE_OFF_TAG = '<span class="tag tag-once">One-off</span>';
 
 function renderSubs() {
@@ -217,20 +332,24 @@ function renderSubs() {
   const cats = new Map();
   for (const s of all) {
     if (isIncome(s)) continue;
-    const k = s.category?.trim() || UNCATEGORISED;
+    const k = groupOf(s);
     if (!cats.has(k)) cats.set(k, []);
     cats.get(k).push(s);
   }
-  [...cats.keys()]
-    .sort((a, b) => (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' }))
-    .forEach((k) => groups.push({ name: k, items: cats.get(k).sort(byName) }));
+  [...cats.keys()].sort(byGroupName)
+    .forEach((k) => groups.push({ name: k, items: cats.get(k).sort(byName), colour: true }));
 
   const isList = state.view === 'list';
-  list.innerHTML = groups.map((g, i) => `
+  list.innerHTML = groups.map((g, i) => {
+    const key = g.colour ? groupSwatch(g.name) : null;
+    const dot = key ? `<button type="button" class="group-dot" data-group="${esc(g.name)}" style="--swatch: ${swatchVar(key)}"
+      aria-label="Colour for ${esc(g.name)}: ${esc(swatchName(key))}" aria-haspopup="dialog" aria-expanded="false"></button>` : '';
+    return `
     <section class="money-group" aria-labelledby="group-${i}">
-      <h2 class="section-title" id="group-${i}">${esc(g.name)} <span class="optional">${g.items.length}</span></h2>
+      <h2 class="section-title${dot ? ' group-head' : ''}" id="group-${i}">${dot}<span>${esc(g.name)} <span class="optional">${g.items.length}</span></span></h2>
       <div class="${isList ? 'subs-list' : 'subs-grid'}">${g.items.map(isList ? rowHTML : cardHTML).join('')}</div>
-    </section>`).join('');
+    </section>`;
+  }).join('');
 }
 
 /** Totals for the Money summary strip, in the default currency only (amounts are never converted). */
@@ -364,6 +483,7 @@ function renderInsights() {
     : '';
   $$('.chip', chips).forEach((c) => c.addEventListener('click', () => {
     state.insightsCurrency = c.dataset.currency;
+    state.donutActive = null;
     renderInsights();
   }));
 
@@ -440,7 +560,20 @@ function renderInsights() {
     </div>
 
     <section class="section" aria-labelledby="cat-title">
-      <h2 class="section-title" id="cat-title">By category <span class="optional">${esc(monthName)}</span></h2>
+      <div class="section-head">
+        <h2 class="section-title" id="cat-title">By category <span class="optional">${esc(monthName)}</span></h2>
+        <div class="segmented" role="group" aria-label="Category view">
+          <button type="button" class="seg-btn" data-catview="donut" aria-pressed="${state.catView === 'donut'}" title="Donut chart">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/></svg>
+            <span class="sr-only">Donut</span>
+          </button>
+          <button type="button" class="seg-btn" data-catview="list" aria-pressed="${state.catView === 'list'}" title="List view">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
+            <span class="sr-only">List</span>
+          </button>
+        </div>
+      </div>
+      ${state.catView === 'donut' ? donutHTML(donutSlices(catList, monthly), monthly, cur, monthName) : `
       <div class="panel">
         ${catList.length ? catList.map((c) => {
           const share = monthly ? Math.round((c.total / monthly) * 100) : 0;
@@ -453,7 +586,7 @@ function renderInsights() {
             <div class="bar" role="img" aria-label="${esc(c.name)}: ${share}% of spend in ${esc(monthName)}"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
           </div>`;
         }).join('') : `<p class="panel-empty">No ${esc(cur)} outgoings in ${esc(monthName)}.</p>`}
-      </div>
+      </div>`}
     </section>
 
     ${ranked.length ? `
@@ -478,8 +611,108 @@ function renderInsights() {
 
   $$('[data-month-step]', root).forEach((b) => b.addEventListener('click', () => {
     state.insightsMonth = new Date(y, m + Number(b.dataset.monthStep), 1);
+    state.donutActive = null;
     renderInsights();
   }));
+  $$('[data-catview]', root).forEach((b) => b.addEventListener('click', () => {
+    state.catView = b.dataset.catview;
+    lsSet(LS.catView, state.catView);
+    renderInsights();
+  }));
+  // Tap a slice or legend row to highlight it; tap it again to clear.
+  $$('[data-slice]', root).forEach((el) => el.addEventListener('click', () => {
+    state.donutActive = state.donutActive === el.dataset.slice ? null : el.dataset.slice;
+    applyDonutHighlight(root);
+  }));
+  applyDonutHighlight(root);
+}
+
+/* Donut ------------------------------------------------------------------- */
+const DONUT = { r: 80, gap: 2 }; // SVG user units in a 200 × 200 viewBox; stroke width lives in app.css
+const SMALL_SLICE = 0.03; // categories under 3% of the month are pooled into "Other"
+
+/** Slices for the month, largest first. Two or more categories under 3% become one neutral "Other". */
+function donutSlices(catList, total) {
+  const big = [];
+  const small = [];
+  for (const c of catList) (total && c.total / total < SMALL_SLICE ? small : big).push(c);
+  // Pooling a single category would only hide its name, so keep it as its own slice.
+  if (small.length < 2) big.push(...small.splice(0));
+  const slices = big.map((c) => ({
+    key: `cat:${c.name}`, name: c.name, total: c.total, sub: plural(c.count, 'item'),
+    swatch: swatchVar(groupSwatch(c.name)),
+  }));
+  if (small.length) {
+    slices.push({
+      key: 'other', name: 'Other', total: small.reduce((t, c) => t + c.total, 0),
+      sub: small.map((c) => c.name).join(', '), swatch: 'var(--group-other)',
+    });
+  }
+  return slices;
+}
+
+const shareText = (v, total) => {
+  const p = total ? (v / total) * 100 : 0;
+  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`;
+};
+
+function donutHTML(slices, total, cur, monthName) {
+  if (!slices.length) {
+    return `
+      <div class="panel donut-empty">
+        <div class="donut-empty-ring" aria-hidden="true"></div>
+        <p class="donut-empty-title">No ${esc(cur)} outgoings in ${esc(monthName)}</p>
+        <p class="donut-empty-text">Add an expense, or step to another month.</p>
+      </div>`;
+  }
+  const C = 2 * Math.PI * DONUT.r;
+  const gap = slices.length > 1 ? DONUT.gap : 0; // a single category is a full ring
+  let offset = 0;
+  const arcs = slices.map((s) => {
+    const len = total ? (s.total / total) * C : C / slices.length;
+    const dash = Math.max(len - gap, 0.5);
+    const arc = `<circle class="donut-slice" data-slice="${esc(s.key)}" cx="100" cy="100" r="${DONUT.r}"
+      style="--swatch: ${s.swatch}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}"
+      stroke-dashoffset="${(-offset).toFixed(2)}"><title>${esc(s.name)}: ${esc(money(s.total, cur))} (${shareText(s.total, total)})</title></circle>`;
+    offset += len;
+    return arc;
+  }).join('');
+
+  return `
+    <div class="panel">
+      <div class="donut-wrap">
+        <div class="donut">
+          <svg viewBox="0 0 200 200" role="img" aria-label="Donut chart of outgoings by category for ${esc(monthName)}. Amounts are listed below.">${arcs}</svg>
+          <div class="donut-center">
+            <span class="donut-total">${esc(money(total, cur))}</span>
+            <span class="donut-label">${esc(monthName)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        ${slices.map((s) => `
+        <button type="button" class="legend-row" data-slice="${esc(s.key)}" aria-pressed="false">
+          <span class="legend-dot" style="--swatch: ${s.swatch}" aria-hidden="true"></span>
+          <span class="legend-text">
+            <span class="legend-name">${esc(s.name)}</span>
+            <span class="legend-sub">${esc(s.sub)}</span>
+          </span>
+          <span class="cat-amount">${esc(money(s.total, cur))}<span class="pct">${shareText(s.total, total)}</span></span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function applyDonutHighlight(root) {
+  const key = state.donutActive;
+  const has = !!key && $$('[data-slice]', root).some((el) => el.dataset.slice === key);
+  if (!has) state.donutActive = null;
+  $$('.donut, .legend', root).forEach((el) => el.classList.toggle('has-active', has));
+  $$('[data-slice]', root).forEach((el) => {
+    const on = has && el.dataset.slice === key;
+    el.classList.toggle('is-active', on);
+    if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -520,6 +753,7 @@ function openForm(sub = null, type = 'expense') {
     if (sub) {
       f.name.value = sub.name;
       f.domain.value = sub.domain || '';
+      f.emoji.value = sub.emoji || '';
       f.plan.value = sub.plan || '';
       f.price.value = sub.price;
       f.cycle.value = sub.cycle;
@@ -531,9 +765,7 @@ function openForm(sub = null, type = 'expense') {
     auto.domain = !f.domain.value;
     auto.category = !f.category.value;
 
-    const income = state.formType === 'income';
-    const noun = income ? 'income stream' : 'expense';
-    $('#sub-dialog-title').textContent = `${sub ? 'Edit' : 'Add'} ${noun}`;
+    f.kind.value = state.formType;
     $('#btn-delete').hidden = !sub;
     syncFormMode();
     updateFormLogo();
@@ -550,6 +782,7 @@ function syncFormMode() {
   const f = form.elements;
   const income = state.formType === 'income';
   const once = f.cycle.value === 'once';
+  $('#sub-dialog-title').textContent = `${state.editingId ? 'Edit' : 'New'} ${income ? 'income' : 'expense'}`;
   $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
   $('#field-renewal').hidden = income || once;
   $('#field-date').hidden = !once;
@@ -567,19 +800,25 @@ function syncFormMode() {
 
 function updateFormLogo() {
   const f = form.elements;
-  $('#form-logo').innerHTML = logoHTML({ name: f.name.value || '?', domain: cleanDomain(f.domain.value) }, 'md');
+  $('#form-logo').innerHTML = logoHTML({
+    name: f.name.value || '?', domain: cleanDomain(f.domain.value), emoji: firstEmoji(f.emoji.value),
+  }, 'md');
 }
 
 let logoTimer;
 function bindForm() {
   const f = form.elements;
 
-  f.name.addEventListener('input', () => {
+  // Fill domain/category from a known service name, unless the user has typed their own.
+  const suggestFromName = () => {
     const svc = state.formType === 'income' ? null : matchService(f.name.value);
     if (auto.domain) f.domain.value = svc ? svc.domain : '';
     if (auto.category) f.category.value = svc ? svc.category : '';
-    clearErrors('name');
     updateFormLogo();
+  };
+  f.name.addEventListener('input', () => {
+    clearErrors('name');
+    suggestFromName();
   });
   f.domain.addEventListener('input', () => {
     auto.domain = !f.domain.value;
@@ -587,9 +826,27 @@ function bindForm() {
     logoTimer = setTimeout(updateFormLogo, 400);
   });
   f.category.addEventListener('input', () => { auto.category = !f.category.value; });
+  // Emoji: keep only the first emoji (whole grapheme), drop anything else. Selecting on focus
+  // means a newly typed emoji replaces the old one instead of being appended and discarded.
+  const keepEmoji = () => {
+    const e = firstEmoji(f.emoji.value);
+    if (f.emoji.value !== e) f.emoji.value = e;
+    updateFormLogo();
+  };
+  f.emoji.addEventListener('input', (e) => { if (!e.isComposing) keepEmoji(); });
+  f.emoji.addEventListener('compositionend', keepEmoji);
+  f.emoji.addEventListener('focus', () => f.emoji.select());
   f.price.addEventListener('input', () => clearErrors('price'));
   f.date.addEventListener('input', () => clearErrors('date'));
   $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
+  // Expense | Income toggle: swaps the type-specific fields and keeps everything typed so far.
+  // Saving an existing item with the other type selected converts it (readForm uses formType).
+  $$('input[name="kind"]', form).forEach((r) => r.addEventListener('change', () => {
+    state.formType = f.kind.value === 'income' ? 'income' : 'expense';
+    syncFormMode();
+    suggestFromName();
+  }));
+  dialog.addEventListener('close', () => document.body.classList.remove('sheet-open'));
 
   $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => closeDialog(dialog)));
   // Tap on the backdrop closes the sheet.
@@ -655,6 +912,7 @@ function readForm() {
     name,
     // Income streams don't use domain, plan or category.
     domain: income ? '' : cleanDomain(f.domain.value),
+    emoji: firstEmoji(f.emoji.value),
     plan: income ? '' : f.plan.value.trim(),
     price: Math.round(price * 100) / 100,
     currency: f.currency.value || state.settings.defaultCurrency,
@@ -771,7 +1029,7 @@ function exportData() {
     format: EXPORT_FORMAT,
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
-    settings: { defaultCurrency: state.settings.defaultCurrency },
+    settings: { defaultCurrency: state.settings.defaultCurrency, groupColors: state.settings.groupColors },
     // Renamed from v1's `subscriptions`, so older app versions (which would turn income
     // into expenses) refuse a v2 file instead of importing it wrongly.
     items: [...state.subs].sort(byName),
@@ -813,6 +1071,7 @@ function sanitize(raw) {
     type,
     name,
     domain: cleanDomain(String(raw.domain ?? '')).slice(0, 120),
+    emoji: firstEmoji(raw.emoji),
     plan: String(raw.plan ?? raw.planName ?? '').trim().slice(0, 80),
     price: Math.round(price * 100) / 100,
     currency,
@@ -874,6 +1133,13 @@ async function importFile(file) {
       state.settings.defaultCurrency = data.settings.defaultCurrency;
       await db.setSetting('defaultCurrency', state.settings.defaultCurrency);
     }
+    // Group colours: files without them (v1, early v2) import fine; render() auto-assigns any gaps.
+    // Replace takes the file's colours; merge lets the file's colours win for groups it names.
+    const importedColors = sanitizeGroupColors(data?.settings?.groupColors);
+    state.settings.groupColors = mode === 'replace'
+      ? importedColors
+      : { ...state.settings.groupColors, ...importedColors };
+    await db.setSetting('groupColors', state.settings.groupColors);
     state.subs = await db.getAllSubs();
     fillStaticLists();
     state.insightsCurrency = null;

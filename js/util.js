@@ -115,6 +115,27 @@ export function todayStamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// A grapheme counts as an emoji if it holds a pictograph, a flag letter or a keycap mark.
+const EMOJI_PART = /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u;
+// Fallback when Intl.Segmenter is missing: one emoji sequence (flag, keycap, or ZWJ chain with modifiers).
+const EMOJI_SEQ = /\p{Regional_Indicator}{2}|[#*0-9]️?⃣|\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})*(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})*)*/u;
+
+/**
+ * The first emoji in a string as one whole grapheme (so flags, skin tones and ZWJ families stay
+ * intact), or '' if there is none. Letters, digits and other text are ignored.
+ */
+export function firstEmoji(str) {
+  const s = String(str ?? '');
+  if (!s) return '';
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    for (const { segment } of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)) {
+      if (EMOJI_PART.test(segment)) return segment.slice(0, 32);
+    }
+    return '';
+  }
+  return (s.match(EMOJI_SEQ)?.[0] ?? '').slice(0, 32);
+}
+
 /** Stable small hash for picking avatar colours. */
 export function hash(str) {
   let h = 0;

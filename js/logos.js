@@ -6,10 +6,14 @@ export const faviconUrl = (domain) =>
   `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`;
 
 /**
- * Logo markup: a coloured initial sits underneath; the favicon fades in on top only
- * if it loads at a usable size. Offline or unknown domains keep the initial.
+ * Logo markup. A chosen emoji wins and sits on a neutral tile. Otherwise a coloured initial
+ * sits underneath and the favicon fades in on top only if it loads at a usable size.
+ * Offline or unknown domains keep the initial.
  */
 export function logoHTML(sub, size = 'md') {
+  if (sub.emoji) {
+    return `<span class="logo logo-${size} logo-emoji" aria-hidden="true">${esc(sub.emoji)}</span>`;
+  }
   const name = (sub.name || '?').trim();
   const initial = esc([...name][0]?.toUpperCase() || '?');
   const colour = (hash(name.toLowerCase()) % AVATAR_COLOURS) + 1;
