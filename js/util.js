@@ -2,6 +2,26 @@ export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
 ];
 
+// Region → currency, for the currencies in the list above. Used to pick a first-run default.
+const REGION_CURRENCY = {
+  TW: 'TWD', US: 'USD', GB: 'GBP', JP: 'JPY', HK: 'HKD', CN: 'CNY', KR: 'KRW', SG: 'SGD', AU: 'AUD',
+  CA: 'CAD', NZ: 'NZD', CH: 'CHF', LI: 'CHF', TH: 'THB', MY: 'MYR', PH: 'PHP', ID: 'IDR', VN: 'VND', IN: 'INR',
+};
+const EURO_REGIONS = 'AT BE CY DE EE ES FI FR GR HR IE IT LT LU LV MT NL PT SI SK AD MC SM VA ME XK'.split(' ');
+for (const r of EURO_REGIONS) REGION_CURRENCY[r] = 'EUR';
+
+/** The device's currency, from its preferred languages ("zh-TW", "en-GB", "ja"). Falls back to `fallback`. */
+export function localeCurrency(fallback = 'TWD') {
+  const langs = globalThis.navigator?.languages?.length ? navigator.languages : [globalThis.navigator?.language];
+  for (const lang of langs) {
+    if (!lang) continue;
+    let region = '';
+    try { region = new Intl.Locale(lang).maximize().region || ''; } catch { region = (lang.split(/[-_]/)[1] || '').toUpperCase(); }
+    if (REGION_CURRENCY[region]) return REGION_CURRENCY[region];
+  }
+  return fallback;
+}
+
 export function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);

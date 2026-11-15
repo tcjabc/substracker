@@ -2,11 +2,11 @@ import * as db from './db.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
-  CURRENCIES, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
+  CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const EXPORT_FORMAT = 'substracker';
 const EXPORT_VERSION = 2; // v2 adds `type` (income/expense), the "once" cycle and `date`. Import reads v1 and v2.
 const LS = {
@@ -30,7 +30,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const state = {
   subs: [],
-  settings: { defaultCurrency: 'TWD', groupColors: {} }, // groupColors: category name → swatch key
+  settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
   view: lsGet(LS.view) === 'list' ? 'list' : 'grid',
   catView: lsGet(LS.catView) === 'list' ? 'list' : 'donut', // Insights "By category"
   donutActive: null, // highlighted donut slice key, or null
@@ -135,6 +135,12 @@ async function init() {
   try {
     const [subs, settings] = await Promise.all([db.getAllSubs(), db.getAllSettings()]);
     state.subs = subs;
+    // Before 1.2.1 the default was always TWD and only stored once changed. Existing data keeps TWD so the
+    // summary strip doesn't switch currency; a fresh install takes the device's locale. Stored either way.
+    if (!settings.defaultCurrency) {
+      settings.defaultCurrency = subs.length ? 'TWD' : localeCurrency('TWD');
+      db.setSetting('defaultCurrency', settings.defaultCurrency).catch(console.error);
+    }
     Object.assign(state.settings, settings);
     state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
   } catch (err) {
