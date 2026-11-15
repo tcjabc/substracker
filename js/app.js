@@ -1,7 +1,7 @@
 import * as storage from './storage.js';
 import { deliverFile } from './files.js';
 import { isNative, setStatusBarStyle } from './platform.js';
-import { initEntitlements, isPro, onChange as onProChange } from './entitlements.js';
+import { initEntitlements, isPro, isDebugBuild, setProForTesting, onChange as onProChange } from './entitlements.js';
 import { PALETTES, DEFAULT_PALETTE, findPalette, applyPalette } from './palettes.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
@@ -161,11 +161,14 @@ async function init() {
     $$('[data-web-only]').forEach((el) => { el.hidden = true; });
     // App wording where the web copy talks about the browser or downloads (data-native-text).
     $$('[data-native-text]').forEach((el) => { el.textContent = el.dataset.nativeText; });
+    $$('[data-native-only]').forEach((el) => { el.hidden = false; });
   }
   fillStaticLists();
   applyTheme(storage.getPref('theme') || 'system');
   applyPalette(effectivePalette());
   renderPalettes();
+  renderProStatus();
+  bindPro();
   onProChange(proChanged);
   setTab(state.tab, { focus: false });
   render();
@@ -1180,12 +1183,54 @@ function proChanged(pro) {
   }
   applyPalette(effectivePalette());
   renderPalettes();
+  renderProStatus();
   render();
   if (dialog.hasAttribute('open')) syncProFields();
 }
 
-// TODO: replaced by the Peek Budget Pro screen.
-function openPro() { toast('Peek Budget Pro is not available yet.'); }
+/* Peek Budget Pro screen ------------------------------------------------------ */
+const proDialog = $('#pro-dialog');
+
+function openPro() {
+  renderProStatus();
+  openDialog(proDialog);
+}
+
+function renderProStatus() {
+  const pro = isPro();
+  $('#pro-status-title').textContent = pro ? 'Pro is unlocked' : 'Peek Budget Basic';
+  $('#pro-status-hint').textContent = pro
+    ? 'Emoji icons, website logos and colour palettes are on.'
+    : 'Add emoji icons, website logos and colour palettes.';
+  $('#pro-dialog-status').textContent = pro
+    ? 'Pro is unlocked on this device. Thank you!'
+    : "You're using Peek Budget Basic: everything works, with letter icons and the Indigo palette.";
+  $('#pro-buy').hidden = pro;
+  $('#pro-debug').hidden = !isDebugBuild();
+  $('#pro-debug-toggle').checked = pro;
+}
+
+function bindPro() {
+  $$('[data-close]', proDialog).forEach((b) => b.addEventListener('click', () => closeDialog(proDialog)));
+  proDialog.addEventListener('click', (e) => { if (e.target === proDialog) closeDialog(proDialog); });
+  proDialog.addEventListener('close', () => document.body.classList.remove('sheet-open'));
+
+  // TODO(purchase): start the store purchase, then unlock through entitlements.js once verified.
+  $('#pro-buy').addEventListener('click', () => toast('Purchases are not available yet.'));
+  // TODO(purchase): ask the store for past purchases and unlock through entitlements.js.
+  $('#pro-restore').addEventListener('click', () => toast('Nothing to restore yet: purchases are not available.'));
+
+  $('#pro-debug-toggle').addEventListener('change', async (e) => {
+    if (!isDebugBuild()) return;
+    try {
+      await setProForTesting(e.target.checked);
+      toast(e.target.checked ? 'Pro unlocked (debug)' : 'Back to Basic (debug)');
+    } catch (err) {
+      console.error(err);
+      toast('Could not save the debug setting.');
+    }
+  });
+}
 
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 // In "system" mode, follow the device when it switches between light and dark.

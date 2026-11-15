@@ -109,6 +109,20 @@
         </div>
       </div>
 
+      <!-- Android only: the web is always fully unlocked. -->
+      <div class="settings-group" data-native-only hidden>
+        <h2 class="group-title">Peek Budget Pro</h2>
+        <div class="panel">
+          <div class="setting-row">
+            <span class="setting-label">
+              <span id="pro-status-title"></span>
+              <span class="setting-hint" id="pro-status-hint"></span>
+            </span>
+            <button type="button" class="btn" data-action="pro">View</button>
+          </div>
+        </div>
+      </div>
+
       <div class="settings-group">
         <h2 class="group-title">Data</h2>
         <div class="panel">
@@ -261,6 +275,52 @@
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Peek Budget Pro: what it adds and what stays free. Purchases are not wired up yet. -->
+  <dialog class="sheet" id="pro-dialog" aria-labelledby="pro-title">
+    <form method="dialog">
+      <div class="sheet-head">
+        <h2 id="pro-title">Peek Budget Pro</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <p class="pro-status" id="pro-dialog-status"></p>
+        <section class="pro-section" aria-labelledby="pro-adds">
+          <h3 class="group-title" id="pro-adds">Pro adds</h3>
+          <ul class="pro-list">
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><strong>Emoji icons</strong> for your items, from a built-in picker or your emoji keyboard.</span></li>
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><strong>Website logos</strong> shown automatically from each item's domain.</span></li>
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><strong>Six colour palettes</strong> for buttons and highlights, in light and dark.</span></li>
+          </ul>
+        </section>
+        <section class="pro-section" aria-labelledby="pro-free">
+          <h3 class="group-title" id="pro-free">Always free</h3>
+          <ul class="pro-list pro-list-free">
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Every item, total and insight, with no limits.</span></li>
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Export and import backups.</span></li>
+            <li><svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Light, dark and system theme, the Indigo palette and letter icons.</span></li>
+          </ul>
+        </section>
+        <!-- Debug builds only (Capacitor.DEBUG); see entitlements.js. -->
+        <div class="panel" id="pro-debug" hidden>
+          <label class="setting-row">
+            <span class="setting-label">
+              Debug: unlock Pro
+              <span class="setting-hint">Shown in debug builds only. Never included in backups.</span>
+            </span>
+            <input type="checkbox" class="checkbox" id="pro-debug-toggle">
+          </label>
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" class="btn" id="pro-restore">Restore purchase</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-primary" id="pro-buy">Unlock Pro</button>
       </div>
     </form>
   </dialog>

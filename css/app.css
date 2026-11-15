@@ -314,6 +314,8 @@ button { cursor: pointer; }
   fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
 }
 .icon-lg { width: calc(var(--icon) * 1.6); height: calc(var(--icon) * 1.6); }
+.icon-sm { width: var(--icon-sm); height: var(--icon-sm); }
+.icon-xs { width: var(--icon-xs); height: var(--icon-xs); stroke-width: 2.4; }
 
 .container {
   width: 100%;
@@ -728,7 +730,6 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .palette-option[aria-checked="true"] .palette-dot { box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent); }
 .palette-name { display: inline-flex; align-items: center; gap: var(--hairline-gap); }
-.icon-xs { width: var(--icon-xs); height: var(--icon-xs); stroke-width: 2.4; }
 /* "This comes with Pro" note: palette previews in Settings, locked logo fields in the form. */
 .pro-note {
   display: grid; gap: var(--space-3); padding: var(--space-3);
@@ -736,6 +737,17 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .pro-note .btn-primary { justify-self: end; }
 .pro-note-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+
+/* Peek Budget Pro sheet */
+.pro-status { font-weight: var(--weight-medium); }
+.pro-section { display: grid; gap: var(--space-2); }
+.pro-section .group-title { margin: 0; }
+.pro-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; font-size: var(--text-base); }
+.pro-list li { display: flex; align-items: flex-start; gap: var(--space-2); }
+.pro-list .icon { color: var(--accent); margin-top: var(--hairline-gap); }
+.pro-list-free { color: var(--text-muted); }
+.pro-list-free .icon { color: var(--positive); }
+.checkbox { width: var(--icon); height: var(--icon); margin: 0; accent-color: var(--accent); flex: none; }
 
 /* ==========================================================================
    Tab bar & FAB
