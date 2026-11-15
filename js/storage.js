@@ -237,14 +237,14 @@ const stamp = (v) => { const t = typeof v === 'string' ? Date.parse(v) : NaN; re
 function parseBackup(json) {
   let data = json;
   if (typeof json === 'string') {
-    if (json.length > MAX_IMPORT_CHARS) throw new ImportError('That file is too large to be a SubsTracker backup.');
+    if (json.length > MAX_IMPORT_CHARS) throw new ImportError('That file is too large to be a Peek Budget backup.');
     try { data = JSON.parse(json); } catch { throw new ImportError("That file isn't valid JSON."); }
   }
-  if (!isObj(data)) throw new ImportError("That file isn't a SubsTracker backup: it has no backup header.");
+  if (!isObj(data)) throw new ImportError("That file isn't a Peek Budget backup: it has no backup header.");
 
   let version, rows, listName;
   if ('app' in data || 'schemaVersion' in data) {
-    if (data.app !== APP_ID) throw new ImportError(`That file isn't a SubsTracker backup: "app" should be "${APP_ID}".`);
+    if (data.app !== APP_ID) throw new ImportError(`That file isn't a Peek Budget backup: "app" should be "${APP_ID}".`);
     if (!Number.isInteger(data.schemaVersion) || data.schemaVersion < 1) {
       throw new ImportError('The backup\'s "schemaVersion" must be a whole number of 1 or more.');
     }
@@ -257,7 +257,7 @@ function parseBackup(json) {
     listName = version === 1 ? 'subscriptions' : 'items';
     rows = data[listName];
   } else {
-    throw new ImportError(`That file isn't a SubsTracker backup: it has no "app": "${APP_ID}" header.`);
+    throw new ImportError(`That file isn't a Peek Budget backup: it has no "app": "${APP_ID}" header.`);
   }
   if (!Array.isArray(rows)) throw new ImportError(`The backup's "${listName}" must be a list.`);
   if (!rows.length) throw new ImportError('That backup has no items.');

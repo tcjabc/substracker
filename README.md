@@ -1,4 +1,4 @@
-# SubsTracker
+# Peek Budget
 
 A private, offline-first household income and expense tracker (it started as a subscription tracker). It's a Progressive Web App built with plain HTML, CSS and JavaScript: no framework, no build step, no backend.
 

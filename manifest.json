@@ -1,6 +1,6 @@
 {
-  "name": "SubsTracker",
-  "short_name": "Subs",
+  "name": "Peek Budget",
+  "short_name": "Peek Budget",
   "description": "Private, offline household income and expense tracker. Your data never leaves this device.",
   "id": "./",
   "start_url": "./",

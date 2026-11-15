@@ -7,7 +7,7 @@ import {
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
@@ -124,7 +124,7 @@ async function init() {
     renderSubs();
   });
 
-  storage.setBlockedHandler(() => toast('Close other SubsTracker tabs or windows to finish updating.', {
+  storage.setBlockedHandler(() => toast('Close other Peek Budget tabs or windows to finish updating.', {
     label: 'Dismiss', sticky: true, run: () => {},
   }));
   try {
@@ -155,7 +155,7 @@ async function init() {
   setTab(state.tab, { focus: false });
   render();
   registerSW();
-  $('#app-version').textContent = `SubsTracker ${APP_VERSION}`;
+  $('#app-version').textContent = `Peek Budget ${APP_VERSION}`;
 }
 
 /* --------------------------------------------------------------------------
@@ -190,7 +190,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#subs-actions').hidden = tab !== 'subs';
   $('#fab-stack').hidden = tab === 'settings';
   $('#page-title').textContent = TAB_TITLES[tab];
-  document.title = tab === 'subs' ? 'SubsTracker' : `${TAB_TITLES[tab]} · SubsTracker`;
+  document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') renderInsights();
 }
@@ -1064,7 +1064,7 @@ function importProblem(message) {
 }
 
 async function importFile(file) {
-  if (file.size > 5_000_000) return importProblem('That file is too large to be a SubsTracker backup.');
+  if (file.size > 5_000_000) return importProblem('That file is too large to be a Peek Budget backup.');
   let text;
   let preview;
   try {
@@ -1078,7 +1078,7 @@ async function importFile(file) {
 
   const { merge, replace } = preview;
   const newer = merge.newerVersion
-    ? ' It comes from a newer version of SubsTracker; fields this version doesn\'t know are ignored.' : '';
+    ? ' It comes from a newer version of Peek Budget; fields this version doesn\'t know are ignored.' : '';
   const message = merge.existing
     ? `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
       + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
