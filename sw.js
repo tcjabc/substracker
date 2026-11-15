@@ -57,8 +57,11 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // Page navigations: the cached shell, so the app opens offline.
+  // Navigations to the app itself: the cached shell, so it opens offline. Other pages in scope
+  // (such as tests/storage.html) go to the network.
   if (req.mode === 'navigate') {
+    const root = new URL(self.registration.scope).pathname;
+    if (url.pathname !== root && url.pathname !== `${root}index.html`) return;
     event.respondWith((async () => {
       const cache = await caches.open(SHELL_CACHE);
       return (await cache.match('./index.html')) || fetch(req);
