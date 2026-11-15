@@ -38,7 +38,7 @@ export function matchService(name) {
   return hit ? hit.svc : null;
 }
 
-/** Normalise user input like "https://www.netflix.com/tw/" to "www.netflix.com". */
+/** Normalise user input like "https://www.example.com/path/" to "www.example.com". */
 export function cleanDomain(input) {
   let d = (input || '').trim().toLowerCase();
   if (!d) return '';
