@@ -1052,24 +1052,40 @@ async function exportData() {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
+// A file that can't be imported gets a dialog naming the problem; existing data is never touched.
+function importProblem(message) {
+  return confirmDialog({
+    title: "Can't import this file",
+    message: `${message} Nothing was changed.`,
+    actions: [{ label: 'OK', value: true, kind: 'primary' }],
+  });
+}
+
 async function importFile(file) {
-  const text = await file.text();
+  if (file.size > 5_000_000) return importProblem('That file is too large to be a SubsTracker backup.');
+  let text;
   let preview;
   try {
-    preview = await storage.importAll(text, 'merge', { dryRun: true });
+    text = await file.text();
+    preview = await storage.previewImport(text);
   } catch (err) {
-    if (!(err instanceof storage.ImportError)) console.error(err);
-    toast(err instanceof storage.ImportError ? err.message : 'Import failed. Nothing was changed.');
-    return;
+    if (err instanceof storage.ImportError) return importProblem(err.message);
+    console.error(err);
+    return importProblem("The file couldn't be read.");
   }
 
-  const { total, updated, skipped, existing } = preview;
-  const skippedNote = skipped ? ` ${skipped} invalid entr${skipped === 1 ? 'y' : 'ies'} will be skipped.` : '';
+  const { merge, replace } = preview;
+  const newer = merge.newerVersion
+    ? ' It comes from a newer version of SubsTracker; fields this version doesn\'t know are ignored.' : '';
+  const message = merge.existing
+    ? `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
+      + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
+      + `Replace deletes your ${plural(merge.existing, 'item')} and uses the file's items and settings`
+      + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
+    : `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
   const mode = await confirmDialog({
-    title: `Import ${plural(total, 'item')}?`,
-    message: existing
-      ? `Merge adds new entries and updates ${updated} with matching IDs, keeping the rest of your ${existing}. Replace deletes everything here first.${skippedNote}`
-      : `Your list is empty, so both options give the same result.${skippedNote}`,
+    title: 'Import this backup?',
+    message,
     stacked: true,
     actions: [
       { label: 'Cancel', value: null },
@@ -1080,7 +1096,7 @@ async function importFile(file) {
   if (!mode) return;
 
   try {
-    await storage.importAll(text, mode);
+    const done = await storage.importAll(text, mode);
     const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
     state.subs = subs;
     Object.assign(state.settings, settings);
@@ -1088,11 +1104,14 @@ async function importFile(file) {
     fillStaticLists();
     state.insightsCurrency = null;
     render();
-    toast(`${mode === 'replace' ? 'Replaced with' : 'Merged'} ${plural(total, 'item')}${skipped ? `, skipped ${skipped}` : ''}`);
+    toast(mode === 'replace'
+      ? `Replaced with ${plural(done.total, 'item')}`
+      : `Merged: ${done.added} new, ${done.updated} updated`);
     storage.requestPersistence();
   } catch (err) {
+    if (err instanceof storage.ImportError) { importProblem(err.message); return; }
     console.error(err);
-    toast(err instanceof storage.ImportError ? err.message : 'Import failed. Nothing was changed.');
+    toast('Import failed. Nothing was changed.');
   }
 }
 

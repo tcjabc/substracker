@@ -2,7 +2,7 @@
 // items and settings live in IndexedDB, a few per-device UI preferences in localStorage.
 // Nothing here logs item contents.
 
-import { uid, firstEmoji, todayStamp } from './util.js';
+import { firstEmoji } from './util.js';
 import { cleanDomain } from './services.js';
 
 export const APP_ID = 'substracker';
@@ -206,117 +206,190 @@ export async function requestPersistence() {
 /* --------------------------------------------------------------------------
    Export / import
    -------------------------------------------------------------------------- */
-const EXPORT_VERSION = 2; // v2 adds `type` (income/expense), the "once" cycle and `date`. Import reads v1 and v2.
+// Backups: { app, schemaVersion, exportedAt, items, settings }. Files from 1.0–1.2 use
+// { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2); they still import.
 
 /** Everything needed to restore this device, as a plain object ready for JSON.stringify. */
 export async function exportAll() {
   const [items, settings] = await Promise.all([getAll(), getSettings()]);
-  return {
-    format: APP_ID,
-    version: EXPORT_VERSION,
-    exportedAt: new Date().toISOString(),
-    settings: { defaultCurrency: settings.defaultCurrency, groupColors: settings.groupColors ?? {} },
-    // Renamed from v1's `subscriptions`, so older app versions (which would turn income
-    // into expenses) refuse a v2 file instead of importing it wrongly.
-    items,
-  };
+  // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
+  // carries the full current shape.
+  const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
+  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings };
 }
 
 /** A problem with an import file. `message` is written for the person importing. */
 export class ImportError extends Error {}
 
+const MAX_IMPORT_CHARS = 5_000_000;
+const CYCLES = ['monthly', 'annual', 'once'];
+const TYPES = ['expense', 'income'];
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const stamp = (v) => { const t = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isNaN(t) ? -Infinity : t; };
 
-/** Coerce an imported record (v1 or v2) into a valid item, or null if unusable. */
-function sanitize(raw, fallbackCurrency) {
-  if (!raw || typeof raw !== 'object') return null;
-  const name = String(raw.name ?? raw.serviceName ?? '').trim().slice(0, 80);
-  const price = Number(raw.price);
-  if (!name || !Number.isFinite(price) || price < 0) return null;
-  const type = raw.type === 'income' ? 'income' : 'expense';
-  const currency = /^[A-Za-z]{3}$/.test(raw.currency ?? '') ? raw.currency.toUpperCase() : fallbackCurrency;
-  const rawCycle = String(raw.cycle ?? raw.billingCycle ?? '');
-  const cycle = /^(once|one-?off)$/i.test(rawCycle) ? 'once'
-    : /^(annual|yearly|year)$/i.test(rawCycle) ? 'annual' : 'monthly';
-  const nextRenewal = cycle !== 'once' && isDay(raw.nextRenewal) ? raw.nextRenewal : '';
-  // A one-off needs a date to be counted anywhere; fall back to when it was created, then today.
-  const date = cycle !== 'once' ? ''
-    : isDay(raw.date) ? raw.date
-    : isDay(String(raw.createdAt ?? '').slice(0, 10)) ? raw.createdAt.slice(0, 10) : todayStamp();
-  const now = new Date().toISOString();
+/**
+ * Check a backup and turn it into clean items. Only the fields the app needs are required
+ * (id, name, price, currency, cycle; date for one-offs) and only their types are checked;
+ * `type` may be missing (an expense) but not an unknown value. Unknown fields are ignored, so backups from newer versions import too.
+ */
+function parseBackup(json) {
+  let data = json;
+  if (typeof json === 'string') {
+    if (json.length > MAX_IMPORT_CHARS) throw new ImportError('That file is too large to be a SubsTracker backup.');
+    try { data = JSON.parse(json); } catch { throw new ImportError("That file isn't valid JSON."); }
+  }
+  if (!isObj(data)) throw new ImportError("That file isn't a SubsTracker backup: it has no backup header.");
+
+  let version, rows, listName;
+  if ('app' in data || 'schemaVersion' in data) {
+    if (data.app !== APP_ID) throw new ImportError(`That file isn't a SubsTracker backup: "app" should be "${APP_ID}".`);
+    if (!Number.isInteger(data.schemaVersion) || data.schemaVersion < 1) {
+      throw new ImportError('The backup\'s "schemaVersion" must be a whole number of 1 or more.');
+    }
+    version = data.schemaVersion;
+    listName = 'items';
+    rows = data.items;
+  } else if (data.format === APP_ID) {
+    version = Number(data.version);
+    if (version !== 1 && version !== 2) throw new ImportError('The backup\'s "version" must be 1 or 2.');
+    listName = version === 1 ? 'subscriptions' : 'items';
+    rows = data[listName];
+  } else {
+    throw new ImportError(`That file isn't a SubsTracker backup: it has no "app": "${APP_ID}" header.`);
+  }
+  if (!Array.isArray(rows)) throw new ImportError(`The backup's "${listName}" must be a list.`);
+  if (!rows.length) throw new ImportError('That backup has no items.');
+  if (data.settings !== undefined && !isObj(data.settings)) {
+    throw new ImportError('The backup\'s "settings" must be an object.');
+  }
+
+  const firstSeen = new Map();
+  const items = rows.map((raw, i) => {
+    checkItem(raw, i, firstSeen);
+    return { item: normalize(raw, data.exportedAt), ts: stamp(raw.updatedAt) };
+  });
+  return { version, items, settings: data.settings ?? {} };
+}
+
+function checkItem(raw, i, firstSeen) {
+  if (!isObj(raw)) throw new ImportError(`Item ${i + 1} isn't an object.`);
+  const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const label = `Item ${i + 1}${name ? ` ("${name.slice(0, 40)}")` : ''}`;
+  const fail = (msg) => { throw new ImportError(`${label}: ${msg}`); };
+  if (typeof raw.id !== 'string' || !raw.id || raw.id.length > 64) fail('"id" must be text of 1–64 characters.');
+  if (firstSeen.has(raw.id)) fail(`"id" is the same as item ${firstSeen.get(raw.id) + 1}.`);
+  firstSeen.set(raw.id, i);
+  if (!name) fail('"name" must be non-empty text.');
+  if (typeof raw.price !== 'number' || !Number.isFinite(raw.price) || raw.price < 0) fail('"price" must be a number of 0 or more.');
+  if (typeof raw.currency !== 'string' || !/^[A-Za-z]{3}$/.test(raw.currency)) fail('"currency" must be a 3-letter code such as TWD.');
+  if (!CYCLES.includes(raw.cycle)) fail('"cycle" must be "monthly", "annual" or "once".');
+  // Records saved before 1.1.0 have no type and are expenses, in any file version.
+  if (raw.type !== undefined && !TYPES.includes(raw.type)) fail('"type" must be "expense" or "income".');
+  if (raw.cycle === 'once' && !isDay(raw.date)) fail('"date" must be a YYYY-MM-DD date for a one-off item.');
+}
+
+/** Keep only the fields the app knows, trimmed to the same limits as the form. */
+function normalize(raw, exportedAt) {
+  const fallbackTime = typeof exportedAt === 'string' && !Number.isNaN(Date.parse(exportedAt))
+    ? exportedAt : new Date().toISOString();
+  const once = raw.cycle === 'once';
   return {
-    id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 64) : uid(),
-    type,
-    name,
-    domain: cleanDomain(String(raw.domain ?? '')).slice(0, 120),
+    id: raw.id,
+    type: raw.type === 'income' ? 'income' : 'expense',
+    name: raw.name.trim().slice(0, 80),
+    domain: cleanDomain(text(raw.domain, 200)).slice(0, 120),
     emoji: firstEmoji(raw.emoji),
-    plan: String(raw.plan ?? raw.planName ?? '').trim().slice(0, 80),
-    price: Math.round(price * 100) / 100,
-    currency,
-    cycle,
-    nextRenewal,
-    date,
-    category: String(raw.category ?? '').trim().slice(0, 40),
-    notes: String(raw.notes ?? '').trim().slice(0, 1000),
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
-    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
+    plan: text(raw.plan, 80),
+    price: Math.round(raw.price * 100) / 100,
+    currency: raw.currency.toUpperCase(),
+    cycle: raw.cycle,
+    nextRenewal: !once && isDay(raw.nextRenewal) ? raw.nextRenewal : '',
+    date: once ? raw.date : '',
+    category: text(raw.category, 40),
+    notes: text(raw.notes, 1000),
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : fallbackTime,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : fallbackTime,
   };
 }
 
 /** Group colours from a file: a plain name → swatch-key map. The app drops unknown keys on load. */
 function cleanColors(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  return Object.fromEntries(Object.entries(raw)
-    .filter(([k, v]) => typeof k === 'string' && k.length <= 40 && typeof v === 'string' && v.length <= 8));
+  if (!isObj(raw)) return {};
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => k.length <= 40 && typeof v === 'string' && v.length <= 8));
+}
+
+/** Work out what each mode would do, without writing anything. */
+async function planImport(json) {
+  const backup = parseBackup(json);
+  const [existing, current] = await Promise.all([getAll(), getSettings()]);
+  const have = new Map(existing.map((s) => [s.id, s]));
+  const inFile = new Set(backup.items.map(({ item }) => item.id));
+  const base = { total: backup.items.length, existing: existing.length, newerVersion: backup.version > SCHEMA_VERSION };
+
+  // Merge: match by id; the newer `updatedAt` wins, and a missing or unreadable date counts as oldest.
+  const mergeWrites = [];
+  let added = 0;
+  let updated = 0;
+  let kept = 0;
+  for (const { item, ts } of backup.items) {
+    const cur = have.get(item.id);
+    if (!cur) { added++; mergeWrites.push(item); } else if (ts > stamp(cur.updatedAt)) { updated++; mergeWrites.push(item); } else kept++;
+  }
+
+  // Files without colours import fine; the app assigns any gaps. Merge lets the file's colours win for
+  // the groups it names; replace takes the file's colours and its default currency.
+  const fileColors = cleanColors(backup.settings.groupColors);
+  const cur = backup.settings.defaultCurrency;
+  const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;
+
+  return {
+    merge: {
+      summary: { ...base, mode: 'merge', added, updated, kept, removed: 0 },
+      clear: false,
+      writes: mergeWrites,
+      settings: { groupColors: { ...cleanColors(current.groupColors), ...fileColors } },
+    },
+    replace: {
+      summary: {
+        ...base,
+        mode: 'replace',
+        added: backup.items.filter(({ item }) => !have.has(item.id)).length,
+        updated: backup.items.filter(({ item }) => have.has(item.id)).length,
+        kept: 0,
+        removed: existing.filter((s) => !inFile.has(s.id)).length,
+      },
+      clear: true,
+      writes: backup.items.map(({ item }) => item),
+      settings: { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) },
+    },
+  };
 }
 
 /**
- * Import a backup (JSON text or parsed object). `mode` is "merge" or "replace".
- * With { dryRun: true } nothing is written; the returned summary previews the result.
- * Throws ImportError for an unusable file, before anything is written.
+ * What importing would do in each mode, as { merge, replace } summaries. Writes nothing.
+ * A summary has total, existing, added, updated, kept, removed and newerVersion.
+ * Throws ImportError, with a message naming the problem, for a file that can't be imported.
  */
-export async function importAll(json, mode, { dryRun = false } = {}) {
+export async function previewImport(json) {
+  const plan = await planImport(json);
+  return { merge: plan.merge.summary, replace: plan.replace.summary };
+}
+
+/**
+ * Import a backup (JSON text or a parsed object). `mode` is "merge" or "replace".
+ * The whole file is checked before anything is written, and the write is one transaction,
+ * so a bad file or a failed write leaves existing data untouched. Returns the summary.
+ */
+export async function importAll(json, mode) {
   if (mode !== 'merge' && mode !== 'replace') throw new Error(`Unknown import mode: ${mode}`);
-  let data = json;
-  if (typeof json === 'string') {
-    try { data = JSON.parse(json); } catch { throw new ImportError("That file isn't valid JSON."); }
-  }
-  if (!Array.isArray(data) && Number(data?.version) > EXPORT_VERSION) {
-    throw new ImportError('That backup is from a newer version of SubsTracker. Update the app, then import it.');
-  }
-  // v2 files hold `items`; v1 files and bare arrays hold subscriptions.
-  const rows = Array.isArray(data) ? data : (data?.items ?? data?.subscriptions);
-  if (!Array.isArray(rows)) throw new ImportError('No items found in that file.');
-
-  const current = await getSettings();
-  const items = rows.map((r) => sanitize(r, current.defaultCurrency || 'TWD')).filter(Boolean);
-  if (!items.length) throw new ImportError('No valid items found in that file.');
-
-  const existing = await getAll();
-  const existingIds = new Set(existing.map((s) => s.id));
-  const summary = {
-    total: items.length,
-    added: items.filter((s) => !existingIds.has(s.id)).length,
-    updated: items.filter((s) => existingIds.has(s.id)).length,
-    skipped: rows.length - items.length,
-    existing: existing.length,
-  };
-  if (dryRun) return summary;
-
-  const settings = {};
-  const fileCurrency = data?.settings?.defaultCurrency;
-  if (mode === 'replace' && /^[A-Z]{3}$/.test(fileCurrency ?? '')) settings.defaultCurrency = fileCurrency;
-  // Files without colours import fine; the app assigns any gaps. Replace takes the file's
-  // colours; merge lets the file's colours win for groups it names.
-  const colors = cleanColors(data?.settings?.groupColors);
-  settings.groupColors = mode === 'replace' ? colors : { ...cleanColors(current.groupColors), ...colors };
-
-  // One transaction: either everything lands or nothing changes.
+  const { summary, clear, writes, settings } = (await planImport(json))[mode];
   const db = await open();
   const tx = db.transaction([itemStore, SETTINGS], 'readwrite');
   const store = tx.objectStore(itemStore);
-  if (mode === 'replace') store.clear();
-  for (const s of items) store.put(s);
+  if (clear) store.clear();
+  for (const item of writes) store.put(item);
   const sstore = tx.objectStore(SETTINGS);
   for (const [key, value] of Object.entries(settings)) sstore.put({ key, value });
   await done(tx);
