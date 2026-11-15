@@ -1,5 +1,11 @@
 {
   "appId": "com.tcjabc.peekbudget",
   "appName": "Peek Budget",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
 }

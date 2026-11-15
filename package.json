@@ -8,7 +8,7 @@
   "scripts": {
     "copy:web": "node scripts/copy-web.mjs",
     "sync:web": "node scripts/copy-web.mjs && cap sync",
-    "assets": "capacitor-assets generate --android"
+    "assets": "capacitor-assets generate --android --iconBackgroundColor #4f46e5 --iconBackgroundColorDark #4f46e5 --splashBackgroundColor #f6f6f9 --splashBackgroundColorDark #111216"
   },
   "dependencies": {
     "@capacitor/android": "8.6.2",
