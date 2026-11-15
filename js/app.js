@@ -1,6 +1,7 @@
 import * as storage from './storage.js';
 import { deliverFile } from './files.js';
 import { isNative, setStatusBarStyle } from './platform.js';
+import { initEntitlements } from './entitlements.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
@@ -144,6 +145,7 @@ async function init() {
     }
     Object.assign(state.settings, settings);
     state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
+    await initEntitlements(settings);
     // Ask for persistent storage once there's data worth keeping (a first save asks too).
     if (subs.length) storage.requestPersistence();
   } catch (err) {

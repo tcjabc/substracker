@@ -1,9 +1,10 @@
-// In-browser tests for js/storage.js: migration, export/import round trip, merge rules and
-// bad-file rejection. Open tests/storage.html from a local server. Each test uses its own
+// In-browser tests for js/storage.js: migration, export/import round trip, merge rules,
+// bad-file rejection, and keeping the Pro flag (js/entitlements.js) out of backups. Open tests/storage.html from a local server. Each test uses its own
 // throwaway database; the fixtures below are made up. This file talks to IndexedDB directly
 // only to seed old-format databases; the code under test goes through storage.js.
 
 import * as storage from '../js/storage.js';
+import * as entitlements from '../js/entitlements.js';
 
 const results = [];
 const created = [];
@@ -236,6 +237,48 @@ test('a newer schemaVersion with unknown fields imports; unknown fields are drop
   const [s] = await storage.getAll();
   assert(!('futureField' in s), 'unknown field dropped');
   eq(s.price, 250, 'known fields kept');
+});
+
+/* ------------------------------------------------------------------ Entitlements */
+
+test('the Pro debug flag is stored in settings but never exported', async () => {
+  freshDb();
+  await storage.save(item());
+  await storage.saveSettings({ defaultCurrency: 'USD' });
+  await entitlements.setProForTesting(true);
+  eq((await storage.getSettings())[storage.DEBUG_PRO_SETTING], true, 'flag stored');
+  const file = await storage.exportAll();
+  assert(!(storage.DEBUG_PRO_SETTING in file.settings), 'flag left out of the export');
+  eq(file.settings, { defaultCurrency: 'USD' }, 'other settings still exported');
+});
+
+test('import ignores a Pro flag in the file, in merge and replace', async () => {
+  for (const mode of ['merge', 'replace']) {
+    freshDb();
+    const file = backup([item()], { settings: { defaultCurrency: 'EUR', [storage.DEBUG_PRO_SETTING]: true, pro: true } });
+    await storage.importAll(file, mode);
+    const s = await storage.getSettings();
+    assert(!(storage.DEBUG_PRO_SETTING in s) && !('pro' in s), `${mode}: flag not imported`);
+  }
+});
+
+test('replace import keeps this device\'s own Pro flag', async () => {
+  freshDb();
+  await entitlements.setProForTesting(true);
+  await storage.importAll(backup([item()], { settings: { [storage.DEBUG_PRO_SETTING]: false } }), 'replace');
+  eq((await storage.getSettings())[storage.DEBUG_PRO_SETTING], true, 'flag untouched');
+});
+
+test('isPro() is always true on the web, and onChange can be removed', async () => {
+  freshDb();
+  let calls = 0;
+  const off = entitlements.onChange(() => { calls++; });
+  await entitlements.setProForTesting(false);
+  eq(entitlements.isPro(), true, 'web stays Pro with the flag off');
+  await entitlements.initEntitlements();
+  eq(entitlements.isPro(), true, 'still Pro after reloading the flag');
+  off();
+  eq(calls, 0, 'no change event: the web is never Basic');
 });
 
 /* ------------------------------------------------------------------ Bad files */

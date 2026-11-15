@@ -15,6 +15,7 @@ const SHELL = [
   './js/storage.js',
   './js/files.js',
   './js/platform.js',
+  './js/entitlements.js',
   './js/services.js',
   './js/logos.js',
   './js/util.js',

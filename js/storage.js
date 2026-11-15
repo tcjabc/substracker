@@ -18,6 +18,11 @@ const SETTINGS = 'settings';
 const META = 'meta';
 const LEGACY = 'subscriptions';
 
+// Settings that belong to this install only: never written to a backup, never read from one
+// (import only takes groupColors and defaultCurrency). See entitlements.js.
+export const DEBUG_PRO_SETTING = 'debugPro';
+const DEVICE_ONLY_SETTINGS = new Set([DEBUG_PRO_SETTING]);
+
 let dbPromise = null;
 let itemStore = ITEMS; // LEGACY only if the migration could not be verified
 let migration = null; // what happened on this load, for status()
@@ -215,7 +220,8 @@ export async function exportAll() {
   // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
   // carries the full current shape.
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
-  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings };
+  const shared = Object.fromEntries(Object.entries(settings).filter(([key]) => !DEVICE_ONLY_SETTINGS.has(key)));
+  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings: shared };
 }
 
 /** A problem with an import file. `message` is written for the person importing. */
