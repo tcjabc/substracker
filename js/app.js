@@ -791,6 +791,8 @@ function openForm(sub = null, type = 'expense') {
 
     f.kind.value = state.formType;
     $('#btn-delete').hidden = !sub;
+    showEmojiGrid(false);
+    syncProFields();
     syncFormMode();
     updateFormLogo();
     openDialog(dialog);
@@ -820,6 +822,40 @@ function syncFormMode() {
   f.notes.placeholder = income ? 'e.g. Paid on the 5th, after tax' : 'Shared with family, billed to card ending 1234â€¦';
   $('#label-price').textContent = income ? 'Amount' : 'Price';
   $('#label-cycle').textContent = income ? 'How often' : 'Billing cycle';
+}
+
+// Built-in emoji choices: everyday budget items, so most people never need the emoji keyboard.
+const EMOJI_CHOICES = [
+  '🏠', '💡', '💧', '🔥', '📶', '📱', '🧾', '🏦',
+  '🛒', '🍜', '☕', '🍕', '🍱', '🍷',
+  '🚗', '⛽', '🚇', '🚲', '✈️', '🅿️',
+  '🎬', '🎵', '🎮', '📺', '📚', '🎧',
+  '💊', '🏥', '💪', '🧘',
+  '👶', '🐶', '🐱', '🎁', '🎓', '👕',
+  '💼', '💰', '💵', '📈', '☁️', '🛠️',
+];
+
+/** Emoji and logos are Pro: in Basic the emoji field is locked (its value is still saved) and a note says why. */
+function syncProFields() {
+  const pro = isPro();
+  const f = form.elements;
+  f.emoji.disabled = !pro;
+  $('#emoji-toggle').hidden = !pro;
+  $('#logo-locked').hidden = pro;
+  if (!pro) showEmojiGrid(false);
+  updateFormLogo();
+}
+
+function showEmojiGrid(show) {
+  const grid = $('#emoji-grid');
+  const toggle = $('#emoji-toggle');
+  if (show) {
+    const current = firstEmoji(form.elements.emoji.value);
+    grid.innerHTML = `<button type="button" class="emoji-option emoji-none" data-emoji="" aria-pressed="${!current}">None</button>`
+      + EMOJI_CHOICES.map((e) => `<button type="button" class="emoji-option" data-emoji="${e}" aria-pressed="${e === current}">${e}</button>`).join('');
+  }
+  grid.hidden = !show;
+  toggle.setAttribute('aria-expanded', String(show));
 }
 
 function updateFormLogo() {
@@ -860,6 +896,15 @@ function bindForm() {
   f.emoji.addEventListener('input', (e) => { if (!e.isComposing) keepEmoji(); });
   f.emoji.addEventListener('compositionend', keepEmoji);
   f.emoji.addEventListener('focus', () => f.emoji.select());
+  $('#emoji-toggle').addEventListener('click', () => showEmojiGrid($('#emoji-grid').hidden));
+  $('#emoji-grid').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-emoji]');
+    if (!b) return;
+    f.emoji.value = b.dataset.emoji;
+    updateFormLogo();
+    showEmojiGrid(false);
+    $('#emoji-toggle').focus();
+  });
   f.price.addEventListener('input', () => clearErrors('price'));
   f.date.addEventListener('input', () => clearErrors('date'));
   $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
@@ -1136,6 +1181,7 @@ function proChanged(pro) {
   applyPalette(effectivePalette());
   renderPalettes();
   render();
+  if (dialog.hasAttribute('open')) syncProFields();
 }
 
 // TODO: replaced by the Peek Budget Pro screen.

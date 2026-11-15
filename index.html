@@ -98,9 +98,9 @@
             </span>
             <div class="palette-grid" id="palette-grid" role="radiogroup" aria-labelledby="palette-label"></div>
             <!-- Basic only: a Pro palette is shown as a live preview and never saved. -->
-            <div class="palette-preview" id="palette-preview" role="status" hidden>
+            <div class="pro-note" id="palette-preview" role="status" hidden>
               <p id="palette-preview-text"></p>
-              <div class="palette-preview-actions">
+              <div class="pro-note-actions">
                 <button type="button" class="btn" id="palette-revert">Keep Indigo</button>
                 <button type="button" class="btn btn-primary" data-action="pro">Unlock Pro</button>
               </div>
@@ -128,7 +128,7 @@
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </div>
         </div>
-        <p class="footnote" id="storage-note" data-native-text="Your data is stored locally on this device. Nothing is sent to a server. Logos are loaded from Google's favicon service using only the domain you enter.">Your data is stored locally in this browser (IndexedDB). Nothing is sent to a server. Logos are loaded from Google's favicon service using only the domain you enter.</p>
+        <p class="footnote" id="storage-note" data-native-text="Your data is stored locally on this device. Nothing is sent to a server. With Pro, logos are loaded from Google's favicon service using only the domain you enter.">Your data is stored locally in this browser (IndexedDB). Nothing is sent to a server. Logos are loaded from Google's favicon service using only the domain you enter.</p>
       </div>
 
       <div class="settings-group">
@@ -196,11 +196,22 @@
             <span class="field-label">Website domain <span class="optional">for logo</span></span>
             <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com">
           </label>
-          <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
-          <label class="field">
-            <span class="field-label">Emoji <span class="optional">optional</span></span>
-            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜">
-          </label>
+          <!-- A single emoji, typed with the phone's emoji keyboard or picked from the grid below.
+               Overrides the domain logo. Pro; in Basic the field is locked but keeps its value. -->
+          <div class="field">
+            <label class="field-label" for="f-emoji">Emoji <span class="optional">optional</span></label>
+            <div class="emoji-input">
+              <input class="input input-emoji" id="f-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="🍜">
+              <button type="button" class="icon-btn" id="emoji-toggle" aria-expanded="false" aria-controls="emoji-grid" aria-label="Choose an emoji">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="emoji-grid" id="emoji-grid" role="group" aria-label="Emoji" hidden></div>
+        <div class="pro-note" id="logo-locked" hidden>
+          <p>Emoji icons and website logos come with Pro. Items keep any emoji and domain you've set.</p>
+          <button type="button" class="btn btn-primary" data-action="pro">Unlock Pro</button>
         </div>
         <label class="field" data-expense-only>
           <span class="field-label">Plan <span class="optional">optional</span></span>
