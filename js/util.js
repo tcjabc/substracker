@@ -2,8 +2,6 @@ export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
 ];
 
-export const CYCLES = { monthly: 'monthly', annual: 'annual', once: 'once' };
-
 export function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);

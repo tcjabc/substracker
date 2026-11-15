@@ -92,7 +92,6 @@
   --icon: 22px;
   --logo-sm: 32px;
   --logo-md: 44px;
-  --logo-lg: 56px;
   --fab: 64px;
   --fab-sm: 48px;
   --fab-gap: var(--space-3);
@@ -385,7 +384,6 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   line-height: 1;
 }
 .logo-sm { width: var(--logo-sm); height: var(--logo-sm); border-radius: var(--radius-sm); font-size: calc(var(--logo-sm) * 0.44); }
-.logo-lg { width: var(--logo-lg); height: var(--logo-lg); border-radius: var(--radius-lg); font-size: calc(var(--logo-lg) * 0.44); }
 .logo-img {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: contain; padding: 14%;
@@ -401,7 +399,6 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   font-weight: 400; font-size: calc(var(--logo-md) * 0.56);
 }
 .logo-sm.logo-emoji { font-size: calc(var(--logo-sm) * 0.56); }
-.logo-lg.logo-emoji { font-size: calc(var(--logo-lg) * 0.56); }
 
 /* ==========================================================================
    Money: summary strip, groups, grid + list

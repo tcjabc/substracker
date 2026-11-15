@@ -72,12 +72,6 @@ export async function bulkPutSubs(subs, { replace = false } = {}) {
   await done(tx);
 }
 
-export async function getSetting(key, fallback) {
-  const db = await open();
-  const row = await result(db.transaction(SETTINGS).objectStore(SETTINGS).get(key));
-  return row ? row.value : fallback;
-}
-
 export async function setSetting(key, value) {
   const db = await open();
   const tx = db.transaction(SETTINGS, 'readwrite');
