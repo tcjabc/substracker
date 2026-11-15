@@ -133,8 +133,12 @@
   --dur: 200ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-top: env(safe-area-inset-top, 0px);
+  /* System-bar insets. In the Android app, Capacitor's SystemBars plugin (insetsHandling "css")
+     injects the real values as --safe-area-inset-* on <html>, because env() can read 0 there
+     (for example Android 10 with three-button navigation). The web never sets those variables,
+     so max() leaves env() as the only source there. Everything fixed to an edge uses these. */
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
 }
 
 @media (prefers-color-scheme: dark) {
