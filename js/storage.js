@@ -7,36 +7,120 @@ import { cleanDomain } from './services.js';
 
 export const APP_ID = 'substracker';
 
+// Database versions: 1 had `subscriptions` + `settings`. 2 adds `items` + `meta`; the old
+// `subscriptions` store is copied into `items` once and kept untouched as a fallback for at
+// least one release. SCHEMA_VERSION is the data/export format, recorded in `meta`.
 let dbName = 'substracker';
-const DB_VERSION = 1;
-const ITEMS = 'subscriptions';
+const DB_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+const ITEMS = 'items';
 const SETTINGS = 'settings';
+const META = 'meta';
+const LEGACY = 'subscriptions';
 
 let dbPromise = null;
+let itemStore = ITEMS; // LEGACY only if the migration could not be verified
+let migration = null; // what happened on this load, for status()
+let onBlocked = () => {};
 
 /** Point the module at another database (tests use a throwaway one). */
 export function useDatabase(name) {
   const old = dbPromise;
   dbPromise = null;
   dbName = name;
+  itemStore = ITEMS;
+  migration = null;
   old?.then((db) => db.close()).catch(() => {});
 }
 
-function open() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+/** Called when another open tab of an older version holds the database and delays the upgrade. */
+export function setBlockedHandler(fn) { onBlocked = fn; }
+
+function openRaw() {
+  return new Promise((resolve, reject) => {
     const req = indexedDB.open(dbName, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(ITEMS)) db.createObjectStore(ITEMS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: 'key' });
+      if (!db.objectStoreNames.contains(ITEMS)) db.createObjectStore(ITEMS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: 'key' });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // Let a newer version of the app upgrade the database instead of being blocked by this tab.
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('Database upgrade blocked by another open tab.'));
+    // The upgrade waits for the other tab to close; it isn't an error.
+    req.onblocked = () => onBlocked();
   });
+}
+
+/** The open database, with the one-time migration done. Every public function goes through this. */
+function open() {
+  if (dbPromise) return dbPromise;
+  dbPromise = openRaw().then(async (db) => { await migrate(db); return db; });
   dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
+}
+
+/**
+ * Copy the old `subscriptions` store into `items` the first time (only when `items` is empty),
+ * then check every old record arrived. Until that check passes the old store stays in charge.
+ * The old store is never modified or deleted here. Logs counts only.
+ */
+async function migrate(db) {
+  const meta = await readMeta(db);
+  if (meta.schemaVersion !== SCHEMA_VERSION && !db.objectStoreNames.contains(LEGACY)) {
+    await writeMeta(db, { schemaVersion: SCHEMA_VERSION });
+  }
+  if (!db.objectStoreNames.contains(LEGACY) || meta.migration?.verified) {
+    migration = meta.migration ?? null;
+    return;
+  }
+
+  let tx = db.transaction([LEGACY, ITEMS], 'readwrite');
+  const [legacy, itemCount] = await Promise.all([
+    result(tx.objectStore(LEGACY).getAll()), result(tx.objectStore(ITEMS).count()),
+  ]);
+  const copied = itemCount === 0 ? legacy.length : 0;
+  if (copied) for (const row of legacy) tx.objectStore(ITEMS).put(row);
+  await done(tx);
+
+  // Verify with a fresh read: same count, and every old id present.
+  tx = db.transaction([LEGACY, ITEMS]);
+  const [oldKeys, newKeys] = await Promise.all([
+    result(tx.objectStore(LEGACY).getAllKeys()), result(tx.objectStore(ITEMS).getAllKeys()),
+  ]);
+  const have = new Set(newKeys);
+  const verified = oldKeys.length === newKeys.length && oldKeys.every((k) => have.has(k));
+  if (verified) {
+    migration = { from: LEGACY, items: oldKeys.length, copied, verified: true, at: new Date().toISOString() };
+    await writeMeta(db, { schemaVersion: SCHEMA_VERSION, migration });
+  } else {
+    itemStore = LEGACY;
+    migration = { from: LEGACY, verified: false };
+    console.warn(`Storage: migration check failed (${oldKeys.length} old, ${newKeys.length} new). Using the old store.`);
+  }
+}
+
+async function readMeta(db) {
+  const rows = await result(db.transaction(META).objectStore(META).getAll());
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+async function writeMeta(db, obj) {
+  const tx = db.transaction(META, 'readwrite');
+  for (const [key, value] of Object.entries(obj)) tx.objectStore(META).put({ key, value });
+  await done(tx);
+}
+
+/** Where the data stands: schema version, the migration record, and whether the old store is in use. */
+export async function status() {
+  const db = await open();
+  const meta = await readMeta(db);
+  return { schemaVersion: meta.schemaVersion ?? null, migration, usingLegacy: itemStore === LEGACY };
 }
 
 function done(tx) {
@@ -59,21 +143,21 @@ function result(req) {
    -------------------------------------------------------------------------- */
 export async function getAll() {
   const db = await open();
-  return result(db.transaction(ITEMS).objectStore(ITEMS).getAll());
+  return result(db.transaction(itemStore).objectStore(itemStore).getAll());
 }
 
 export async function save(item) {
   const db = await open();
-  const tx = db.transaction(ITEMS, 'readwrite');
-  tx.objectStore(ITEMS).put(item);
+  const tx = db.transaction(itemStore, 'readwrite');
+  tx.objectStore(itemStore).put(item);
   await done(tx);
   return item;
 }
 
 export async function remove(id) {
   const db = await open();
-  const tx = db.transaction(ITEMS, 'readwrite');
-  tx.objectStore(ITEMS).delete(id);
+  const tx = db.transaction(itemStore, 'readwrite');
+  tx.objectStore(itemStore).delete(id);
   await done(tx);
 }
 
@@ -229,8 +313,8 @@ export async function importAll(json, mode, { dryRun = false } = {}) {
 
   // One transaction: either everything lands or nothing changes.
   const db = await open();
-  const tx = db.transaction([ITEMS, SETTINGS], 'readwrite');
-  const store = tx.objectStore(ITEMS);
+  const tx = db.transaction([itemStore, SETTINGS], 'readwrite');
+  const store = tx.objectStore(itemStore);
   if (mode === 'replace') store.clear();
   for (const s of items) store.put(s);
   const sstore = tx.objectStore(SETTINGS);

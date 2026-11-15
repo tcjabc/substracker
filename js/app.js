@@ -124,8 +124,16 @@ async function init() {
     renderSubs();
   });
 
+  storage.setBlockedHandler(() => toast('Close other SubsTracker tabs or windows to finish updating.', {
+    label: 'Dismiss', sticky: true, run: () => {},
+  }));
   try {
     const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
+    if ((await storage.status()).usingLegacy) {
+      toast('Storage update could not be verified, so the previous copy of your data is in use.', {
+        label: 'Dismiss', sticky: true, run: () => {},
+      });
+    }
     state.subs = subs;
     // Before 1.2.1 the default was always TWD and only stored once changed. Existing data keeps TWD so the
     // summary strip doesn't switch currency; a fresh install takes the device's locale. Stored either way.
