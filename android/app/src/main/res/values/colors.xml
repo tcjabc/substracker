@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mirrors the light-theme tokens in css/app.css (--bg, --accent, --accent-hover). Keep them in step. -->
+<!-- Mirrors the light-theme bg, accent and accent-hover tokens in css/app.css. Keep them in step. -->
 <resources>
     <color name="app_background">#f6f6f9</color>
     <color name="colorPrimary">#4f46e5</color>

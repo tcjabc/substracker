@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mirrors the dark-theme tokens in css/app.css (--bg, --accent, --accent-hover). Keep them in step. -->
+<!-- Mirrors the dark-theme bg, accent and accent-hover tokens in css/app.css. Keep them in step. -->
 <resources>
     <color name="app_background">#111216</color>
     <color name="colorPrimary">#8b85ff</color>
