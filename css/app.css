@@ -13,11 +13,9 @@
   --text: #16171d;
   --text-muted: #646778;
   --text-faint: #8d90a0;
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #ebeafd;
-  --accent-contrast: #ffffff;
+  /* --accent, --accent-hover, --accent-soft, --accent-contrast: see "Accent palettes" below. */
   --danger: #d92d3a;
+  --danger-contrast: #ffffff;
   --danger-soft: #fde8ea;
   --warn: #b45309;
   --warn-soft: #fef3e2;
@@ -99,6 +97,8 @@
   --dot: 12px;          /* group colour dot */
   --dot-hit: 24px;      /* its tap target */
   --swatch-size: 32px;  /* swatches in the colour popover */
+  --palette-tile: 4.5rem; /* min width of a palette option in Settings */
+  --icon-xs: 12px;
   --donut-size: 13.5rem;
   --donut-stroke: 28px; /* SVG user units: ring thickness in the 200 × 200 viewBox */
   --donut-stroke-active: 34px;
@@ -152,11 +152,8 @@
     --text: #ececf1;
     --text-muted: #a2a5b4;
     --text-faint: #767987;
-    --accent: #8b85ff;
-    --accent-hover: #a29dff;
-    --accent-soft: #2a2850;
-    --accent-contrast: #12121a;
     --danger: #ff6b74;
+    --danger-contrast: #12121a;
     --danger-soft: #3b1d21;
     --warn: #f5b454;
     --warn-soft: #3a2a12;
@@ -192,11 +189,8 @@
   --text: #ececf1;
   --text-muted: #a2a5b4;
   --text-faint: #767987;
-  --accent: #8b85ff;
-  --accent-hover: #a29dff;
-  --accent-soft: #2a2850;
-  --accent-contrast: #12121a;
   --danger: #ff6b74;
+  --danger-contrast: #12121a;
   --danger-soft: #3b1d21;
   --warn: #f5b454;
   --warn-soft: #3a2a12;
@@ -220,6 +214,65 @@
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow-md: 0 4px 16px rgb(0 0 0 / 0.35);
   --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.55);
+}
+
+/* --------------------------------------------------------------------------
+   Accent palettes. Each palette sets its light (--pal-*) and dark (--pal-*-dark)
+   accent values once; the three mapping rules below turn them into --accent,
+   --accent-hover, --accent-soft and --accent-contrast for the current theme.
+   A palette applies to <html data-palette="…"> and to any element carrying the
+   attribute, which is how the Settings swatches preview themselves.
+   Indigo is the default (Basic); the rest are Pro (see js/palettes.js).
+   Checked for contrast in light and dark: accent-contrast on accent and on
+   accent-hover, accent on bg, surface and accent-soft (all at least 4.5:1).
+   -------------------------------------------------------------------------- */
+:root, [data-palette="indigo"] {
+  --pal-accent: #4f46e5; --pal-accent-hover: #4338ca; --pal-accent-soft: #ebeafd; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #8b85ff; --pal-accent-hover-dark: #a29dff; --pal-accent-soft-dark: #2a2850; --pal-accent-contrast-dark: #12121a;
+}
+[data-palette="ocean"] {
+  --pal-accent: #0a5fb8; --pal-accent-hover: #084e98; --pal-accent-soft: #e2eefb; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #5aa9f5; --pal-accent-hover-dark: #82bff8; --pal-accent-soft-dark: #15304c; --pal-accent-contrast-dark: #0b1220;
+}
+[data-palette="teal"] {
+  --pal-accent: #0b7268; --pal-accent-hover: #095c54; --pal-accent-soft: #dcf2ef; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #3cc2b2; --pal-accent-hover-dark: #6cd4c7; --pal-accent-soft-dark: #12382f; --pal-accent-contrast-dark: #07130f;
+}
+[data-palette="sunset"] {
+  --pal-accent: #b93e0b; --pal-accent-hover: #9a3309; --pal-accent-soft: #fdeadf; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #fb8b5c; --pal-accent-hover-dark: #fca57f; --pal-accent-soft-dark: #42231a; --pal-accent-contrast-dark: #1a0e08;
+}
+[data-palette="berry"] {
+  --pal-accent: #b8175a; --pal-accent-hover: #98134a; --pal-accent-soft: #fce7f0; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #f472a8; --pal-accent-hover-dark: #f799c0; --pal-accent-soft-dark: #45192e; --pal-accent-contrast-dark: #1a0a12;
+}
+[data-palette="plum"] {
+  --pal-accent: #7a22c8; --pal-accent-hover: #661ca8; --pal-accent-soft: #f2e8fc; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #c084fc; --pal-accent-hover-dark: #d0a4fd; --pal-accent-soft-dark: #35214d; --pal-accent-contrast-dark: #150b20;
+}
+[data-palette="graphite"] {
+  --pal-accent: #3f4a5c; --pal-accent-hover: #2f3846; --pal-accent-soft: #e8eaee; --pal-accent-contrast: #ffffff;
+  --pal-accent-dark: #b4bcc9; --pal-accent-hover-dark: #cbd1db; --pal-accent-soft-dark: #2b2f37; --pal-accent-contrast-dark: #14161a;
+}
+:root, [data-palette] {
+  --accent: var(--pal-accent);
+  --accent-hover: var(--pal-accent-hover);
+  --accent-soft: var(--pal-accent-soft);
+  --accent-contrast: var(--pal-accent-contrast);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]), :root:not([data-theme="light"]) [data-palette] {
+    --accent: var(--pal-accent-dark);
+    --accent-hover: var(--pal-accent-hover-dark);
+    --accent-soft: var(--pal-accent-soft-dark);
+    --accent-contrast: var(--pal-accent-contrast-dark);
+  }
+}
+:root[data-theme="dark"], :root[data-theme="dark"] [data-palette] {
+  --accent: var(--pal-accent-dark);
+  --accent-hover: var(--pal-accent-hover-dark);
+  --accent-soft: var(--pal-accent-soft-dark);
+  --accent-contrast: var(--pal-accent-contrast-dark);
 }
 
 @media (min-width: 640px) {
@@ -301,7 +354,7 @@ button { cursor: pointer; }
 .btn:hover { background: var(--surface-hover); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-.btn-danger { background: var(--danger); border-color: var(--danger); color: var(--accent-contrast); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: var(--danger-contrast); }
 .btn-danger:hover { filter: brightness(1.05); background: var(--danger); }
 .btn-danger-text { border-color: transparent; background: transparent; color: var(--danger); padding-inline: var(--space-2); }
 .btn-danger-text:hover { background: var(--danger-soft); }
@@ -641,6 +694,31 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .setting-label { font-weight: var(--weight-medium); display: grid; gap: var(--hairline-gap); }
 .setting-hint { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
 .footnote { font-size: var(--text-xs); color: var(--text-faint); margin: var(--space-2) var(--space-1) 0; }
+
+/* Palette picker. Each option carries data-palette, so its dot shows that palette's accent
+   in the current theme (see "Accent palettes"). */
+.setting-row-stack { flex-direction: column; align-items: stretch; gap: var(--space-3); padding-block: var(--space-3); }
+.palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--palette-tile), 1fr)); gap: var(--space-1); }
+.palette-option {
+  display: grid; justify-items: center; gap: var(--space-1);
+  min-height: var(--tap); padding: var(--space-2) var(--space-1);
+  border: 0; border-radius: var(--radius-md); background: transparent;
+  color: var(--text-muted); font-size: var(--text-xs); font-weight: var(--weight-medium);
+}
+.palette-option:hover { background: var(--surface-hover); }
+.palette-option[aria-checked="true"] { background: var(--surface-2); color: var(--text); }
+.palette-dot {
+  width: var(--swatch-size); height: var(--swatch-size); border-radius: var(--radius-full);
+  background: var(--accent); box-shadow: inset 0 0 0 var(--border-width) var(--border);
+}
+.palette-option[aria-checked="true"] .palette-dot { box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent); }
+.palette-name { display: inline-flex; align-items: center; gap: var(--hairline-gap); }
+.icon-xs { width: var(--icon-xs); height: var(--icon-xs); stroke-width: 2.4; }
+.palette-preview {
+  display: grid; gap: var(--space-3); padding: var(--space-3);
+  border-radius: var(--radius-md); background: var(--accent-soft); font-size: var(--text-sm);
+}
+.palette-preview-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
 
 /* ==========================================================================
    Tab bar & FAB

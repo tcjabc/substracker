@@ -1,7 +1,8 @@
 import * as storage from './storage.js';
 import { deliverFile } from './files.js';
 import { isNative, setStatusBarStyle } from './platform.js';
-import { initEntitlements } from './entitlements.js';
+import { initEntitlements, isPro, onChange as onProChange } from './entitlements.js';
+import { PALETTES, DEFAULT_PALETTE, findPalette, applyPalette } from './palettes.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
@@ -163,6 +164,9 @@ async function init() {
   }
   fillStaticLists();
   applyTheme(storage.getPref('theme') || 'system');
+  applyPalette(effectivePalette());
+  renderPalettes();
+  onProChange(proChanged);
   setTab(state.tab, { focus: false });
   render();
   registerSW();
@@ -200,6 +204,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
   $('#fab-stack').hidden = tab === 'settings';
+  if (tab !== 'settings') endPalettePreview();
   $('#page-title').textContent = TAB_TITLES[tab];
   document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} Â· Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
@@ -1010,6 +1015,22 @@ function bindSettings() {
     applyTheme(e.target.value);
   });
 
+  const grid = $('#palette-grid');
+  grid.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-palette]');
+    if (b) choosePalette(b.dataset.palette);
+  });
+  // Radio group: arrow keys move the choice.
+  grid.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const i = PALETTES.findIndex((p) => p.id === effectivePalette());
+    choosePalette(PALETTES[(i + step + PALETTES.length) % PALETTES.length].id, { focus: true });
+  });
+  $('#palette-revert').addEventListener('click', endPalettePreview);
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-action="pro"]')) openPro(); });
+
   $('#btn-export').addEventListener('click', exportData);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', async (e) => {
@@ -1033,6 +1054,92 @@ function bindSettings() {
     $('#btn-install').hidden = true;
   });
 }
+
+/* Palettes ------------------------------------------------------------------ */
+// Basic: the id of a Pro palette being previewed. Shown on the page, never saved; it ends when
+// you leave Settings or choose Keep Indigo.
+let palettePreview = null;
+
+function savedPalette() {
+  const id = storage.getPref('palette');
+  return findPalette(id) ? id : DEFAULT_PALETTE;
+}
+
+/** The palette on screen: a preview, else the saved one if this copy may use it, else the default. */
+function effectivePalette() {
+  if (palettePreview) return palettePreview;
+  const id = savedPalette();
+  return isPro() || !findPalette(id).pro ? id : DEFAULT_PALETTE;
+}
+
+const LOCK_ICON = '<svg class="icon icon-xs" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+/** Build the picker (on load and when Pro changes); choosing a palette only updates it in place. */
+function renderPalettes() {
+  const pro = isPro();
+  $('#palette-grid').innerHTML = PALETTES.map((p) => {
+    const locked = p.pro && !pro;
+    return `<button type="button" class="palette-option" role="radio" data-palette="${p.id}"
+      aria-label="${esc(p.name)}${locked ? ', Pro' : ''}">
+      <span class="palette-dot" aria-hidden="true"></span>
+      <span class="palette-name" aria-hidden="true">${locked ? LOCK_ICON : ''}${esc(p.name)}</span>
+    </button>`;
+  }).join('');
+  $('#palette-hint').textContent = pro
+    ? 'Accent colour for buttons and highlights.'
+    : 'Indigo is included. The other palettes come with Pro.';
+  syncPalettes();
+}
+
+/** Mark the palette on screen as chosen and show or hide the Basic preview note. */
+function syncPalettes() {
+  const current = effectivePalette();
+  $$('#palette-grid .palette-option').forEach((b) => {
+    const on = b.dataset.palette === current;
+    b.setAttribute('aria-checked', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  const preview = palettePreview && findPalette(palettePreview);
+  $('#palette-preview').hidden = !preview;
+  if (preview) {
+    $('#palette-preview-text').textContent =
+      `Previewing ${preview.name}. Unlock Pro to keep it; otherwise Indigo comes back when you leave Settings.`;
+  }
+}
+
+function choosePalette(id, { focus = false } = {}) {
+  const p = findPalette(id);
+  if (!p) return;
+  if (p.pro && !isPro()) palettePreview = id;
+  else {
+    palettePreview = null;
+    storage.setPref('palette', id);
+  }
+  applyPalette(effectivePalette());
+  syncPalettes();
+  if (focus) $(`.palette-option[data-palette="${id}"]`)?.focus();
+}
+
+function endPalettePreview() {
+  if (!palettePreview) return;
+  palettePreview = null;
+  applyPalette(effectivePalette());
+  syncPalettes();
+}
+
+/** Pro turned on or off: a previewed palette is kept once Pro is on, and everything re-renders. */
+function proChanged(pro) {
+  if (pro && palettePreview) {
+    storage.setPref('palette', palettePreview);
+    palettePreview = null;
+  }
+  applyPalette(effectivePalette());
+  renderPalettes();
+  render();
+}
+
+// TODO: replaced by the Peek Budget Pro screen.
+function openPro() { toast('Peek Budget Pro is not available yet.'); }
 
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 // In "system" mode, follow the device when it switches between light and dark.

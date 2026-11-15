@@ -19,10 +19,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <script>
-    // Apply the saved theme before first paint to avoid a flash.
+    // Apply the saved theme and palette before first paint to avoid a flash. app.js checks the
+    // palette against Pro once it has loaded.
     try {
       const t = localStorage.getItem('substracker.theme');
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      const p = localStorage.getItem('substracker.palette');
+      if (p && /^[a-z]+$/.test(p) && p !== 'indigo') document.documentElement.dataset.palette = p;
     } catch (e) {}
   </script>
   <link rel="stylesheet" href="css/app.css">
@@ -88,6 +91,21 @@
               <option value="dark">Dark</option>
             </select>
           </label>
+          <div class="setting-row setting-row-stack">
+            <span class="setting-label" id="palette-label">
+              Colour palette
+              <span class="setting-hint" id="palette-hint"></span>
+            </span>
+            <div class="palette-grid" id="palette-grid" role="radiogroup" aria-labelledby="palette-label"></div>
+            <!-- Basic only: a Pro palette is shown as a live preview and never saved. -->
+            <div class="palette-preview" id="palette-preview" role="status" hidden>
+              <p id="palette-preview-text"></p>
+              <div class="palette-preview-actions">
+                <button type="button" class="btn" id="palette-revert">Keep Indigo</button>
+                <button type="button" class="btn btn-primary" data-action="pro">Unlock Pro</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
