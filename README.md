@@ -86,12 +86,20 @@ sw.js                 Service worker: precaches the shell, caches logos
 css/app.css           All styles; design tokens live at the top in :root
 js/app.js             UI, rendering, summary strip, form, insights, import/export screens
 js/storage.js         The only persistence layer: IndexedDB, migration, export/import checks, preferences
-js/files.js           Hands a file to the person (browser download today)
+js/files.js           Hands a file to the person: share sheet in the native app, download on the web
+js/platform.js        isNative() and plugin(): the only place that touches Capacitor
 js/services.js        Known services → domain + category
 js/logos.js           Favicon logos with initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
 tests/storage.html    In-browser tests for js/storage.js
+
+Native app only (the web version ignores these):
+package.json          Capacitor 8 and plugins; npm scripts
+capacitor.config.json App name, bundle ID, webDir (www)
+scripts/copy-web.mjs  Copies the shipped web files into www/
+assets/               Icon and splash sources
+android/              Android project
 ```
 
 ## Run locally
@@ -111,6 +119,30 @@ Then open <http://localhost:8080>.
 ### Tests
 
 With the server running, open <http://localhost:8080/tests/storage.html>. It runs the storage tests (migration, export/import round trip, merge rules and bad-file rejection) against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+
+## Native builds
+
+The same web files also ship as an Android app, **Peek Budget** (`com.tcjabc.peekbudget`), wrapped with [Capacitor](https://capacitorjs.com) 8. The web version doesn't need any of this: GitHub Pages still serves the files as they are.
+
+You need Node.js 22 or later, the Android SDK with Platform 36 and Build-Tools 36, and **JDK 21**. The Gradle version Capacitor 8 uses (8.14.3) doesn't run on Java 25, which is what current Android Studio bundles, so point `JAVA_HOME` at a JDK 21 for the build. One way: in Android Studio, **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK → Download JDK…**, version 21.
+
+```sh
+npm install
+npm run sync:web      # copy index.html, manifest.json, sw.js, js/, css/, icons/ into www/, then cap sync
+cd android
+./gradlew assembleDebug   # on Windows: .\gradlew.bat assembleDebug
+```
+
+The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Run `npm run sync:web` again after any change to the web files. `npm run assets` regenerates the icon and splash from `assets/`.
+
+How the native app differs from the PWA:
+
+- **Backups:** Export opens the share sheet (save to Files or Drive, or send it) instead of downloading.
+- **No service worker:** the files are inside the app, so it works offline anyway, and updates come with app updates.
+- **Separate data:** the app keeps its own storage, separate from the PWA. To move your items, export a backup in one and import it in the other.
+- **Status bar:** the app draws behind the status bar, and its icons follow the app's light or dark appearance.
+
+Release signing isn't set up. Keystores, `keystore.properties` and `local.properties` are ignored by git and must never be committed.
 
 ## Deploy to GitHub Pages
 
