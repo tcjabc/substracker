@@ -15,7 +15,7 @@ A private, offline-first household income and expense tracker (it started as a s
 - **Logos:** an emoji typed into the item's **Emoji** field wins everywhere the logo appears (one emoji only, from the phone's emoji keyboard; clear it to go back). Otherwise logos are loaded from `https://www.google.com/s2/favicons?domain={domain}&sz=128`. When there's no domain, the request fails, or Google only has a generic icon, a coloured initial-letter avatar is shown instead. Logos you've already seen are cached for offline use.
 - **Domain auto-suggest:** typing a known service fills in the domain and category. Known services: Netflix, Spotify, YouTube Premium, Disney+, iCloud, Google One, ChatGPT, Claude, Adobe, Microsoft 365, Nintendo, PlayStation, Xbox, Notion and Canva. Edit `js/services.js` to add more.
 - **Renewal dates:** optional. Dates in the past roll forward by the billing cycle automatically, and renewals within 7 days are highlighted.
-- **Settings:** default currency (picked from the device's language and region on first run, e.g. `zh-TW` → TWD or `en-GB` → GBP, falling back to TWD; installs that already had items before 1.2.1 keep TWD), light/dark/system appearance, JSON export, and JSON import with **Merge** (adds new entries and updates ones with matching IDs) or **Replace all**.
+- **Settings:** default currency (picked from the device's language and region on first run, e.g. `zh-TW` → TWD or `en-GB` → GBP, falling back to TWD; installs that already had items before 1.2.1 keep TWD), light/dark/system appearance, JSON export, and JSON import. Import checks the whole file first and shows what it will do (for example "12 items, 3 new") before you choose **Merge** (adds new items; for an item already here, whichever copy was edited more recently wins) or **Replace all**. A file with a problem is rejected with a message naming it, and nothing changes.
 
 ## Data model
 
@@ -47,7 +47,35 @@ Each item (expense or income) is stored as:
 - `emoji` is a single emoji (one grapheme, so flags and skin tones count) or empty. Records without it use the favicon or initial.
 - `nextRenewal`, `date`, `category`, `plan`, `domain`, `emoji` and `notes` can be empty strings.
 
-The export file (version 2) has this shape: `{ "format": "substracker", "version": 2, "exportedAt": "…", "settings": { "defaultCurrency": "TWD", "groupColors": { "Entertainment": "g1" } }, "items": [ … ] }`. `groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`); files without it import fine and get colours assigned automatically. Import accepts version 2 files, version 1 files (which list records under `subscriptions`), and a bare array of records. It refuses files from a newer version.
+## Storage and backups
+
+All persistence goes through `js/storage.js`; no other file touches IndexedDB or localStorage. The IndexedDB database `substracker` (version 2) has three stores:
+
+- `items`: every expense and income record, keyed by `id`.
+- `settings`: `defaultCurrency` and `groupColors`, one row per key.
+- `meta`: `schemaVersion` (currently 3) and a record of the one-time migration.
+
+Versions up to 1.2 kept items in a store called `subscriptions`. On the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present) before it's marked done. If the check fails, the app keeps using the old store and says so. The old store is left untouched as a fallback and will be removed in a later release. A few per-device view preferences (theme, tab, grid/list, period, donut/list) stay in localStorage.
+
+The app asks the browser for persistent storage (`navigator.storage.persist()`), so the data isn't cleared under storage pressure where the browser supports that.
+
+Export files have this shape:
+
+```json
+{
+  "app": "substracker",
+  "schemaVersion": 3,
+  "exportedAt": "ISO timestamp",
+  "items": [ … ],
+  "settings": { "defaultCurrency": "TWD", "groupColors": { "Entertainment": "g1" } }
+}
+```
+
+`groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`); files without it import fine and get colours assigned automatically.
+
+Import also reads backups from 1.0–1.2 (`{ "format": "substracker", "version": 1 | 2, … }`, with records under `subscriptions` in version 1). It checks each item's required fields and their types: `id` (text), `name` (non-empty text), `price` (a number of 0 or more), `currency` (a 3-letter code), `cycle` (`monthly`, `annual` or `once`), `type` if present (`expense` or `income`), and `date` for one-offs. Unknown fields are ignored, so files from newer versions still import. Merge matches items by `id` and keeps whichever has the newer `updatedAt`; Replace deletes everything first and takes the file's settings. Both write in one transaction.
+
+Saving the export file goes through `deliverFile()` in `js/files.js`, which is the place to swap the browser download for a native share sheet.
 
 ## Project structure
 
@@ -56,12 +84,14 @@ index.html            App shell and markup
 manifest.json         PWA manifest (relative paths)
 sw.js                 Service worker: precaches the shell, caches logos
 css/app.css           All styles; design tokens live at the top in :root
-js/app.js             UI, rendering, summary strip, form, insights, import/export
-js/db.js              IndexedDB wrapper
+js/app.js             UI, rendering, summary strip, form, insights, import/export screens
+js/storage.js         The only persistence layer: IndexedDB, migration, export/import checks, preferences
+js/files.js           Hands a file to the person (browser download today)
 js/services.js        Known services → domain + category
 js/logos.js           Favicon logos with initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
+tests/storage.html    In-browser tests for js/storage.js
 ```
 
 ## Run locally
@@ -77,6 +107,10 @@ npx serve .
 ```
 
 Then open <http://localhost:8080>.
+
+### Tests
+
+With the server running, open <http://localhost:8080/tests/storage.html>. It runs the storage tests (migration, export/import round trip, merge rules and bad-file rejection) against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
 ## Deploy to GitHub Pages
 
