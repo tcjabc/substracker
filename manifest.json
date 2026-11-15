@@ -1,7 +1,7 @@
 {
   "name": "SubsTracker",
   "short_name": "Subs",
-  "description": "Private, offline subscription tracker. Your data stays on your device.",
+  "description": "Private, offline household income and expense tracker. Your data never leaves this device.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
