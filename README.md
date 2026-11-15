@@ -12,10 +12,27 @@ A private, offline-first household income and expense tracker (it started as a s
 - **Group colours:** each expense group gets a colour from a muted set of ten, shown as a dot beside its heading on the Money page. Tap the dot to pick another colour. New groups take the next unused colour; existing groups were assigned in A–Z order the first time. Income has no colour.
 - **One-off items:** set the cycle to **Once** and pick a date instead of a renewal. They're tagged "One-off" and only count in the month and year of their date.
 - **Insights tab:** step through months with the arrows. A headline shows "Outgoings X of Y income (Z%)" for the selected month. Below it are that month's total, the calendar-year total, a breakdown by category, and a ranking. The breakdown has a **Donut | List** toggle (remembered on the device, Donut by default). The donut uses the group colours with the month's total in the centre, and the legend below lists each category's amount and share, largest first. Tap a slice or legend row to highlight it, and tap again to clear. Categories under 3% are pooled into a neutral "Other" when there are two or more of them. One-offs count in the month of their date, and income is never part of the category views. If you use several currencies, a chip switches between them. Totals are never converted between currencies.
-- **Logos:** an emoji typed into the item's **Emoji** field wins everywhere the logo appears (one emoji only, from the phone's emoji keyboard; clear it to go back). Otherwise logos are loaded from `https://www.google.com/s2/favicons?domain={domain}&sz=128`. When there's no domain, the request fails, or Google only has a generic icon, a coloured initial-letter avatar is shown instead. Logos you've already seen are cached for offline use.
+- **Logos (Pro):** an emoji in the item's **Emoji** field wins everywhere the logo appears (one emoji, picked from the built-in grid beside the field or typed with the phone's emoji keyboard; choose **None** to go back). Otherwise logos are loaded from `https://www.google.com/s2/favicons?domain={domain}&sz=128`. When there's no domain, the request fails, or Google only has a generic icon, a coloured initial-letter avatar is shown instead. Logos you've already seen are cached for offline use.
 - **Domain auto-suggest:** typing a known service fills in the domain and category. Known services: Netflix, Spotify, YouTube Premium, Disney+, iCloud, Google One, ChatGPT, Claude, Adobe, Microsoft 365, Nintendo, PlayStation, Xbox, Notion and Canva. Edit `js/services.js` to add more.
 - **Renewal dates:** optional. Dates in the past roll forward by the billing cycle automatically, and renewals within 7 days are highlighted.
-- **Settings:** default currency (picked from the device's language and region on first run, e.g. `zh-TW` → TWD or `en-GB` → GBP, falling back to TWD; installs that already had items before 1.2.1 keep TWD), light/dark/system appearance, JSON export, and JSON import. Import checks the whole file first and shows what it will do (for example "12 items, 3 new") before you choose **Merge** (adds new items; for an item already here, whichever copy was edited more recently wins) or **Replace all**. A file with a problem is rejected with a message naming it, and nothing changes.
+- **Colour palettes (Pro):** Settings → **Colour palette** changes the accent colour (buttons, highlights, the selected tab). Indigo is the default; Ocean, Teal, Sunset, Berry, Plum and Graphite are Pro. Each works in light and dark and meets 4.5:1 contrast. The choice is remembered on the device, like the theme.
+- **Settings:** default currency (picked from the device's language and region on first run, e.g. `zh-TW` → TWD or `en-GB` → GBP, falling back to TWD; installs that already had items before 1.2.1 keep TWD), light/dark/system appearance, colour palette, JSON export, and JSON import. Import checks the whole file first and shows what it will do (for example "12 items, 3 new") before you choose **Merge** (adds new items; for an item already here, whichever copy was edited more recently wins) or **Replace all**. A file with a problem is rejected with a message naming it, and nothing changes.
+
+## Basic and Pro
+
+Pro is cosmetic only. Everything functional is free, and data, totals, insights and export/import are never limited.
+
+| | Basic | Pro |
+|---|---|---|
+| Items, totals, insights, export/import | ✓ | ✓ |
+| Light, dark and system theme | ✓ | ✓ |
+| Item icons | Coloured initial | Emoji, then website logo, then initial |
+| Accent palette | Indigo | Indigo + six more |
+
+- **Web (the PWA):** always Pro, everything unlocked.
+- **Android app:** Basic. **Settings → Peek Budget Pro** lists what Pro adds. **Unlock Pro** and **Restore purchase** are placeholders: purchases aren't built yet (`TODO(purchase)` in `js/app.js` and `js/entitlements.js`).
+- **In Basic:** items keep any emoji and domain they already have; they're only hidden, and come back with Pro. Logo images aren't requested at all. A Pro palette can be tried as a live preview but isn't saved.
+- **The check:** `isPro()` in `js/entitlements.js` is the only place the app asks, so a store purchase can be added there later. Debug builds (`assembleDebug`) show a **Debug: unlock Pro** switch on the Pro screen; it sets a `debugPro` setting that release builds ignore and that backups never include (import ignores it too).
 
 ## Data model
 
@@ -52,10 +69,10 @@ Each item (expense or income) is stored as:
 All persistence goes through `js/storage.js`; no other file touches IndexedDB or localStorage. The IndexedDB database `substracker` (version 2) has three stores:
 
 - `items`: every expense and income record, keyed by `id`.
-- `settings`: `defaultCurrency` and `groupColors`, one row per key.
+- `settings`: `defaultCurrency` and `groupColors`, one row per key. Debug builds may also hold `debugPro`, which stays on the device and is never exported.
 - `meta`: `schemaVersion` (currently 3) and a record of the one-time migration.
 
-Versions up to 1.2 kept items in a store called `subscriptions`. On the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present) before it's marked done. If the check fails, the app keeps using the old store and says so. The old store is left untouched as a fallback and will be removed in a later release. A few per-device view preferences (theme, tab, grid/list, period, donut/list) stay in localStorage.
+Versions up to 1.2 kept items in a store called `subscriptions`. On the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present) before it's marked done. If the check fails, the app keeps using the old store and says so. The old store is left untouched as a fallback and will be removed in a later release. A few per-device view preferences (theme, palette, tab, grid/list, period, donut/list) stay in localStorage.
 
 The app asks the browser for persistent storage (`navigator.storage.persist()`), so the data isn't cleared under storage pressure where the browser supports that.
 
@@ -88,8 +105,10 @@ js/app.js             UI, rendering, summary strip, form, insights, import/expor
 js/storage.js         The only persistence layer: IndexedDB, migration, export/import checks, preferences
 js/files.js           Hands a file to the person: share sheet in the native app, download on the web
 js/platform.js        isNative() and plugin(): the only place that touches Capacitor
+js/entitlements.js    isPro(): the single Basic/Pro check (debug flag now, store purchase later)
+js/palettes.js        The accent palette list; the colours live in css/app.css
 js/services.js        Known services → domain + category
-js/logos.js           Favicon logos with initial-letter fallback
+js/logos.js           Emoji, favicon logos (Pro) and initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
 tests/storage.html    In-browser tests for js/storage.js
@@ -118,7 +137,7 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-With the server running, open <http://localhost:8080/tests/storage.html>. It runs the storage tests (migration, export/import round trip, merge rules and bad-file rejection) against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+With the server running, open <http://localhost:8080/tests/storage.html>. It runs the storage tests (migration, export/import round trip, merge rules, bad-file rejection, and keeping the Pro debug flag out of backups) against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
 ## Native builds
 
@@ -141,6 +160,7 @@ How the native app differs from the PWA:
 - **No service worker:** the files are inside the app, so it works offline anyway, and updates come with app updates.
 - **Separate data:** the app keeps its own storage, separate from the PWA. To move your items, export a backup in one and import it in the other.
 - **Status bar:** the app draws behind the status bar, and its icons follow the app's light or dark appearance.
+- **Basic and Pro:** the app starts in Basic; see [Basic and Pro](#basic-and-pro).
 
 Release signing isn't set up. Keystores, `keystore.properties` and `local.properties` are ignored by git and must never be committed.
 
@@ -183,7 +203,7 @@ Your data exists only in the browser on that device. Clearing site data, or unin
 
 ## Privacy note
 
-The only network requests the app makes are for its own files and for favicon images from Google. A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
+The only network requests the app makes are for its own files and for favicon images from Google (Pro only; Basic never requests them). A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
 
 ## License
 
