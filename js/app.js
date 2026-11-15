@@ -2,13 +2,16 @@ import * as db from './db.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import {
-  CURRENCIES, uid, esc, money, monthlyCost, annualCost, cycleLabel,
-  nextRenewal, daysUntil, renewalText, todayStamp,
+  CURRENCIES, uid, esc, money, cycleLabel, isIncome, isOnce,
+  amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
 } from './util.js';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.1.0';
 const EXPORT_FORMAT = 'substracker';
-const LS = { theme: 'substracker.theme', view: 'substracker.view', tab: 'substracker.tab' };
+const EXPORT_VERSION = 2; // v2 adds `type` (income/expense), the "once" cycle and `date`. Import reads v1 and v2.
+const LS = {
+  theme: 'substracker.theme', view: 'substracker.view', tab: 'substracker.tab', period: 'substracker.period',
+};
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -18,9 +21,14 @@ const state = {
   settings: { defaultCurrency: 'TWD' },
   view: lsGet(LS.view) === 'list' ? 'list' : 'grid',
   tab: ['subs', 'insights', 'settings'].includes(lsGet(LS.tab)) ? lsGet(LS.tab) : 'subs',
+  period: lsGet(LS.period) === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
+  insightsMonth: startOfMonth(new Date()),
   editingId: null,
+  formType: 'expense', // what the open add/edit sheet is editing
 };
+
+function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
@@ -98,6 +106,14 @@ async function init() {
   bindEditTaps();
   bindDialogFormFallback();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
+  $$('[data-action="add-income"]').forEach((b) => b.addEventListener('click', () => openForm(null, 'income')));
+  $('#money-summary').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-period]');
+    if (!b) return;
+    state.period = b.dataset.period;
+    lsSet(LS.period, state.period);
+    renderSubs();
+  });
 
   try {
     const [subs, settings] = await Promise.all([db.getAllSubs(), db.getAllSettings()]);
@@ -119,7 +135,8 @@ async function init() {
 /* --------------------------------------------------------------------------
    Tabs
    -------------------------------------------------------------------------- */
-const TAB_TITLES = { subs: 'Subscriptions', insights: 'Insights', settings: 'Settings' };
+// The first tab keeps its internal id `subs` so a saved tab choice still restores.
+const TAB_TITLES = { subs: 'Money', insights: 'Insights', settings: 'Settings' };
 
 function bindTabs() {
   const tabs = $$('.tab');
@@ -145,7 +162,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
-  $('#fab').hidden = tab === 'settings';
+  $('#fab-dock').hidden = tab === 'settings';
   $('#page-title').textContent = TAB_TITLES[tab];
   document.title = tab === 'subs' ? 'SubsTracker' : `${TAB_TITLES[tab]} · SubsTracker`;
   if (focus) window.scrollTo({ top: 0 });
@@ -180,39 +197,102 @@ function renewalTag(sub) {
   return `<span class="tag${soon ? ' tag-soon' : ''}">${esc(renewalText(d))}</span>`;
 }
 
+const UNCATEGORISED = 'Uncategorised';
+const ONE_OFF_TAG = '<span class="tag tag-once">One-off</span>';
+
 function renderSubs() {
   const list = $('#subs-list');
-  const subs = [...state.subs].sort(byName);
+  const all = state.subs;
 
   $$('.seg-btn[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === state.view));
-  $('#subs-empty').hidden = subs.length > 0;
-  list.hidden = subs.length === 0;
-  $('#subs-summary').hidden = subs.length === 0;
-  $('#subs-summary').textContent = summaryLine(subs);
+  $('#subs-empty').hidden = all.length > 0;
+  list.hidden = all.length === 0;
+  $('#money-summary').hidden = all.length === 0;
+  renderMoneySummary();
 
-  list.className = state.view === 'list' ? 'subs-list' : 'subs-grid';
-  list.innerHTML = subs.map(state.view === 'list' ? rowHTML : cardHTML).join('');
+  // Income first (an implicit section, no categories), then expenses grouped by category.
+  const groups = [];
+  const income = all.filter(isIncome).sort(byName);
+  if (income.length) groups.push({ name: 'Income', items: income });
+  const cats = new Map();
+  for (const s of all) {
+    if (isIncome(s)) continue;
+    const k = s.category?.trim() || UNCATEGORISED;
+    if (!cats.has(k)) cats.set(k, []);
+    cats.get(k).push(s);
+  }
+  [...cats.keys()]
+    .sort((a, b) => (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .forEach((k) => groups.push({ name: k, items: cats.get(k).sort(byName) }));
+
+  const isList = state.view === 'list';
+  list.innerHTML = groups.map((g, i) => `
+    <section class="money-group" aria-labelledby="group-${i}">
+      <h2 class="section-title" id="group-${i}">${esc(g.name)} <span class="optional">${g.items.length}</span></h2>
+      <div class="${isList ? 'subs-list' : 'subs-grid'}">${g.items.map(isList ? rowHTML : cardHTML).join('')}</div>
+    </section>`).join('');
 }
 
-function summaryLine(subs) {
-  const n = subs.length;
+/** Totals for the Money summary strip, in the default currency only (amounts are never converted). */
+function periodTotals(items, period, now = new Date()) {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const amount = (s) => (period === 'annual' ? amountInYear(s, y) : amountInMonth(s, y, m));
+  let income = 0;
+  let out = 0;
+  for (const s of items) {
+    if (isIncome(s)) income += amount(s); else out += amount(s);
+  }
+  return { income, out, left: income - out };
+}
+
+function renderMoneySummary() {
   const cur = state.settings.defaultCurrency;
-  const inCur = subs.filter((s) => s.currency === cur);
-  const total = inCur.reduce((t, s) => t + monthlyCost(s), 0);
-  let line = `${n} subscription${n === 1 ? '' : 's'}`;
-  if (inCur.length) line += ` · ${money(total, cur)} / month`;
-  if (inCur.length < n && inCur.length) line += ` (${cur} only)`;
-  return line;
+  const inCur = state.subs.filter((s) => s.currency === cur);
+  const others = state.subs.length - inCur.length;
+  const t = periodTotals(inCur, state.period);
+  const now = new Date();
+  const when = state.period === 'annual'
+    ? String(now.getFullYear())
+    : now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const cell = (label, value, cls = '', sub = '') => `
+    <div class="summary-cell${cls}">
+      <div class="stat-label">${label}</div>
+      <div class="summary-value">${esc(money(value, cur))}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
+    </div>`;
+
+  $('#money-summary').innerHTML = `
+    <div class="summary-head">
+      <span class="summary-when">${esc(when)}</span>
+      <div class="segmented" role="group" aria-label="Summary period">
+        <button type="button" class="seg-btn seg-btn-text" data-period="monthly" aria-pressed="${state.period === 'monthly'}">Monthly</button>
+        <button type="button" class="seg-btn seg-btn-text" data-period="annual" aria-pressed="${state.period === 'annual'}">Annual</button>
+      </div>
+    </div>
+    <div class="summary-cells">
+      ${cell('Income', t.income, ' summary-income')}
+      ${cell('Outgoings', t.out)}
+      ${cell('Left over', t.left, t.left < 0 ? ' summary-short' : '', t.left < 0 ? 'More going out than coming in' : '')}
+    </div>
+    ${others ? `<p class="summary-note">${esc(cur)} only. ${plural(others, 'item')} in other currencies ${others === 1 ? "isn't" : "aren't"} included.</p>` : ''}`;
+}
+
+function onceDate(s) {
+  const d = isOnce(s) ? parseDate(s.date) : null;
+  return d ? shortDate(d) : '';
 }
 
 function cardHTML(s) {
-  const meta = [renewalTag(s), s.category ? `<span class="tag">${esc(s.category)}</span>` : ''].join('');
+  const meta = isOnce(s)
+    ? [ONE_OFF_TAG, onceDate(s) ? `<span class="tag">${esc(onceDate(s))}</span>` : ''].join('')
+    : renewalTag(s);
   return `
     <button type="button" class="sub-card" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
       ${logoHTML(s, 'md')}
       <span class="sub-text">
         <span class="sub-name">${esc(s.name)}</span>
-        ${s.plan ? `<span class="sub-plan">${esc(s.plan)}</span>` : ''}
+        ${s.plan && !isIncome(s) ? `<span class="sub-plan">${esc(s.plan)}</span>` : ''}
       </span>
       <span class="sub-price"><span class="amount">${esc(money(s.price, s.currency))}</span><span class="cycle">${cycleLabel(s.cycle)}</span></span>
       ${meta ? `<span class="sub-meta">${meta}</span>` : ''}
@@ -220,18 +300,19 @@ function cardHTML(s) {
 }
 
 function rowHTML(s) {
-  const sub = [s.plan, s.category].filter(Boolean).map(esc).join(' · ');
   const d = nextRenewal(s);
+  const parts = [isIncome(s) ? '' : s.plan, isOnce(s) ? onceDate(s) : d ? renewalText(d) : ''];
+  const sub = parts.filter(Boolean).map(esc).join(' · ');
   return `
     <button type="button" class="sub-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
       ${logoHTML(s, 'sm')}
       <span class="sub-text">
         <span class="sub-name">${esc(s.name)}</span>
-        ${sub || d ? `<span class="sub-plan">${sub}${sub && d ? ' · ' : ''}${d ? esc(renewalText(d)) : ''}</span>` : ''}
+        ${sub ? `<span class="sub-plan">${sub}</span>` : ''}
       </span>
       <span class="sub-row-price">
         <span class="amount">${esc(money(s.price, s.currency))}</span>
-        <span class="cycle">${s.cycle === 'annual' ? 'yearly' : 'monthly'}</span>
+        ${isOnce(s) ? ONE_OFF_TAG : `<span class="cycle">${s.cycle === 'annual' ? 'yearly' : 'monthly'}</span>`}
       </span>
     </button>`;
 }
@@ -270,7 +351,7 @@ function renderInsights() {
       <div class="empty-state">
         <div class="empty-mark" aria-hidden="true"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
         <h2>Nothing to analyse yet</h2>
-        <p>Add a subscription and your monthly and yearly totals will appear here.</p>
+        <p>Add your income and outgoings and your monthly and yearly totals will appear here.</p>
       </div>`;
     return;
   }
@@ -286,65 +367,98 @@ function renderInsights() {
     renderInsights();
   }));
 
-  const subs = state.subs.filter((s) => s.currency === cur);
-  const monthly = subs.reduce((t, s) => t + monthlyCost(s), 0);
-  const annual = subs.reduce((t, s) => t + annualCost(s), 0);
-  const nMonthly = subs.filter((s) => s.cycle !== 'annual').length;
-  const nAnnual = subs.length - nMonthly;
+  const month = state.insightsMonth;
+  const y = month.getFullYear();
+  const m = month.getMonth();
+  const monthName = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const inCur = state.subs.filter((s) => s.currency === cur);
+  const incomeItems = inCur.filter(isIncome);
+  const subs = inCur.filter((s) => !isIncome(s)); // expenses only from here on
 
-  // Category breakdown by monthly-equivalent cost.
+  const incomeMonth = incomeItems.reduce((t, s) => t + amountInMonth(s, y, m), 0);
+  const monthly = subs.reduce((t, s) => t + amountInMonth(s, y, m), 0);
+  const annual = subs.reduce((t, s) => t + amountInYear(s, y), 0);
+  const recurring = subs.filter((s) => !isOnce(s));
+  const nAnnual = recurring.filter((s) => s.cycle === 'annual').length;
+  const nMonthly = recurring.length - nAnnual;
+  // Items that count this month: every recurring expense, plus one-offs dated in it.
+  const inMonth = subs.filter((s) => !isOnce(s) || amountInMonth(s, y, m) > 0);
+  const nOnce = inMonth.length - recurring.length;
+
+  // Category breakdown for the selected month (recurring at monthly equivalent, one-offs in their month).
   const cats = new Map();
-  for (const s of subs) {
-    const k = s.category?.trim() || 'Uncategorised';
+  for (const s of inMonth) {
+    const k = s.category?.trim() || UNCATEGORISED;
     const c = cats.get(k) || { name: k, total: 0, count: 0 };
-    c.total += monthlyCost(s);
+    c.total += amountInMonth(s, y, m);
     c.count += 1;
     cats.set(k, c);
   }
   const catList = [...cats.values()].sort((a, b) => b.total - a.total);
   const maxCat = catList[0]?.total || 1;
 
-  const ranked = [...subs].sort((a, b) => monthlyCost(b) - monthlyCost(a) || byName(a, b));
+  const ranked = [...inMonth].sort((a, b) => amountInMonth(b, y, m) - amountInMonth(a, y, m) || byName(a, b));
+
+  const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
+  const headline = incomeMonth
+    ? `Outgoings <strong>${esc(money(monthly, cur))}</strong> of <strong>${esc(money(incomeMonth, cur))}</strong> income <span class="pct">(${pct}%)</span>`
+    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">· no ${esc(cur)} income recorded</span>`;
 
   root.innerHTML = `
+    <div class="month-nav">
+      <button type="button" class="icon-btn" data-month-step="-1" aria-label="Previous month">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <span class="month-label" aria-live="polite">${esc(monthName)}</span>
+      <button type="button" class="icon-btn" data-month-step="1" aria-label="Next month">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div class="headline">
+      <p class="headline-text">${headline}</p>
+      ${incomeMonth ? `<div class="bar" role="img" aria-label="Outgoings are ${pct}% of income"><div class="bar-fill${pct > 100 ? ' bar-fill-over' : ''}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div>` : ''}
+    </div>
+
     ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
     <div class="stats">
       <div class="stat stat-primary">
-        <div class="stat-label">Per month</div>
+        <div class="stat-label">${esc(monthName)}</div>
         <div class="stat-value">${esc(money(monthly, cur))}</div>
-        <div class="stat-sub">Annual plans counted as ÷ 12</div>
+        <div class="stat-sub">Annual plans counted as ÷ 12, plus one-offs this month</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Per year</div>
+        <div class="stat-label">${y}</div>
         <div class="stat-value">${esc(money(annual, cur))}</div>
-        <div class="stat-sub">Monthly plans counted as × 12</div>
+        <div class="stat-sub">Monthly × 12, annual, and one-offs dated ${y}</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Subscriptions</div>
-        <div class="stat-value">${subs.length}</div>
-        <div class="stat-sub">${nMonthly} monthly · ${nAnnual} annual</div>
+        <div class="stat-label">Outgoings</div>
+        <div class="stat-value">${inMonth.length}</div>
+        <div class="stat-sub">${nMonthly} monthly · ${nAnnual} annual · ${nOnce} one-off</div>
       </div>
     </div>
 
     <section class="section" aria-labelledby="cat-title">
-      <h2 class="section-title" id="cat-title">By category <span class="optional">per month</span></h2>
+      <h2 class="section-title" id="cat-title">By category <span class="optional">${esc(monthName)}</span></h2>
       <div class="panel">
-        ${catList.map((c) => {
-          const pct = monthly ? Math.round((c.total / monthly) * 100) : 0;
+        ${catList.length ? catList.map((c) => {
+          const share = monthly ? Math.round((c.total / monthly) * 100) : 0;
           return `
           <div class="cat-row">
             <div class="cat-head">
               <span class="cat-name">${esc(c.name)} <span class="cat-count">${c.count}</span></span>
-              <span class="cat-amount">${esc(money(c.total, cur))}<span class="pct">${pct}%</span></span>
+              <span class="cat-amount">${esc(money(c.total, cur))}<span class="pct">${share}%</span></span>
             </div>
-            <div class="bar" role="img" aria-label="${esc(c.name)}: ${pct}% of monthly spend"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
+            <div class="bar" role="img" aria-label="${esc(c.name)}: ${share}% of spend in ${esc(monthName)}"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
           </div>`;
-        }).join('')}
+        }).join('') : `<p class="panel-empty">No ${esc(cur)} outgoings in ${esc(monthName)}.</p>`}
       </div>
     </section>
 
+    ${ranked.length ? `
     <section class="section" aria-labelledby="rank-title">
-      <h2 class="section-title" id="rank-title">Most expensive <span class="optional">monthly equivalent</span></h2>
+      <h2 class="section-title" id="rank-title">Most expensive <span class="optional">${esc(monthName)}</span></h2>
       <div class="panel">
         ${ranked.map((s, i) => `
           <button type="button" class="rank-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
@@ -352,15 +466,20 @@ function renderInsights() {
             ${logoHTML(s, 'sm')}
             <span class="sub-text">
               <span class="sub-name">${esc(s.name)}</span>
-              <span class="sub-plan">${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
+              <span class="sub-plan">${isOnce(s) ? `One-off · ${esc(onceDate(s))}` : `${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}`}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
             </span>
             <span class="sub-row-price">
-              <span class="amount">${esc(money(monthlyCost(s), cur))}</span>
-              <span class="cycle">/ mo</span>
+              <span class="amount">${esc(money(amountInMonth(s, y, m), cur))}</span>
+              <span class="cycle">${isOnce(s) ? 'one-off' : '/ mo'}</span>
             </span>
           </button>`).join('')}
       </div>
-    </section>`;
+    </section>` : ''}`;
+
+  $$('[data-month-step]', root).forEach((b) => b.addEventListener('click', () => {
+    state.insightsMonth = new Date(y, m + Number(b.dataset.monthStep), 1);
+    renderInsights();
+  }));
 }
 
 /* --------------------------------------------------------------------------
@@ -384,14 +503,15 @@ function fillCurrencySelect(select, selected) {
 }
 
 function fillCategoryList() {
-  const used = state.subs.map((s) => s.category).filter(Boolean);
+  const used = state.subs.filter((s) => !isIncome(s)).map((s) => s.category).filter(Boolean);
   const all = [...new Set([...used, ...DEFAULT_CATEGORIES])];
   $('#category-names').innerHTML = all.map((c) => `<option value="${esc(c)}">`).join('');
 }
 
-function openForm(sub = null) {
+function openForm(sub = null, type = 'expense') {
   try {
     state.editingId = sub?.id ?? null;
+    state.formType = sub ? (isIncome(sub) ? 'income' : 'expense') : type;
     form.reset();
     clearErrors();
     const f = form.elements;
@@ -404,14 +524,18 @@ function openForm(sub = null) {
       f.price.value = sub.price;
       f.cycle.value = sub.cycle;
       f.nextRenewal.value = sub.nextRenewal || '';
+      f.date.value = sub.date || '';
       f.category.value = sub.category || '';
       f.notes.value = sub.notes || '';
     }
     auto.domain = !f.domain.value;
     auto.category = !f.category.value;
 
-    $('#sub-dialog-title').textContent = sub ? 'Edit subscription' : 'Add subscription';
+    const income = state.formType === 'income';
+    const noun = income ? 'income stream' : 'expense';
+    $('#sub-dialog-title').textContent = `${sub ? 'Edit' : 'Add'} ${noun}`;
     $('#btn-delete').hidden = !sub;
+    syncFormMode();
     updateFormLogo();
     openDialog(dialog);
     if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
@@ -419,6 +543,26 @@ function openForm(sub = null) {
     console.error(err);
     reportError('Could not open the form', err);
   }
+}
+
+/** Show the fields that apply to the item type and cycle being edited. */
+function syncFormMode() {
+  const f = form.elements;
+  const income = state.formType === 'income';
+  const once = f.cycle.value === 'once';
+  $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
+  $('#field-renewal').hidden = income || once;
+  $('#field-date').hidden = !once;
+  $('#field-row-dates').hidden = $$('#field-row-dates > .field', form).every((el) => el.hidden);
+  if (once && !f.date.value) f.date.value = todayStamp();
+  if (!once) clearErrors('date');
+
+  f.name.placeholder = income ? 'e.g. My salary' : 'e.g. Netflix';
+  // Service suggestions only make sense for expenses.
+  if (income) f.name.removeAttribute('list'); else f.name.setAttribute('list', 'service-names');
+  f.notes.placeholder = income ? 'e.g. Paid on the 5th, after tax' : 'Shared with family, billed to card ending 1234…';
+  $('#label-price').textContent = income ? 'Amount' : 'Price';
+  $('#label-cycle').textContent = income ? 'How often' : 'Billing cycle';
 }
 
 function updateFormLogo() {
@@ -431,7 +575,7 @@ function bindForm() {
   const f = form.elements;
 
   f.name.addEventListener('input', () => {
-    const svc = matchService(f.name.value);
+    const svc = state.formType === 'income' ? null : matchService(f.name.value);
     if (auto.domain) f.domain.value = svc ? svc.domain : '';
     if (auto.category) f.category.value = svc ? svc.category : '';
     clearErrors('name');
@@ -444,6 +588,8 @@ function bindForm() {
   });
   f.category.addEventListener('input', () => { auto.category = !f.category.value; });
   f.price.addEventListener('input', () => clearErrors('price'));
+  f.date.addEventListener('input', () => clearErrors('date'));
+  $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
 
   $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => closeDialog(dialog)));
   // Tap on the backdrop closes the sheet.
@@ -491,22 +637,31 @@ function readForm() {
   const price = Number(priceRaw);
   let valid = true;
 
-  if (!name) { setError('name', 'Enter a service name.'); valid = false; }
-  if (priceRaw === '' || !Number.isFinite(price) || price < 0) { setError('price', 'Enter a price of 0 or more.'); valid = false; }
+  const income = state.formType === 'income';
+  const cycle = ['annual', 'once'].includes(f.cycle.value) ? f.cycle.value : 'monthly';
+
+  if (!name) { setError('name', 'Enter a name.'); valid = false; }
+  if (priceRaw === '' || !Number.isFinite(price) || price < 0) {
+    setError('price', `Enter ${income ? 'an amount' : 'a price'} of 0 or more.`); valid = false;
+  }
+  if (cycle === 'once' && !isDay(f.date.value)) { setError('date', 'Pick the date it happens.'); valid = false; }
   if (!valid) { form.querySelector('[aria-invalid="true"]')?.focus(); return null; }
 
   const existing = state.subs.find((s) => s.id === state.editingId);
   const now = new Date().toISOString();
   return {
     id: existing?.id ?? uid(),
+    type: income ? 'income' : 'expense',
     name,
-    domain: cleanDomain(f.domain.value),
-    plan: f.plan.value.trim(),
+    // Income streams don't use domain, plan or category.
+    domain: income ? '' : cleanDomain(f.domain.value),
+    plan: income ? '' : f.plan.value.trim(),
     price: Math.round(price * 100) / 100,
     currency: f.currency.value || state.settings.defaultCurrency,
-    cycle: f.cycle.value === 'annual' ? 'annual' : 'monthly',
-    nextRenewal: f.nextRenewal.value || '',
-    category: f.category.value.trim(),
+    cycle,
+    nextRenewal: income || cycle === 'once' ? '' : f.nextRenewal.value || '',
+    date: cycle === 'once' ? f.date.value : '',
+    category: income ? '' : f.category.value.trim(),
     notes: f.notes.value.trim(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -518,7 +673,7 @@ function setError(field, msg) {
   $(`[data-error-for="${field}"]`, form).textContent = msg;
 }
 function clearErrors(field) {
-  const fields = field ? [field] : ['name', 'price'];
+  const fields = field ? [field] : ['name', 'price', 'date'];
   for (const k of fields) {
     form.elements[k].removeAttribute('aria-invalid');
     $(`[data-error-for="${k}"]`, form).textContent = '';
@@ -614,10 +769,12 @@ function applyTheme(mode) {
 function exportData() {
   const payload = {
     format: EXPORT_FORMAT,
-    version: 1,
+    version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     settings: { defaultCurrency: state.settings.defaultCurrency },
-    subscriptions: [...state.subs].sort(byName),
+    // Renamed from v1's `subscriptions`, so older app versions (which would turn income
+    // into expenses) refuse a v2 file instead of importing it wrongly.
+    items: [...state.subs].sort(byName),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -628,21 +785,32 @@ function exportData() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast(`Exported ${state.subs.length} subscription${state.subs.length === 1 ? '' : 's'}`);
+  toast(`Exported ${plural(state.subs.length, 'item')}`);
 }
 
-/** Coerce an imported record into a valid subscription, or null if unusable. */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/** Coerce an imported record (v1 or v2) into a valid item, or null if unusable. */
 function sanitize(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const name = String(raw.name ?? raw.serviceName ?? '').trim().slice(0, 80);
   const price = Number(raw.price);
   if (!name || !Number.isFinite(price) || price < 0) return null;
+  const type = raw.type === 'income' ? 'income' : 'expense';
   const currency = /^[A-Za-z]{3}$/.test(raw.currency ?? '') ? raw.currency.toUpperCase() : state.settings.defaultCurrency;
-  const cycle = /^(annual|yearly|year)$/i.test(raw.cycle ?? raw.billingCycle ?? '') ? 'annual' : 'monthly';
-  const nextRenewal = /^\d{4}-\d{2}-\d{2}$/.test(raw.nextRenewal ?? '') ? raw.nextRenewal : '';
+  const rawCycle = String(raw.cycle ?? raw.billingCycle ?? '');
+  const cycle = /^(once|one-?off)$/i.test(rawCycle) ? 'once'
+    : /^(annual|yearly|year)$/i.test(rawCycle) ? 'annual' : 'monthly';
+  const nextRenewal = cycle !== 'once' && isDay(raw.nextRenewal) ? raw.nextRenewal : '';
+  // A one-off needs a date to be counted anywhere; fall back to when it was created, then today.
+  const date = cycle !== 'once' ? ''
+    : isDay(raw.date) ? raw.date
+    : isDay(String(raw.createdAt ?? '').slice(0, 10)) ? raw.createdAt.slice(0, 10) : todayStamp();
   const now = new Date().toISOString();
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id.slice(0, 64) : uid(),
+    type,
     name,
     domain: cleanDomain(String(raw.domain ?? '')).slice(0, 120),
     plan: String(raw.plan ?? raw.planName ?? '').trim().slice(0, 80),
@@ -650,6 +818,7 @@ function sanitize(raw) {
     currency,
     cycle,
     nextRenewal,
+    date,
     category: String(raw.category ?? '').trim().slice(0, 40),
     notes: String(raw.notes ?? '').trim().slice(0, 1000),
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
@@ -665,15 +834,20 @@ async function importFile(file) {
     toast("That file isn't valid JSON.");
     return;
   }
-  const rows = Array.isArray(data) ? data : data?.subscriptions;
+  if (!Array.isArray(data) && Number(data?.version) > EXPORT_VERSION) {
+    toast('That backup is from a newer version of SubsTracker. Update the app, then import it.');
+    return;
+  }
+  // v2 files hold `items`; v1 files and bare arrays hold subscriptions.
+  const rows = Array.isArray(data) ? data : (data?.items ?? data?.subscriptions);
   if (!Array.isArray(rows)) {
-    toast('No subscriptions found in that file.');
+    toast('No items found in that file.');
     return;
   }
   const subs = rows.map(sanitize).filter(Boolean);
   const skipped = rows.length - subs.length;
   if (!subs.length) {
-    toast('No valid subscriptions found in that file.');
+    toast('No valid items found in that file.');
     return;
   }
 
@@ -681,7 +855,7 @@ async function importFile(file) {
   const updates = subs.filter((s) => existingIds.has(s.id)).length;
   const skippedNote = skipped ? ` ${skipped} invalid entr${skipped === 1 ? 'y' : 'ies'} will be skipped.` : '';
   const mode = await confirmDialog({
-    title: `Import ${subs.length} subscription${subs.length === 1 ? '' : 's'}?`,
+    title: `Import ${plural(subs.length, 'item')}?`,
     message: state.subs.length
       ? `Merge adds new entries and updates ${updates} with matching IDs, keeping the rest of your ${state.subs.length}. Replace deletes everything here first.${skippedNote}`
       : `Your list is empty, so both options give the same result.${skippedNote}`,
@@ -704,7 +878,7 @@ async function importFile(file) {
     fillStaticLists();
     state.insightsCurrency = null;
     render();
-    toast(`${mode === 'replace' ? 'Replaced with' : 'Merged'} ${subs.length} subscription${subs.length === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}`);
+    toast(`${mode === 'replace' ? 'Replaced with' : 'Merged'} ${plural(subs.length, 'item')}${skipped ? `, skipped ${skipped}` : ''}`);
     requestPersistence();
   } catch (err) {
     console.error(err);

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>SubsTracker</title>
-  <meta name="description" content="Private, offline subscription tracker. Your data never leaves this device.">
+  <meta name="description" content="Private, offline household income and expense tracker. Your data never leaves this device.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f6f6f9" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#111216" media="(prefers-color-scheme: dark)">
@@ -31,7 +31,7 @@
 <body>
   <header class="app-header">
     <div class="container header-inner">
-      <h1 class="page-title" id="page-title">Subscriptions</h1>
+      <h1 class="page-title" id="page-title">Money</h1>
       <div class="header-actions" id="subs-actions">
         <div class="segmented" role="group" aria-label="View">
           <button type="button" class="seg-btn" data-view="grid" aria-pressed="true" title="Card view">
@@ -48,17 +48,20 @@
   </header>
 
   <main class="container" id="main">
-    <!-- Subscriptions -->
+    <!-- Money -->
     <section class="tab-panel" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs">
-      <p class="summary-line" id="subs-summary"></p>
-      <div id="subs-list" class="subs-grid"></div>
+      <section class="money-summary" id="money-summary" aria-label="Summary"></section>
+      <div id="subs-list" class="money-groups"></div>
       <div class="empty-state" id="subs-empty" hidden>
         <div class="empty-mark" aria-hidden="true">
           <svg class="icon icon-lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/></svg>
         </div>
-        <h2>No subscriptions yet</h2>
-        <p>Add the services you pay for. Everything is stored on this device only.</p>
-        <button type="button" class="btn btn-primary" data-action="add">Add subscription</button>
+        <h2>Nothing here yet</h2>
+        <p>Add your income and the things you pay for. Everything is stored on this device only.</p>
+        <div class="empty-actions">
+          <button type="button" class="btn" data-action="add-income">Add income stream</button>
+          <button type="button" class="btn btn-primary" data-action="add">Add expense</button>
+        </div>
       </div>
     </section>
 
@@ -94,7 +97,7 @@
           <div class="setting-row">
             <span class="setting-label">
               Export
-              <span class="setting-hint">Download all subscriptions and settings as JSON.</span>
+              <span class="setting-hint">Download all items and settings as JSON.</span>
             </span>
             <button type="button" class="btn" id="btn-export">Export</button>
           </div>
@@ -122,14 +125,20 @@
     </section>
   </main>
 
-  <button type="button" class="fab" data-action="add" id="fab" aria-label="Add subscription">
-    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
+  <div class="fab-dock" id="fab-dock">
+    <button type="button" class="btn fab-pill" data-action="add-income">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Income stream
+    </button>
+    <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
 
   <nav class="tabbar" role="tablist" aria-label="Sections">
     <button type="button" class="tab" role="tab" id="tab-subs" data-tab="subs" aria-controls="panel-subs" aria-selected="true">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>
-      <span>Subscriptions</span>
+      <span>Money</span>
     </button>
     <button type="button" class="tab" role="tab" id="tab-insights" data-tab="insights" aria-controls="panel-insights" aria-selected="false" tabindex="-1">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
@@ -146,28 +155,28 @@
     <form id="sub-form" method="dialog" novalidate>
       <div class="sheet-head">
         <span id="form-logo"></span>
-        <h2 id="sub-dialog-title">Add subscription</h2>
+        <h2 id="sub-dialog-title">Add expense</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
       <div class="sheet-body">
         <label class="field">
-          <span class="field-label">Service name</span>
+          <span class="field-label">Name</span>
           <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix">
           <span class="field-error" data-error-for="name"></span>
         </label>
-        <label class="field">
+        <label class="field" data-expense-only>
           <span class="field-label">Website domain <span class="optional">for logo</span></span>
           <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. netflix.com">
         </label>
-        <label class="field">
+        <label class="field" data-expense-only>
           <span class="field-label">Plan <span class="optional">optional</span></span>
           <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium">
         </label>
         <div class="field-row">
           <label class="field field-grow">
-            <span class="field-label">Price</span>
+            <span class="field-label" id="label-price">Price</span>
             <input class="input" name="price" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0">
             <span class="field-error" data-error-for="price"></span>
           </label>
@@ -177,18 +186,24 @@
           </label>
         </div>
         <fieldset class="field">
-          <legend class="field-label">Billing cycle</legend>
+          <legend class="field-label" id="label-cycle">Billing cycle</legend>
           <div class="segmented segmented-wide">
             <label class="seg-option"><input type="radio" name="cycle" value="monthly" checked><span>Monthly</span></label>
             <label class="seg-option"><input type="radio" name="cycle" value="annual"><span>Annual</span></label>
+            <label class="seg-option"><input type="radio" name="cycle" value="once"><span>Once</span></label>
           </div>
         </fieldset>
-        <div class="field-row">
-          <label class="field field-grow">
+        <div class="field-row" id="field-row-dates">
+          <label class="field field-grow" id="field-renewal">
             <span class="field-label">Next renewal <span class="optional">optional</span></span>
             <input class="input" name="nextRenewal" type="date">
           </label>
-          <label class="field field-grow">
+          <label class="field field-grow" id="field-date" hidden>
+            <span class="field-label">Date</span>
+            <input class="input" name="date" type="date">
+            <span class="field-error" data-error-for="date"></span>
+          </label>
+          <label class="field field-grow" data-expense-only>
             <span class="field-label">Category <span class="optional">optional</span></span>
             <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music">
           </label>

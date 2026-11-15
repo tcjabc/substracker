@@ -2,7 +2,7 @@ export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
 ];
 
-export const CYCLES = { monthly: 'monthly', annual: 'annual' };
+export const CYCLES = { monthly: 'monthly', annual: 'annual', once: 'once' };
 
 export function uid() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -12,8 +12,27 @@ export function uid() {
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 
-export const monthlyCost = (s) => (s.cycle === 'annual' ? s.price / 12 : s.price);
-export const annualCost = (s) => (s.cycle === 'annual' ? s.price : s.price * 12);
+/** Records without a `type` predate income support and are expenses. */
+export const isIncome = (s) => s.type === 'income';
+export const isOnce = (s) => s.cycle === 'once';
+
+// Recurring cost only; one-offs are counted by date via amountInMonth / amountInYear.
+export const monthlyCost = (s) => (isOnce(s) ? 0 : s.cycle === 'annual' ? s.price / 12 : s.price);
+export const annualCost = (s) => (isOnce(s) ? 0 : s.cycle === 'annual' ? s.price : s.price * 12);
+
+/** Amount counted in a month (0-based): recurring at monthly equivalent, one-offs only in their own month. */
+export function amountInMonth(s, year, month) {
+  if (!isOnce(s)) return monthlyCost(s);
+  const d = parseDate(s.date);
+  return d && d.getFullYear() === year && d.getMonth() === month ? s.price : 0;
+}
+
+/** Amount counted in a calendar year: monthly × 12 + annual, one-offs only in their own year. */
+export function amountInYear(s, year) {
+  if (!isOnce(s)) return annualCost(s);
+  const d = parseDate(s.date);
+  return d && d.getFullYear() === year ? s.price : 0;
+}
 
 const fmtCache = new Map();
 export function money(amount, currency) {
@@ -34,7 +53,7 @@ export function money(amount, currency) {
   return fmtCache.get(key).format(amount);
 }
 
-export const cycleLabel = (c) => (c === 'annual' ? '/ yr' : '/ mo');
+export const cycleLabel = (c) => (c === 'annual' ? '/ yr' : c === 'once' ? '' : '/ mo');
 
 /** Parse a stored YYYY-MM-DD date as a local date (no timezone shift). */
 export function parseDate(str) {
@@ -54,6 +73,7 @@ function addCycle(date, cycle, originalDay) {
 
 /** The next renewal on or after today, rolling a past stored date forward by its cycle. */
 export function nextRenewal(sub) {
+  if (isOnce(sub)) return null;
   const start = parseDate(sub.nextRenewal);
   if (!start) return null;
   const today = new Date();
@@ -77,6 +97,14 @@ export function renewalText(date) {
   if (n < 7) return `Renews in ${n} days`;
   const sameYear = date.getFullYear() === new Date().getFullYear();
   return 'Renews ' + date.toLocaleDateString(undefined, {
+    day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
+  });
+}
+
+/** Short date for one-off items, e.g. "3 Nov" (with the year when it isn't this year). */
+export function shortDate(date) {
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, {
     day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
   });
 }
