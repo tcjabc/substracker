@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup rules for Android 11 and earlier (android:fullBackupContent).
+     Everything is backed up as before except the secure-storage file of
+     @aparajita/capacitor-secure-storage, which holds the household key encrypted with an Android
+     Keystore key. The Keystore key never leaves this phone, so a copy of this file is useless on
+     another one; leaving it out means no key material is copied off the device. A phone restored
+     from a backup shows "Sync needs the 12 words on this device" and joins again with the words. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+</full-backup-content>
