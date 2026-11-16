@@ -2,7 +2,7 @@
 
 A private, offline-first household income and expense tracker (it started as a subscription tracker). It's a Progressive Web App built with plain HTML, CSS and JavaScript: no framework, no build step, and no backend apart from an optional sync relay that only stores data it can't read.
 
-- **Private:** your data is stored in your browser's IndexedDB. Optional sync between your devices is end-to-end encrypted, so the relay can't read it.
+- **Private:** your data is stored in your browser's IndexedDB. Optional sync between your devices (**Settings → Sync**, no account, 12 recovery words as the only key) is end-to-end encrypted, so the relay can't read it.
 - **Offline:** a service worker caches the app shell, so the app opens and works with no connection.
 - **Installable:** add it to the home screen on iOS and Android and it runs like a native app.
 
@@ -83,22 +83,42 @@ Import also reads every older backup: schemaVersion 3 files (1.3–1.4, the same
 
 Saving the export file goes through `deliverFile()` in `js/files.js`, which is the place to swap the browser download for a native share sheet.
 
-## Sync between devices (developer preview)
+## Sync between devices
 
-Devices in one household can sync through a small relay (`relay/`, a Cloudflare Worker; see `relay/README.md`). It's end-to-end encrypted, and there are no accounts: a **household key** (16 random bytes, 22 characters) is the only secret. There's no pairing screen yet. The key is set on a hidden developer screen: add `?dev=1` to the URL, or tap the version line at the bottom of Settings 7 times.
+Devices in one household can sync through a small relay (`relay/`, a Cloudflare Worker; see `relay/README.md`). It's optional and end-to-end encrypted, and there are no accounts. Your data stays stored on each device.
 
-How it works:
+### Setting it up
+
+**Settings → Sync** opens the Sync sheet.
+
+- **Start sync** creates a household. Before sync turns on, a required step shows the **12 recovery words** (numbered, with **Copy words** and the same words as a QR code). **Start sync** stays disabled until **I've saved these words** is ticked. Then the device claims the household's room on the relay and sends its items. A device that was in a household before gets a warning first: its other devices stay on the old household.
+- **Join with 12 words** adds a device. The words can be typed in any case, with any spacing or line breaks, and the old 22-character key still works. Mistakes are named: the wrong number of words, "word N isn't in the list" (with the closest match), or "a word is wrong or out of order" (the checksum). The device then checks the relay. Words with no household get "No household found for these words", and joining never creates a room.
+  - An empty device just joins.
+  - A device that already has items asks first. **Use the household's data** (the default) replaces this device's items and shared settings with the household's, after one more confirmation. **Export a backup first** is right there. Everything is pulled before anything is written, and the swap of records, outbox, cursor and config is one IndexedDB transaction, so a failed pull or write leaves the device exactly as it was. **Merge this device's data into the household** sends this device's items too. Where an item was edited in both places, the later edit wins.
+- Once set up, the sheet shows the status (Up to date, Syncing, Offline or the error), the last sync and the changes waiting to send. **Show recovery words** asks before showing them. It also has **Sync now** and **Turn off sync on this device**, which stops syncing and forgets the words but keeps every item and setting. Closing the sheet or hiding the words removes them from the page.
+
+### Recovery words
+
+The household key is 16 random bytes (`generateKey()` in `js/crypto.js`), stored on the device as 22 characters of base64url. The 12 words (`js/words.js`) are another way of writing the same 16 bytes: BIP-39 English (`js/wordlist.js`, the standard 2048-word list), 128 bits of key plus a 4-bit SHA-256 checksum, 11 bits per word. So a device paired before 1.7 shows its current household's words, and nothing needs pairing again. Anyone with the words can read the household's data. If you lose every device and the words, the synced copy can't be recovered.
+
+### How it works
 
 1. **Keys** (`js/crypto.js`, Web Crypto only). HKDF-SHA256 derives three values from the household key: a room id (128 bits) and a token (256 bits) for the relay, and an AES-GCM-256 key. The relay never sees the household key or the AES key, and can't work back to them.
-2. **Envelopes.** Each op (one field change, from the outbox) is sealed as `{ id, wall, c }`. `c` is base64 of a random 12-byte IV plus the ciphertext of the op padded to 64-byte steps. The op id and the wall-clock part of its stamp are bound as additional authenticated data. A device opening an envelope also checks that the op inside has the same id and the same wall time. Anything that fails is dropped and counted, never applied.
-3. **Push.** `js/sync.js` seals the outbox oldest first (at most 200 ops or about 512 KB per request) and POSTs it to the room. The relay stores envelopes in an append-only log with a sequence number. It ignores ids it already has and refuses envelopes stamped more than 24 hours ahead. An op leaves the outbox only if it's still the pending op for its field, because a newer edit made during the push must still go out.
+2. **Envelopes.** Each op (one field change, from the outbox) is sealed as `{ id, wall, c }`. `c` is base64 of a random 12-byte IV plus the ciphertext of the op, padded to 64-byte steps. The op id and the wall-clock part of its stamp are bound as additional authenticated data. A device opening an envelope also checks that the op inside has the same id and the same wall time. Anything that fails is dropped and counted, never applied.
+3. **Push.** `js/sync.js` seals the outbox oldest first (at most 200 ops or about 512 KB per request) and POSTs it to the room. The relay stores envelopes in an append-only log with a sequence number. It ignores ids it already has and refuses envelopes stamped more than 24 hours ahead. An op leaves the outbox only if it's still the pending op for its field, because a newer edit made during the push must still go out. Starting a household pushes an empty batch first, which claims the room so other devices can join before anything is added.
 4. **Pull.** The device fetches entries after its `syncCursor`, 500 at a time, until it reaches the head. Each page is applied in one transaction: stamps are folded into the clock, ops are merged field by field (last write wins), and the cursor moves. That transaction doesn't include the outbox, so pulled changes are never sent back. Applying is idempotent and order-independent.
-5. **When.** Sync runs about 1 s after a local change, on start, when the app becomes visible, when the device comes back online, and every 60 s while visible. While visible, a WebSocket also stays open; the relay only uses it to say "there's something new", and the device then pulls. Only one sync runs at a time, and requests are coalesced. Failures retry with exponential backoff and jitter (2 s up to 5 min). A 401 waits for **Sync now** or a config change. Local saves never wait for sync.
-6. **Joining, switching, losing data.** Setting a different key resets the cursor and queues every record again, so the new household receives this device's items and the settings chosen on it. A relay that has fewer entries than a device has already seen (or has no room at all) gets everything again too.
+5. **When.** Sync runs about 1 s after a local change, on start, when the app becomes visible, when the device comes back online, and every 60 s while visible. While visible, a WebSocket also stays open. The relay only uses it to say "there's something new", and the device then pulls. Only one sync runs at a time, and requests are coalesced. Failures retry with exponential backoff and jitter (2 s up to 5 min). A 401 waits for **Sync now** or a config change. Local saves never wait for sync.
+6. **Switching, losing data.** Merging (or setting a different key on the developer screen) resets the cursor and queues every record again, so the household receives this device's items and the settings chosen on it. A relay that has fewer entries than a device has already seen, or has no room at all, gets everything again too.
 
-To try it locally: run the relay (`cd relay`, `npm install`, `npx wrangler dev`), open the app on two different localhost ports (each port has its own storage), and on each, open the developer screen. Set the relay URL to `http://localhost:8787`, generate a key on one, paste the same key on the other, tick **Enable sync** and **Save**.
+The relay URL is one constant, `DEFAULT_RELAY_URL` in `js/sync.js`. There's no field for it in the app. The hidden **developer screen** (add `?dev=1` to the URL, or tap the version line at the bottom of Settings 7 times) can override it for testing, and can still set a raw key, enable or disable sync, and disconnect. A relay URL must be `https://`, except `http://localhost` / `127.0.0.1` for development. The household key is stored in IndexedDB for now and will move to the Android Keystore / iOS Keychain later.
 
-The relay URL must be `https://`, except `http://localhost` / `127.0.0.1` for development. In this preview the household key is stored in IndexedDB. It will move to the Android Keystore / iOS Keychain later.
+To try it locally: run the relay (`cd relay`, `npm install`, `npx wrangler dev`) and open the app on two different localhost ports (each port has its own storage). On each one, open the developer screen and set the relay URL to `http://localhost:8787`, so nothing goes to the real relay. Then use **Settings → Sync**: **Start sync** on one, **Join with 12 words** on the other.
+
+### Roadmap
+
+- A list of the household's devices (and removing one). This needs relay support. For now the sheet only says how to add a device.
+- Keeping the household key in the Android Keystore / iOS Keychain.
+- Scanning the QR code in the app. 1.7 only shows it, and the app never uses the camera.
 
 ## Project structure
 
@@ -112,6 +132,11 @@ js/storage.js         The only persistence layer: IndexedDB, migrations, outbox,
 js/sync-core.js       Pure sync rules: hybrid logical clock, field ops, last-write-wins merge, tombstones
 js/crypto.js          Household key, HKDF derivation, sealing and opening op envelopes (Web Crypto)
 js/sync.js            Sync engine: push/pull with the relay, triggers, backoff, status
+js/words.js           The household key as 12 recovery words (BIP-39) and back, with typing errors
+js/wordlist.js        The standard BIP-39 English wordlist (vendored)
+js/pairing.js         Start/join/turn-off decisions and wording, no DOM
+js/sync-sheet.js      Settings → Sync: start, recovery words, join, status, turn off
+js/qrcode.js          QR code generator (qrcode-generator 1.4.4, MIT, vendored)
 js/sync-ui.js         The hidden developer sync screen in Settings
 relay/                The sync relay (Cloudflare Worker + Durable Object); not part of the web app
 js/files.js           Hands a file to the person: share sheet in the native app, download on the web
@@ -121,7 +146,7 @@ js/logos.js           Favicon logos with initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
 tests/storage.html    In-browser tests for js/storage.js (IndexedDB)
-tests/*.node.test.js  Node tests: sync core, crypto, the sync engine (with an in-memory relay), the pure parts of js/storage.js
+tests/*.node.test.js  Node tests: sync core, crypto, recovery words, join choices, the sync engine (with an in-memory relay), the pure parts of js/storage.js
 
 Native app only (the web version ignores these):
 package.json          Capacitor 8 and plugins; npm scripts
@@ -147,9 +172,9 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, a check that every file in `js/` is in the service worker's `SHELL` list, encryption (round trip, tampering, wrong key, mismatched authenticated data), the relay's room logic, the shared settings record (convergence, an unset device adopting the household currency, per-group colour merging, upgrade seeding), and the sync engine. The engine tests run three simulated devices through an in-memory relay built on the relay's own logic, with offline periods, failures and retries.
+`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, a check that every file in `js/` is in the service worker's `SHELL` list, encryption (round trip, tampering, wrong key, mismatched authenticated data), the relay's room logic, the shared settings record (convergence, an unset device adopting the household currency, per-group colour merging, upgrade seeding), the recovery words (the BIP-39 reference vectors, round trips, typos, swapped words, wrong counts, the old key), the join choices, and the sync engine. The engine tests run three simulated devices through an in-memory relay built on the relay's own logic, with offline periods, failures and retries, plus starting and joining a household: unknown words, an empty device, replace, merge, and replace staying all-or-nothing when a pull or the write fails.
 
-With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations including the shared-settings seeding, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations including the shared-settings seeding, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection, and joining a household with the real engine over an in-page relay: an empty device, replace, merge, a failed pull or write leaving the data untouched, turning off keeping the data, and a key saved the old way). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
 Neither is part of the app: `tests/` isn't in the service worker's shell or in the native copy.
 
