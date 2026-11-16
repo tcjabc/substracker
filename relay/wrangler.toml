@@ -1,0 +1,32 @@
+# Peek Budget sync relay. No secrets live here or anywhere in the relay: rooms are claimed by the
+# first device that pushes (it stores only a SHA-256 of that device's token).
+name = "peek-budget-relay"
+main = "src/index.js"
+compatibility_date = "2026-10-28"
+workers_dev = true
+
+[vars]
+# Browser origins allowed to call the relay. The app is served by GitHub Pages from the repository
+# tcjabc/substracker, i.e. https://tcjabc.github.io/substracker/ (origin https://tcjabc.github.io).
+# Also: local dev servers on any port, and the Capacitor WebViews (Android https://localhost,
+# iOS capacitor://localhost). An entry ending in ":*" allows any port. Requests without an Origin
+# header (native code, curl) aren't affected; they still need a valid room token.
+ALLOWED_ORIGINS = "https://tcjabc.github.io,http://localhost:*,https://localhost,capacitor://localhost"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# Privacy: no per-request invocation logs (they record the URL and request metadata), and nothing
+# in the code logs bodies, tokens or envelopes. What remains is the relay's own console output,
+# which is limited to error names.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = false

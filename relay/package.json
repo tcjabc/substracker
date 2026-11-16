@@ -1,0 +1,16 @@
+{
+  "name": "peek-budget-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end encrypted sync relay for Peek Budget (Cloudflare Worker + Durable Objects). Sees only sealed envelopes.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.1"
+  }
+}

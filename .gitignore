@@ -7,6 +7,10 @@ node_modules/
 .idea/
 .claude/
 
+# Relay (Cloudflare Worker): local dev state from `wrangler dev`, and local-only vars
+relay/.wrangler/
+relay/.dev.vars*
+
 # Native (Capacitor) build: generated copy of the web app
 www/
 
