@@ -1,5 +1,5 @@
-// In-browser tests for the app screens (js/app.js): the Insights month view on a cash basis
-// (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
+// In-browser tests for the app screens (js/app.js): the Insights month view and the Money tab
+// summary strip on a cash basis (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
 // add/edit form requiring a renewal or payment date (with field-level saves and rollover still
 // working). Open tests/app.html from a local server. The app runs with
 // index.html's markup against a throwaway database, seeded with made-up items dated relative to
@@ -128,6 +128,68 @@ test('the income bar, the donut and the category list all use the month cash tot
   $('#insights [data-catview="list"]').click();
   eq($$('#insights .cat-row .cat-amount').map((el) => el.firstChild.textContent.trim()), [T(1699)], 'category list total');
   eq(text($$('#insights .stat')[2].querySelector('.stat-sub')), '1 monthly · 1 annual · 0 one-off', 'items due');
+});
+
+/* ------------------------------------------------------- Money tab strip */
+
+const stripCells = () => $$('#money-summary .summary-cell').map((c) =>
+  [text($('.stat-label', c)), text($('.summary-value', c)), text($('.stat-sub', c))]);
+const period = (p) => $(`#money-summary [data-period="${p}"]`).click();
+
+// The strip, default currency TWD, this month: income 43,000 (Salary + Refund), cash due 1,699,
+// Avg 1,629 as in Insights. This year: as the yearly card. Before, on the monthly-equivalent basis
+// with undated items, it showed 49,000 / 1,629 for the month and 555,000 / 19,548 for the year.
+test('the monthly strip shows this month on the cash basis, as the Insights headline does', async () => {
+  period('monthly');
+  eq(stripCells(), [
+    ['Income', T(43000), ''],
+    ['Outgoings', T(1699), `Avg ${T(1629)}/mo`],
+    ['Left over', T(41301), ''],
+  ], 'monthly strip');
+  const thisMonth = new Date(Y, M, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  eq(text($('#money-summary .summary-when')), thisMonth, 'this month');
+  eq(text($('#insights .headline-text')), `Outgoings ${T(1699)} of ${T(43000)} income (4%)`, 'same as the Insights headline');
+  eq(text($('#money-summary p.summary-note')), "TWD only. 3 items in other currencies aren't included.", 'currency note kept');
+});
+
+test('the annual strip shows the year from its twelve cash months, with no Avg line', async () => {
+  period('annual');
+  eq(stripCells(), [
+    ['Income', T(495000), ''],
+    ['Outgoings', T(7548), ''],
+    ['Left over', T(487452), ''],
+  ], 'annual strip, same as the yearly card');
+  eq(text($('#money-summary .summary-when')), String(Y), 'this year');
+  eq(yearLines(), [['Income', T(495000)], ['Outgoings', T(7548)], ['Left over', T(487452)]], 'yearly card agrees');
+  period('monthly');
+  eq(stripCells()[0][1], T(43000), 'back to monthly');
+});
+
+test('the strip has one line for undated items that opens the first of them', async () => {
+  const line = $('#money-summary .summary-note-action');
+  eq(text(line), 'Excludes 3 undated items', 'one line, no repeat of the notices');
+  line.click();
+  await until(isOpen, 'edit sheet opens');
+  eq(field('name').value, 'Gym', 'the first undated plan (plans before income)');
+  $('#sub-dialog [data-close]').click();
+  await until(() => !isOpen(), 'sheet closes');
+});
+
+test('a short month on the strip shows the minus sign and says so in words', async () => {
+  const usd = (n) => money(n, 'USD');
+  const select = $('#set-currency');
+  select.value = 'USD';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await until(() => text($('#money-summary .summary-value')) === usd(0), 'strip in USD');
+  const [, , left] = stripCells();
+  eq(left, ['Left over', usd(-10), 'More going out than coming in'], 'short month');
+  assert($('#money-summary .summary-short'), 'short style');
+  assert(usd(-10).includes('-') || usd(-10).includes('−'), 'minus sign');
+  assert(!$('#money-summary .summary-note-action'), 'no undated USD items');
+  select.value = 'TWD';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await until(() => text($('#money-summary .summary-value')) === T(43000), 'strip back in TWD');
+  await until(() => text($('#insights .stat-year .stat-label')) === String(Y), 'Insights back on TWD');
 });
 
 test('the notice names the undated plans and their amount', async () => {
@@ -362,6 +424,7 @@ async function run() {
   storage.setPref('tab', 'insights');
   storage.setPref('catView', 'donut');
   storage.setPref('view', 'grid'); // cards show the renewal or payment tag
+  storage.setPref('period', 'monthly');
 
   // Bring in the app's own markup, then the app itself (which starts on import).
   const html = await (await fetch('../index.html', { cache: 'no-store' })).text();

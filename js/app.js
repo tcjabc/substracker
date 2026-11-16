@@ -9,11 +9,12 @@ import { initSyncSheet } from './sync-sheet.js';
 import { createKeyVault } from './secure-key.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
-  amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
+  nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
   chooseImportMode,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
+  stripSummary, undatedItems,
 } from './insights-calc.js';
 
 const APP_VERSION = '1.9.2';
@@ -422,25 +423,15 @@ function renderSubs() {
   }).join('');
 }
 
-/** Totals for the Money summary strip, in the default currency only (amounts are never converted). */
-function periodTotals(items, period, now = new Date()) {
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const amount = (s) => (period === 'annual' ? amountInYear(s, y) : amountInMonth(s, y, m));
-  let income = 0;
-  let out = 0;
-  for (const s of items) {
-    if (isIncome(s)) income += amount(s); else out += amount(s);
-  }
-  return { income, out, left: income - out };
-}
-
 function renderMoneySummary() {
   const cur = state.settings.defaultCurrency;
   const inCur = state.subs.filter((s) => s.currency === cur);
   const others = state.subs.length - inCur.length;
-  const t = periodTotals(inCur, state.period);
   const now = new Date();
+  // This month or year on the same cash basis as Insights (see stripSummary); undated items are
+  // left out and counted on one line that opens the first of them.
+  const t = stripSummary(inCur, state.period, now.getFullYear(), now.getMonth());
+  const undated = undatedItems(inCur);
   const when = state.period === 'annual'
     ? String(now.getFullYear())
     : now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -461,9 +452,10 @@ function renderMoneySummary() {
     </div>
     <div class="summary-cells">
       ${cell('Income', t.income, ' summary-income')}
-      ${cell('Outgoings', t.out)}
-      ${cell('Left over', t.left, t.left < 0 ? ' summary-short' : '', t.left < 0 ? 'More going out than coming in' : '')}
+      ${cell('Outgoings', t.outgoings, '', state.period === 'annual' ? '' : `Avg ${esc(money(t.average, cur))}/mo`)}
+      ${cell('Left over', t.leftOver, t.leftOver < 0 ? ' summary-short' : '', t.leftOver < 0 ? 'More going out than coming in' : '')}
     </div>
+    ${undated.length ? `<button type="button" class="summary-note summary-note-action" data-id="${esc(undated[0].id)}">Excludes ${plural(undated.length, 'undated item')}</button>` : ''}
     ${others ? `<p class="summary-note">${esc(cur)} only. ${plural(others, 'item')} in other currencies ${others === 1 ? "isn't" : "aren't"} included.</p>` : ''}`;
 }
 
@@ -517,6 +509,7 @@ function bindEditTaps() {
   };
   $('#subs-list').addEventListener('click', onTap);
   $('#insights').addEventListener('click', onTap);
+  $('#money-summary').addEventListener('click', onTap); // the "Excludes N undated items" line
 }
 
 /* Insights ------------------------------------------------------------------ */
