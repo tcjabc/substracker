@@ -110,15 +110,34 @@ The household key is 16 random bytes (`generateKey()` in `js/crypto.js`), stored
 5. **When.** Sync runs about 1 s after a local change, on start, when the app becomes visible, when the device comes back online, and every 60 s while visible. While visible, a WebSocket also stays open. The relay only uses it to say "there's something new", and the device then pulls. Only one sync runs at a time, and requests are coalesced. Failures retry with exponential backoff and jitter (2 s up to 5 min). A 401 waits for **Sync now** or a config change. Local saves never wait for sync.
 6. **Switching, losing data.** Merging (or setting a different key on the developer screen) resets the cursor and queues every record again, so the household receives this device's items and the settings chosen on it. A relay that has fewer entries than a device has already seen, or has no room at all, gets everything again too.
 
-The relay URL is one constant, `DEFAULT_RELAY_URL` in `js/sync.js`. There's no field for it in the app. The hidden **developer screen** (add `?dev=1` to the URL, or tap the version line at the bottom of Settings 7 times) can override it for testing, and can still set a raw key, enable or disable sync, and disconnect. A relay URL must be `https://`, except `http://localhost` / `127.0.0.1` for development. The household key is stored in IndexedDB for now and will move to the Android Keystore / iOS Keychain later.
+The relay URL is one constant, `DEFAULT_RELAY_URL` in `js/sync.js`. There's no field for it in the app. The hidden **developer screen** (add `?dev=1` to the URL, or tap the version line at the bottom of Settings 7 times) can override it for testing. It can also set a raw key, enable or disable sync, and disconnect, and it shows where the key is kept. It never fills the key into the page: **Show key** fetches it on demand, and an empty key field on **Save** keeps the stored key. A relay URL must be `https://`, except `http://localhost` / `127.0.0.1` for development.
+
+### Where the household key is kept
+
+Everything that reads or writes the key goes through `js/secure-key.js` (`get`, `set`, `remove`, and `kind`). That covers the sync engine, the Sync sheet, the developer screen, Start, Join and Turn off. The key never appears in exports, logs or the page, except while **Show recovery words** (or the developer screen's **Show key**) is open.
+
+- **Phones (`native-secure`):** the Android Keystore or iOS Keychain, through [`@aparajita/capacitor-secure-storage`](https://github.com/aparajita/capacitor-secure-storage). On Android the plugin encrypts the key with AES-GCM using a key that lives in the Android Keystore. It stores the ciphertext in `shared_prefs/WSSecureStorageSharedPreferences.xml`. On iOS the key goes in the Keychain as `whenUnlockedThisDeviceOnly`, never synced to iCloud. The IndexedDB sync config then holds only `keyLocation: 'secure'` and `keyTag`, a random id with no relation to the key that says which household the rest of the config belongs to.
+- **Web (`web-indexeddb`):** a browser has no real secure store, so the key stays in the IndexedDB sync config, exactly as before. Anyone who can read this browser profile's site data can read the key.
+
+**Moving the key on phones (once).** On each launch, a key still in IndexedDB is written to secure storage, read back and compared. Only then is it removed from IndexedDB, in the same write that records `keyLocation: 'secure'`. If any step fails, the IndexedDB copy stays and sync works as before, and the next launch tries again. The key is never in neither place, and the household doesn't need pairing again. If writing a new key to secure storage fails (Start or Join), it's kept in IndexedDB and moved later. If the config write after it fails, the secure slot gets its previous value back. If removing the key at **Turn off** fails, the leftover is removed on the next launch.
+
+**A key that can't be read.** If the config says the key is in secure storage but it can't be read, sync shows "Sync needs the 12 words on this device. Join again with your recovery words." This happens when app data is restored from a backup onto a new phone, where the Keystore entry doesn't exist. There are no retries, nothing is deleted, the items stay, and **Join with 12 words** works as usual.
+
+**Android backups.** `allowBackup` is still on, so items and settings are backed up as before. Two rule files leave out the one secure-storage file: `res/xml/backup_rules.xml` (`android:fullBackupContent`, Android 11 and earlier) and `res/xml/data_extraction_rules.xml` (`android:dataExtractionRules`, Android 12 and later, cloud backup and device transfer). Its Keystore key can't leave the phone anyway, so a copy would be useless elsewhere. The IndexedDB data (items, and the sync config without the key once it has moved) is still backed up. A key that is still in IndexedDB is backed up with it until it moves on the next launch. IndexedDB's files may also keep a deleted value until the WebView compacts them.
+
+### Scanning the QR code
+
+**Join with 12 words** has a **Scan QR code** button above the words box. It only appears where scanning is possible. The QR code (under **Show recovery words** on another device) holds the 12 words as plain text. A scan fills the box and runs the same checks as typing, and you still tap **Join**. A code that isn't 12 recovery words with a valid checksum shows "That QR code isn't a Peek Budget recovery code." and fills nothing. If the camera is blocked or missing, a message says so, and typing still works.
+
+- **Android:** [`@capacitor-mlkit/barcode-scanning`](https://github.com/capawesome-team/capacitor-mlkit)'s `scan()`, which opens the Google code scanner from Google Play services. The scanner runs outside the app, so the app has no `CAMERA` permission. The first time, the scanner module may need to be downloaded: the app checks `isGoogleBarcodeScannerModuleAvailable`, installs it if needed and says "Getting the scanner ready…". Phones without Google Play services get "Scanning needs Google Play services. Type the words instead."
+- **Web and desktop:** `getUserMedia` (rear camera when there is one) and [jsQR](https://github.com/cozmo/jsQR) 1.4.0 (Apache-2.0, vendored as `js/jsqr.js` with its licence in `js/jsqr.LICENSE.txt`). It doesn't depend on `BarcodeDetector`, which Chrome on Windows lacks. Frames are decoded in a canvas that is never added to the page. No frames, images or results leave the device. Every camera track stops as soon as a code is read, **Stop scanning** is tapped, the view changes, the sheet closes or the page is hidden.
 
 To try it locally: run the relay (`cd relay`, `npm install`, `npx wrangler dev`) and open the app on two different localhost ports (each port has its own storage). On each one, open the developer screen and set the relay URL to `http://localhost:8787`, so nothing goes to the real relay. Then use **Settings → Sync**: **Start sync** on one, **Join with 12 words** on the other.
 
 ### Roadmap
 
 - A list of the household's devices (and removing one). This needs relay support. For now the sheet only says how to add a device.
-- Keeping the household key in the Android Keystore / iOS Keychain.
-- Scanning the QR code in the app. 1.7 only shows it, and the app never uses the camera.
+- iOS: adding the iOS project (see the iOS notes under Native builds).
 
 ## Project structure
 
@@ -138,6 +157,9 @@ js/pairing.js         Start/join/turn-off decisions and wording, no DOM
 js/sync-sheet.js      Settings → Sync: start, recovery words, join, status, turn off
 js/qrcode.js          QR code generator (qrcode-generator 1.4.4, MIT, vendored)
 js/sync-ui.js         The hidden developer sync screen in Settings
+js/secure-key.js      Where the household key lives: phone secure storage or IndexedDB, and the one-time move
+js/qr-scan.js         Scanning the recovery-words QR code: the phone scanner, or the camera and jsQR on the web
+js/jsqr.js            QR code decoder (jsQR 1.4.0, Apache-2.0, vendored; licence in js/jsqr.LICENSE.txt)
 relay/                The sync relay (Cloudflare Worker + Durable Object); not part of the web app
 js/files.js           Hands a file to the person: share sheet in the native app, download on the web
 js/platform.js        isNative() and plugin(): the only place that touches Capacitor
@@ -172,9 +194,9 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, a check that every file in `js/` is in the service worker's `SHELL` list, encryption (round trip, tampering, wrong key, mismatched authenticated data), the relay's room logic, the shared settings record (convergence, an unset device adopting the household currency, per-group colour merging, upgrade seeding), the recovery words (the BIP-39 reference vectors, round trips, typos, swapped words, wrong counts, the old key), the join choices, and the sync engine. The engine tests run three simulated devices through an in-memory relay built on the relay's own logic, with offline periods, failures and retries, plus starting and joining a household: unknown words, an empty device, replace, merge, and replace staying all-or-nothing when a pull or the write fails.
+`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, a check that every file in `js/` is in the service worker's `SHELL` list, encryption (round trip, tampering, wrong key, mismatched authenticated data), the relay's room logic, the shared settings record (convergence, an unset device adopting the household currency, per-group colour merging, upgrade seeding), the recovery words (the BIP-39 reference vectors, round trips, typos, swapped words, wrong counts, the old key), the join choices, where the key is kept (set/get/remove, the move to secure storage with a failed read-back, the flag, an unreadable key, Turn off removing it everywhere, every combination of failures leaving the key somewhere), QR scanning (reading the words from scanned text, a round trip from our QR generator to jsQR, the camera tracks stopping, the phone scanner flow), and the sync engine. The engine tests run three simulated devices through an in-memory relay built on the relay's own logic, with offline periods, failures and retries, plus starting and joining a household: unknown words, an empty device, replace, merge, and replace staying all-or-nothing when a pull or the write fails.
 
-With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations including the shared-settings seeding, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection, and joining a household with the real engine over an in-page relay: an empty device, replace, merge, a failed pull or write leaving the data untouched, turning off keeping the data, and a key saved the old way). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations including the shared-settings seeding, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection, and joining a household with the real engine over an in-page relay: an empty device, replace, merge, a failed pull or write leaving the data untouched, turning off keeping the data, and a key saved the old way). They also check that the web keeps the key in IndexedDB as before, and test the move to secure storage, Join, Turn off and an unreadable key against a fake phone secure store. They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
 Neither is part of the app: `tests/` isn't in the service worker's shell or in the native copy.
 
@@ -199,6 +221,16 @@ How the native app differs from the PWA:
 - **No service worker:** the files are inside the app, so it works offline anyway, and updates come with app updates.
 - **Separate data:** the app keeps its own storage, separate from the PWA. To move your items, export a backup in one and import it in the other.
 - **Status bar:** the app draws behind the status bar, and its icons follow the app's light or dark appearance.
+- **Sync key:** kept in the Android Keystore (see "Where the household key is kept").
+- **QR scanning:** through Google Play services' code scanner; no camera permission.
+
+Native plugins: `@capacitor/filesystem`, `@capacitor/share`, `@capacitor/status-bar`, `@aparajita/capacitor-secure-storage` 8.0.1, `@capacitor-mlkit/barcode-scanning` 8.2.2 (all on Capacitor 8). The scanning plugin brings ML Kit, CameraX and Google Play services libraries into the APK. The debug APK grew from about 5 MB to about 29 MB, mostly ML Kit's bundled barcode model for four CPU types, which `scan()` doesn't use. Those libraries also add `ACCESS_NETWORK_STATE` and Google's `datatransport`, which ML Kit uses for usage reports.
+
+**iOS notes** (there's no iOS project yet). When one is added with `npx cap add ios`:
+
+- `NSCameraUsageDescription` must be in `ios/App/App/Info.plist`, because ML Kit scanning on iOS uses the camera inside the app. For example: "Scan the recovery-words QR code from another device."
+- `@capacitor-mlkit/barcode-scanning` only supports CocoaPods on iOS, not Swift Package Manager (Capacitor 8's default for new iOS projects). Create the iOS project with CocoaPods, or pick a different iOS scanner.
+- The secure-storage plugin needs no Info.plist entry and no Keychain Sharing entitlement. The key is stored per device (`whenUnlockedThisDeviceOnly`), so it isn't in iCloud Keychain or in backups restored to another iPhone.
 
 Release signing isn't set up. Keystores, `keystore.properties` and `local.properties` are ignored by git and must never be committed.
 
@@ -241,7 +273,7 @@ Your data is stored in the browser on that device (and, if you set up sync, on y
 
 ## Privacy note
 
-Unless you turn on sync, the only network requests the app makes are for its own files and for favicon images from Google. With sync on, it also talks to the relay you set, which only receives encrypted changes (see `relay/README.md` for what it can and can't see). A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
+Unless you turn on sync, the only network requests the app makes are for its own files and for favicon images from Google. In the Android app, Google Play services' code scanner and the ML Kit libraries may also send Google usage reports when you scan (no images are sent). On the web, scanning runs entirely in the page. With sync on, it also talks to the relay you set, which only receives encrypted changes (see `relay/README.md` for what it can and can't see). A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
 
 ## License
 
