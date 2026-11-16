@@ -768,7 +768,7 @@ dialog::backdrop { background: var(--scrim); }
 .alert[open] { animation: pop-in var(--dur) var(--ease); }
 .alert form { padding: var(--space-5); display: grid; gap: var(--space-3); }
 .alert h2 { font-size: var(--text-md); font-weight: var(--weight-semibold); }
-.alert p { color: var(--text-muted); font-size: var(--text-base); }
+.alert p { color: var(--text-muted); font-size: var(--text-base); white-space: pre-line; } /* a \n in a message starts a new line */
 .alert-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 .alert-actions.stacked { flex-direction: column; align-items: stretch; }
 

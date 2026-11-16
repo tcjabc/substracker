@@ -8,6 +8,7 @@ import { initSyncScreen } from './sync-ui.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
+  importMessage,
 } from './util.js';
 
 const APP_VERSION = '1.6.0';
@@ -1149,15 +1150,13 @@ async function importFile(file) {
     return importProblem("The file couldn't be read.");
   }
 
-  const { merge, replace } = preview;
-  const newer = merge.newerVersion
-    ? ' It comes from a newer version of Peek Budget; fields this version doesn\'t know are ignored.' : '';
-  const message = merge.existing
-    ? `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
-      + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
-      + `Replace deletes your ${plural(merge.existing, 'item')} and uses the file's items${replace.withSettings ? ' and settings' : ''}`
-      + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
-    : `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
+  // Sync set up here (a key and sync turned on): Replace reaches every device, so say so.
+  let synced = false;
+  try {
+    const cfg = await storage.getSyncConfig();
+    synced = Boolean(cfg.enabled && cfg.householdKey);
+  } catch { /* no sync on a fallback store */ }
+  const message = importMessage(preview, { synced });
   const mode = await confirmDialog({
     title: 'Import this backup?',
     message,

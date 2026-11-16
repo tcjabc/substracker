@@ -154,6 +154,27 @@ export function firstEmoji(str) {
   return (s.match(EMOJI_SEQ)?.[0] ?? '').slice(0, 32);
 }
 
+const countOf = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The extra line the import dialog shows when this device syncs: Replace reaches every device. */
+export const REPLACE_SYNC_WARNING = 'Replace all deletes the current items and settings here and on every device you sync with.';
+
+/**
+ * The import dialog's text from previewImport()'s { merge, replace } summaries. `synced` is
+ * whether sync is set up on this device; only then is the Replace warning added, on its own line.
+ */
+export function importMessage({ merge, replace }, { synced = false } = {}) {
+  const newer = merge.newerVersion
+    ? ' It comes from a newer version of Peek Budget; fields this version doesn\'t know are ignored.' : '';
+  const text = merge.existing
+    ? `${countOf(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
+      + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
+      + `Replace deletes your ${countOf(merge.existing, 'item')} and uses the file's items${replace.withSettings ? ' and settings' : ''}`
+      + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
+    : `${countOf(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
+  return synced ? `${text}\n${REPLACE_SYNC_WARNING}` : text;
+}
+
 /** Stable small hash for picking avatar colours. */
 export function hash(str) {
   let h = 0;
