@@ -175,3 +175,24 @@ export function undatedRecurring(items) {
 export function undatedIncome(items) {
   return items.filter((s) => isIncoming(s) && noDate(s)).sort(byItemName);
 }
+
+/** Every recurring item without a date: the undated plans (A–Z), then the undated income (A–Z). */
+export function undatedItems(items) {
+  return [...undatedRecurring(items), ...undatedIncome(items)];
+}
+
+/**
+ * The Money tab summary strip, on the same cash basis as Insights. 'monthly': the income paid and
+ * cash due in `month` (0-based) of `year`, their difference, and `average`, the Avg figure
+ * (monthlyAverage: the yearly total ÷ 12). 'annual': yearSummary() for `year` (no average).
+ * Undated items are in none of the figures; see undatedItems().
+ */
+export function stripSummary(items, period, year, month) {
+  if (period === 'annual') {
+    const { income, outgoings, leftOver } = yearSummary(items, year);
+    return { income, outgoings, leftOver };
+  }
+  const income = incomeDue(items, year, month);
+  const outgoings = cashDue(items, year, month);
+  return { income, outgoings, leftOver: income - outgoings, average: monthlyAverage(items, year) };
+}

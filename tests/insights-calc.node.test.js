@@ -38,7 +38,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cashDue, breakdown, monthSeries, monthlyAverage, seriesAverage, yearTotal, undatedRecurring, dueInMonth,
-  incomeDue, incomeInMonth, undatedIncome, yearIncome, yearSummary,
+  incomeDue, incomeInMonth, undatedIncome, yearIncome, yearSummary, stripSummary, undatedItems,
 } from '../js/insights-calc.js';
 import { nextRenewal, amountInMonth, amountInYear } from '../js/util.js';
 
@@ -303,4 +303,57 @@ test('year summary with annual and one-off items, and the months that go over', 
   const months = monthSeries(year, 2027, 0, 12, { income: true });
   assert.deepEqual(months.filter((x) => x.total > x.income).map((x) => x.month), [3, 8], 'April and September');
   assert.deepEqual(yearSummary(year, 2028), { income: 12500 - 500, outgoings: 7200 + 3000 + 2000, leftOver: 12000 - 12200, monthsOver: 2 });
+});
+
+/* ------------------------------------------------------------ Money strip */
+// stripSummary(items, period, year, month) for the Money tab, with both hand-worked examples
+// together (the plans of ITEMS, which include an undated Salary, and the income of INCOME):
+//
+//   Monthly       income    outgoings   left over   Avg (yearly total ÷ 12)
+//   Nov 2026      52,000        649       51,351     1,879  (22,548 ÷ 12, undated Gym included)
+//   Dec 2026      58,000      3,409       54,591     1,879  (Tax refund; Domain and Concert due)
+//   Feb 2027      82,000        649       81,351     1,745.67  (bonus month; 2027 Avg, see below)
+//   Mar 2027      52,000      1,849       50,151            (Cloud renews in March)
+//   Annual 2026  660,000     11,748      648,252     (no Avg line in the annual view)
+//
+//   2027's yearly total for Avg: (150 + 499 + 900) × 12 + 1,200 + 360 + Repair 800 = 20,948, so
+//   Avg = 1,745.67. Undated items in none of the figures: Gym (plan), then Lodger and Salary (income).
+//
+//   Before (amountInMonth / amountInYear, undated included) the strip showed for Nov 2026:
+//   income 50,000 + 52,000 + 30,000 / 12 + 8,000 = 112,500 and outgoings 1,679; for 2026:
+//   income (50,000 + 52,000 + 8,000) × 12 + 30,000 + 6,000 = 1,356,000 and outgoings 22,548.
+
+const BOTH = [...ITEMS, ...INCOME.filter((s) => s.type === 'income')];
+
+test('the monthly strip is the month on a cash basis, with the Avg figure', () => {
+  assert.deepEqual(stripSummary(BOTH, 'monthly', 2026, 10), { income: 52000, outgoings: 649, leftOver: 51351, average: 1879 });
+  assert.deepEqual(stripSummary(BOTH, 'monthly', 2026, 11), { income: 58000, outgoings: 3409, leftOver: 54591, average: 1879 });
+  const feb = stripSummary(BOTH, 'monthly', 2027, 1);
+  assert.deepEqual([feb.income, feb.outgoings, feb.leftOver], [82000, 649, 81351], 'annual bonus month');
+  assert.ok(Math.abs(feb.average - 20948 / 12) < 1e-9, 'Avg for 2027');
+  const mar = stripSummary(BOTH, 'monthly', 2027, 2);
+  assert.deepEqual([mar.income, mar.outgoings, mar.leftOver], [52000, 1849, 50151], 'annual renewal month');
+  // Same figures as the Insights headline and month card for that month.
+  assert.equal(stripSummary(BOTH, 'monthly', 2026, 10).income, incomeDue(BOTH, 2026, 10));
+  assert.equal(stripSummary(BOTH, 'monthly', 2026, 10).outgoings, cashDue(BOTH, 2026, 10));
+});
+
+test('the annual strip is the year summary, with no Avg', () => {
+  assert.deepEqual(stripSummary(BOTH, 'annual', 2026, 10), { income: 660000, outgoings: 11748, leftOver: 648252 });
+  assert.deepEqual(stripSummary(BOTH, 'annual', 2026, 0), stripSummary(BOTH, 'annual', 2026, 11), 'any month of the year');
+  assert.deepEqual(stripSummary(ITEMS, 'annual', 2026, 10), { income: 0, outgoings: 11748, leftOver: -11748 });
+});
+
+test('the old strip figures for the same data, for comparison', () => {
+  const live = BOTH.filter((s) => !s.del);
+  const sum = (f) => live.reduce((t, s) => t + f(s), 0);
+  assert.equal(sum((s) => (s.type === 'income' ? amountInMonth(s, 2026, 10) : 0)), 112500);
+  assert.equal(sum((s) => (s.type === 'income' ? 0 : amountInMonth(s, 2026, 10))), 1679);
+  assert.equal(sum((s) => (s.type === 'income' ? amountInYear(s, 2026) : 0)), 1356000);
+  assert.equal(sum((s) => (s.type === 'income' ? 0 : amountInYear(s, 2026))), 22548);
+});
+
+test('undated items: plans first, then income, each A–Z', () => {
+  assert.deepEqual(undatedItems(BOTH).map((s) => s.name), ['Gym', 'Lodger', 'Salary']);
+  assert.deepEqual(undatedItems(BOTH.filter((s) => s.nextRenewal || s.cycle === 'once')), []);
 });
