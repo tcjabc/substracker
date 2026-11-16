@@ -1003,7 +1003,13 @@ function readForm() {
   if (!income && cycle !== 'once' && !isDay(f.nextRenewal.value)) {
     setError('nextRenewal', 'Pick a renewal date.'); valid = false;
   }
-  if (!valid) { form.querySelector('[aria-invalid="true"]')?.focus(); return null; }
+  if (!valid) {
+    const bad = form.querySelector('[aria-invalid="true"]');
+    bad?.focus();
+    // Focus scrolls the field into view, but its message underneath can stay hidden at the bottom.
+    if (bad) $(`[data-error-for="${bad.name}"]`, form)?.scrollIntoView({ block: 'nearest' });
+    return null;
+  }
 
   const existing = state.subs.find((s) => s.id === state.editingId);
   const now = new Date().toISOString();

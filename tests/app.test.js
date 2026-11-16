@@ -118,6 +118,9 @@ test('editing any field of an undated plan asks for a renewal date and keeps the
   eq(errorFor('nextRenewal'), 'Pick a renewal date.', 'error message');
   eq(field('nextRenewal').getAttribute('aria-invalid'), 'true', 'field marked invalid');
   assert(document.activeElement === field('nextRenewal'), 'renewal field focused');
+  const msg = dialog().querySelector('[data-error-for="nextRenewal"]').getBoundingClientRect();
+  const body = dialog().querySelector('.sheet-body').getBoundingClientRect();
+  assert(msg.top >= body.top - 1 && msg.bottom <= body.bottom + 1, 'message scrolled into view');
   eq(field('notes').value, 'Changed note', 'what was typed is kept');
   eq((await stored('test-gym')).notes, '', 'nothing saved');
 });
