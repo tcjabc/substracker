@@ -31,6 +31,7 @@ const SHELL = [
   './js/logos.js',
   './js/util.js',
   './js/insights-calc.js',
+  './js/year-chart-math.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

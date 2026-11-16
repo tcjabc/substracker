@@ -125,6 +125,9 @@ export function yearIncome(items, year) {
   return t;
 }
 
+/** A month goes over when its cash due is more than its income (yearSummary, the year chart). */
+export const overIncome = (outgoings, income) => outgoings > income;
+
 /**
  * Calendar `year` from its twelve cash months: { income, outgoings, leftOver, monthsOver }.
  * income is yearIncome(), outgoings the sum of the months' cash due (equal to yearTotal() when
@@ -140,7 +143,7 @@ export function yearSummary(items, year) {
     const o = cashDue(items, year, m);
     income += i;
     outgoings += o;
-    if (o > i) monthsOver++;
+    if (overIncome(o, i)) monthsOver++;
   }
   return { income, outgoings, leftOver: income - outgoings, monthsOver };
 }
