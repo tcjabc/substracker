@@ -12,6 +12,9 @@ import {
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
   chooseImportMode,
 } from './util.js';
+import {
+  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring,
+} from './insights-calc.js';
 
 const APP_VERSION = '1.8.0';
 
@@ -279,11 +282,7 @@ function render() {
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 
-const UNCATEGORISED = 'Uncategorised';
-const groupOf = (s) => s.category?.trim() || UNCATEGORISED;
-// Group display order: A–Z, with Uncategorised last.
-const byGroupName = (a, b) =>
-  (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' });
+// Groups (category or Uncategorised) and their order come from insights-calc.js.
 
 /* Group colours ------------------------------------------------------------- */
 /**
@@ -566,29 +565,25 @@ function renderInsights() {
   const incomeItems = inCur.filter(isIncome);
   const subs = inCur.filter((s) => !isIncome(s)); // expenses only from here on
 
+  // Outgoings on a cash basis: what falls due in this month (see insights-calc.js). Income keeps
+  // its monthly equivalent, as it has no renewal date.
   const incomeMonth = incomeItems.reduce((t, s) => t + amountInMonth(s, y, m), 0);
-  const monthly = subs.reduce((t, s) => t + amountInMonth(s, y, m), 0);
+  const due = breakdown(subs, y, m);
+  const monthly = due.total;
   const annual = subs.reduce((t, s) => t + amountInYear(s, y), 0);
-  const recurring = subs.filter((s) => !isOnce(s));
-  const nAnnual = recurring.filter((s) => s.cycle === 'annual').length;
-  const nMonthly = recurring.length - nAnnual;
-  // Items that count this month: every recurring expense, plus one-offs dated in it.
-  const inMonth = subs.filter((s) => !isOnce(s) || amountInMonth(s, y, m) > 0);
-  const nOnce = inMonth.length - recurring.length;
+  const avg = monthlyAverage(subs, y);
+  const countOf = (key) => due.byType.find((t) => t.key === key)?.names.length ?? 0;
+  const nMonthly = countOf('monthly');
+  const nAnnual = countOf('annual');
+  const nOnce = countOf('once');
+  const inMonth = due.byCategory.flatMap((c) => c.items); // each with its `due` amount
+  const undated = undatedRecurring(subs);
+  const undatedTotal = undated.reduce((t, s) => t + s.price, 0);
 
-  // Category breakdown for the selected month (recurring at monthly equivalent, one-offs in their month).
-  const cats = new Map();
-  for (const s of inMonth) {
-    const k = s.category?.trim() || UNCATEGORISED;
-    const c = cats.get(k) || { name: k, total: 0, count: 0 };
-    c.total += amountInMonth(s, y, m);
-    c.count += 1;
-    cats.set(k, c);
-  }
-  const catList = [...cats.values()].sort((a, b) => b.total - a.total);
+  const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
 
-  const ranked = [...inMonth].sort((a, b) => amountInMonth(b, y, m) - amountInMonth(a, y, m) || byName(a, b));
+  const ranked = [...inMonth].sort((a, b) => b.due - a.due || byName(a, b));
 
   const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
   const headline = incomeMonth
@@ -612,11 +607,16 @@ function renderInsights() {
     </div>
 
     ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
+    ${undated.length ? `
+    <button type="button" class="notice-action" data-id="${esc(undated[0].id)}">
+      ${esc(`${plural(undated.length, 'plan')} ${undated.length === 1 ? 'needs' : 'need'} a renewal date, ${money(undatedTotal, cur)} not shown`)}
+    </button>` : ''}
     <div class="stats">
       <div class="stat stat-primary">
         <div class="stat-label">${esc(monthName)}</div>
         <div class="stat-value">${esc(money(monthly, cur))}</div>
-        <div class="stat-sub">Annual plans counted as ÷ 12, plus one-offs this month</div>
+        <div class="stat-sub">Cash due this month</div>
+        <div class="stat-sub">Avg ${esc(money(avg, cur))}/mo</div>
       </div>
       <div class="stat">
         <div class="stat-label">${y}</div>
@@ -673,8 +673,8 @@ function renderInsights() {
               <span class="sub-plan">${isOnce(s) ? `One-off · ${esc(onceDate(s))}` : `${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}`}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
             </span>
             <span class="sub-row-price">
-              <span class="amount">${esc(money(amountInMonth(s, y, m), cur))}</span>
-              <span class="cycle">${isOnce(s) ? 'one-off' : '/ mo'}</span>
+              <span class="amount">${esc(money(s.due, cur))}</span>
+              <span class="cycle">${isOnce(s) ? 'one-off' : cycleLabel(s.cycle)}</span>
             </span>
           </button>`).join('')}
       </div>

@@ -637,6 +637,15 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .rank-row .sub-plan { font-size: var(--text-xs); }
 
 .notice { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--space-4); }
+/* A notice you can act on: opens the item it's about. */
+.notice-action {
+  display: block; width: 100%; min-height: var(--tap); padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4); text-align: left;
+  font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold);
+  color: var(--warn); background: var(--warn-soft);
+  border: var(--border-width) solid transparent; border-radius: var(--radius-md); cursor: pointer;
+}
+.notice-action:hover { border-color: var(--warn); }
 
 /* ==========================================================================
    Settings

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek Budget app tests</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>
+    /* Test page only; colours and spacing come from the app's tokens. */
+    .t-wrap { padding: var(--space-4); max-width: 48rem; margin: 0 auto; }
+    .t-summary { font-size: var(--text-md); margin: var(--space-3) 0; }
+    .t-list { list-style: none; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
+    .t-pass { color: var(--positive); }
+    .t-fail { color: var(--danger); }
+    .t-detail { color: var(--text-muted); white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main class="t-wrap">
+    <h1>App tests</h1>
+    <p class="t-detail">Runs the real app (index.html's markup and js/app.js) against a throwaway <code>substracker-test-*</code> database. The app's own data is not touched.</p>
+    <p class="t-summary" id="summary">Running…</p>
+    <ul class="t-list" id="results"></ul>
+  </main>
+  <div id="app-host"></div>
+  <script type="module" src="app.test.js"></script>
+</body>
+</html>
