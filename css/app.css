@@ -38,12 +38,14 @@
   --group-9: #2d8a8c;  /* teal */
   --group-10: #a8474f; /* brick */
   --group-other: #a3a6b4; /* "Other" slice: neutral */
-  /* Year chart: plan types (monthly muted slate, annual the accent, one-offs warm orange) and the
-     centre bar's soft shadow. */
+  /* Year chart: plan types (monthly muted slate, annual the accent, one-offs warm orange); the
+     centre month's spotlight strength (accent at this opacity) and the veil that mutes the other
+     bars (the card colour). */
   --type-monthly: #7d8299;
   --type-annual: var(--accent);
   --type-once: #dd7a35;
-  --chart-shadow: #16171d;
+  --chart-spot: 0.09;
+  --chart-veil: var(--surface);
   --scrim: rgb(14 15 20 / 0.45);
   --toast-bg: #1e1f26;
   --toast-text: #f4f4f7;
@@ -193,7 +195,7 @@
     --type-monthly: #5d6283;
     --type-annual: var(--accent);
     --type-once: #f0a35e;
-    --chart-shadow: #000000;
+    --chart-spot: 0.14;
     --scrim: rgb(0 0 0 / 0.6);
     --toast-bg: #ececf1;
     --toast-text: #16171d;
@@ -237,7 +239,7 @@
   --type-monthly: #5d6283;
   --type-annual: var(--accent);
   --type-once: #f0a35e;
-  --chart-shadow: #000000;
+  --chart-spot: 0.14;
   --scrim: rgb(0 0 0 / 0.6);
   --toast-bg: #ececf1;
   --toast-text: #16171d;
@@ -970,11 +972,17 @@ dialog::backdrop { background: var(--scrim); }
 .yc-avg { stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1; stroke-dasharray: 4 4; }
 .yc-swatch-avg { width: 12px; height: 0; display: inline-block; border-top: 1.5px dashed var(--text); opacity: 0.7; }
 .yc-income { fill: none; stroke: var(--positive); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.yc-shadow { fill: var(--chart-shadow); }
+/* Centre month: a faint accent column, a 1.5px outline in the text colour, the label in a pill.
+   Other bars carry a veil of the card colour (their group also drops to ~58% opacity). */
+.yc-spot { fill: var(--accent); fill-opacity: var(--chart-spot); }
+.yc-veil { fill: var(--chart-veil); }
+.yc-outline { fill: none; stroke: var(--text); stroke-width: 1.5; }
+.yc-pill { fill: var(--accent); }
 .yc-mark-above { fill: var(--text-muted); }
 .yc-mark-over { fill: none; stroke: var(--text); stroke-width: 1.4; }
 .yc-month { fill: var(--text-muted); font-weight: 400; }
 .yc-month-centre { fill: var(--text); font-weight: 700; }
+.yc-month-pill { fill: var(--accent-contrast); font-weight: 700; }
 .yc-month-sel { fill: var(--accent); font-weight: 700; }
 .yc-focus-month { fill: var(--text); font-size: 26px; font-weight: 700; }
 .yc-focus-total { fill: var(--text); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }

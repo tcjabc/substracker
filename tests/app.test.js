@@ -603,6 +603,44 @@ test('Show income: an income line, and the months-over marker instead of above-a
   mode('month');
 });
 
+test('centre highlight: outline, spotlight and label pill on the centre month; none of it in focus but the outline', async () => {
+  mode('year');
+  await settle();
+  const shown = (sel) => $$(`#year-chart ${sel}`)
+    .filter((e) => e.getAttribute('display') !== 'none' && Number(e.getAttribute('opacity') ?? 1) > 0.01)
+    .map((e) => Number(e.dataset.for));
+  const strong = (sel) => $$(`#year-chart ${sel}`)
+    .filter((e) => e.getAttribute('display') !== 'none' && Number(e.getAttribute('opacity') ?? 1) > 0.5)
+    .map((e) => Number(e.dataset.for));
+  const centre = chart().state().centre;
+  eq(strong('.yc-outline'), [centre], 'outline on the centre bar');
+  eq(strong('.yc-pill'), [centre], 'label pill on the centre month');
+  const label = $$('#year-chart .yc-month:not(.yc-year)')[centre];
+  assert(label.classList.contains('yc-month-pill'), 'centre label styled for the pill');
+  eq($('#year-chart .yc-spot').parentNode.getAttribute('display'), 'inline', 'spotlight shown');
+  assert(!$$('#year-chart .yc-shadow').length, 'no shadow rects');
+  const veils = $$('#year-chart .yc-veil').filter((e) => e.getAttribute('display') !== 'none').length;
+  assert(veils >= 10, `other bars are muted (${veils} veils)`);
+  // It follows the carousel: one month on, the highlight moves with it.
+  key('ArrowRight');
+  await settle();
+  eq(strong('.yc-outline'), [centre + 1], 'outline moved');
+  eq(strong('.yc-pill'), [centre + 1], 'pill moved');
+  // Focus mode: only the opened bar's own outline.
+  key('Enter');
+  await settle();
+  eq(shown('.yc-outline'), [centre + 1], 'only the opened bar is outlined');
+  eq(shown('.yc-pill'), [], 'no pill in focus');
+  eq($$('#year-chart .yc-veil').filter((e) => e.getAttribute('display') !== 'none').length, 0, 'no veils in focus');
+  eq($('#year-chart .yc-spot').parentNode.getAttribute('display'), 'none', 'no spotlight in focus');
+  key('Escape');
+  await settle();
+  eq(strong('.yc-pill'), [centre + 1], 'back in the carousel');
+  $('#year-chart .yc-now').click();
+  await settle();
+  mode('month');
+});
+
 /* ------------------------------------------------------------------ Runner */
 
 async function run() {

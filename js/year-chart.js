@@ -5,8 +5,9 @@
 // and handles input. It touches nothing outside `host`.
 //
 // Performance: the animation loop runs only while something moves, all DOM writes happen in one
-// pass per frame and only when a value changed, and the centre bar's shadow is two plain rects
-// (no SVG filter).
+// pass per frame and only when a value changed, and the centre month is picked out with plain
+// shapes and opacity (an outline, a faint spotlight column, a label pill, muted neighbours): no
+// shadows or SVG filters.
 
 import {
   GEOM as G, lerp, clamp, wrapRel, centreIndex, nearestPos, taper, edgeOpacity, prominence,
@@ -101,8 +102,11 @@ export function createYearChart(host, opts) {
 
   el('rect', { x: 0, y: 0, width: G.W, height: G.H, fill: 'transparent' }, svg);
   const gridL = el('g', {}, svg);
-  const shadowL = el('g', {}, svg);
+  // The centre month's spotlight: a faint accent column behind it, the plot's full height.
+  const spotL = el('g', {}, svg);
+  const spot = el('rect', { class: 'yc-spot', y: G.BASE - G.BAR_H - 6, height: G.BAR_H + 6, rx: 6 }, spotL);
   const barsL = el('g', {}, svg);
+  const outlineL = el('g', {}, svg); // the centre (or opened) bar's outline, over the bars
   const incomeL = el('g', {}, svg);
   const markL = el('g', {}, svg);
   const labL = el('g', {}, svg);
@@ -175,13 +179,15 @@ export function createYearChart(host, opts) {
       rTop: G.BASE - d.total * SCALE, mTop: G.MINI_BASE - d.total * SCALE * G.MINI_SCALE, fTop: G.FOCUS_BASE - G.FOCUS_H,
       short: monthShort(d.y, d.m),
     };
-    b.sh1 = el('rect', { class: 'yc-shadow', display: 'none' }, shadowL);
-    b.sh2 = el('rect', { class: 'yc-shadow', display: 'none' }, shadowL);
     b.grp = el('g', {}, barsL);
     b.gT = el('g', {}, b.grp);
     b.gC = el('g', {}, b.grp);
     b.rT = segs.T.map((s) => el('rect', { style: `fill: ${s.colour}` }, b.gT));
     b.rC = segs.C.map((s) => el('rect', { style: `fill: ${s.colour}` }, b.gC));
+    // Away from the centre a bar is muted: less opacity, plus this veil of the card colour over it
+    // (a mix with the background, not a filter), so its colours read a little less saturated.
+    b.veil = el('rect', { class: 'yc-veil', display: 'none' }, b.grp);
+    b.ol = el('rect', { class: 'yc-outline', 'data-for': i, display: 'none' }, outlineL);
     b.markAbove = aboveAverage(d.total, avgVal);
     b.markOver = opts.showIncome && d.over && d.total > 0;
     b.mark = (opts.showIncome ? b.markOver : b.markAbove)
@@ -196,6 +202,8 @@ export function createYearChart(host, opts) {
     buildRows(b.labT, segs.T, 46, true);
     buildRows(b.labC, segs.C, 25, false);
     if (!d.total) el('text', { x: 170, y: 234, class: 'yc-row-sub' }, b.lab).textContent = 'Nothing due';
+    // The centre month's label sits in a small accent pill (drawn first, so the text is on top).
+    b.pill = el('rect', { class: 'yc-pill', 'data-for': i, height: 15, rx: 7.5, display: 'none' }, mlL);
     b.ml = el('text', { 'text-anchor': 'middle', class: 'yc-month' }, mlL);
     b.yl = opts.rolling ? el('text', { 'text-anchor': 'middle', class: 'yc-month yc-year' }, mlL) : null;
     if (b.yl) b.yl.textContent = `'${String(d.y).slice(2)}`;
@@ -259,6 +267,11 @@ export function createYearChart(host, opts) {
     dock.classList.toggle('hide', focus);
     back.classList.toggle('on', focus);
     set(gridL, 'opacity', ga);
+    // Spotlight column at the centre, as wide as the centre bar plus a margin; gone in focus.
+    const spotW = tp.width(0) + 10;
+    set(spot, 'x', G.CX - spotW / 2); set(spot, 'width', spotW);
+    set(spot, 'opacity', 1 - gl);
+    set(spotL, 'display', gl > 0.99 ? 'none' : 'inline');
     setStyle(readout, 'opacity', String(Math.round((1 - gl) * 100) / 100));
     set(incomeL, 'opacity', 1 - gl);
     if (c !== lastC) {
@@ -289,7 +302,9 @@ export function createYearChart(host, opts) {
       const xM = b.xm - b.wm / 2;
       const x = lerp(xR, lerp(xM, G.FOCUS_X, s), g);
       const w = lerp(wR, lerp(b.wm, G.FOCUS_W, s), g);
-      set(b.grp, 'opacity', lerp(edge, lerp(0.55, 1, s), g));
+      // Carousel: full opacity at the centre, about 58% one month away, fading further to the edges.
+      const muted = lerp(0.58, 1, p) * lerp(1, 0.72, clamp(ar / R, 0, 1));
+      set(b.grp, 'opacity', lerp(muted, lerp(0.55, 1, s), g));
       set(b.gT, 'display', showT ? 'inline' : 'none');
       set(b.gC, 'display', showC ? 'inline' : 'none');
       if (showT) set(b.gT, 'opacity', 1 - mx);
@@ -319,33 +334,44 @@ export function createYearChart(host, opts) {
         set(b.mark, 'transform', `translate(${Math.round((x + w / 2) * 10) / 10} ${Math.round((topY - 8) * 10) / 10})`);
         set(b.mark, 'opacity', (1 - g) * edge);
       }
-      // Cheap shadow under the centre bar or two: two offset rects, no blur filter.
-      const so = p * (1 - g) * 0.6 * edge;
-      if (so > 0.01 && b.d.total) {
-        set(b.sh1, 'display', 'inline'); set(b.sh2, 'display', 'inline');
-        set(b.sh1, 'x', x + 1); set(b.sh1, 'width', Math.max(0, w - 2)); set(b.sh1, 'y', topY + 5);
-        set(b.sh1, 'height', Math.max(0, baseY - topY)); set(b.sh1, 'rx', 3); set(b.sh1, 'opacity', so * 0.55);
-        set(b.sh2, 'x', x - 1.5); set(b.sh2, 'width', w + 3); set(b.sh2, 'y', topY + 7);
-        set(b.sh2, 'height', Math.max(0, baseY - topY)); set(b.sh2, 'rx', 5); set(b.sh2, 'opacity', so * 0.3);
-      } else {
-        set(b.sh1, 'display', 'none'); set(b.sh2, 'display', 'none');
-      }
+      // Centre highlight: plain shapes and opacity, following pos as bars pass the centre. In focus
+      // only the opened bar keeps its outline (u); the veil and the pill belong to the carousel.
+      const pr = p * (1 - g); // how centred, in carousel terms
+      const barH = Math.max(0, baseY - topY);
+      const veil = b.d.total ? 0.18 * (1 - p) * (1 - g) : 0;
+      if (veil > 0.01) {
+        set(b.veil, 'display', 'inline');
+        set(b.veil, 'x', x); set(b.veil, 'y', topY); set(b.veil, 'width', w); set(b.veil, 'height', barH);
+        set(b.veil, 'rx', Math.min(rx, barH / 2)); set(b.veil, 'opacity', veil);
+      } else set(b.veil, 'display', 'none');
+      const ring = b.d.total ? 0.7 * Math.max(pr, u) : 0;
+      if (ring > 0.01) {
+        set(b.ol, 'display', 'inline');
+        set(b.ol, 'x', x - 0.75); set(b.ol, 'y', topY - 0.75); set(b.ol, 'width', w + 1.5); set(b.ol, 'height', barH + 1.5);
+        set(b.ol, 'rx', Math.min(rx + 0.75, (barH + 1.5) / 2)); set(b.ol, 'opacity', ring);
+      } else set(b.ol, 'display', 'none');
       if (pts) pts.push({ i: b.i, rel, x: x + w / 2, y: G.BASE - b.d.income * SCALE });
       // Labels.
-      const pr = p * (1 - g);
-      const hl = Math.max(pr, u);
-      set(b.ml, 'x', lerp(xc, b.xm, g));
+      const lx = lerp(xc, b.xm, g);
+      set(b.ml, 'x', lx);
       set(b.ml, 'y', lerp(G.LABEL_Y, G.MINI_LABEL_Y, g));
-      const tone = u > 0.5 ? 'yc-month yc-month-sel' : hl > 0.5 ? 'yc-month yc-month-centre' : 'yc-month';
+      const pill = pr > 0.5;
+      const tone = u > 0.5 ? 'yc-month yc-month-sel' : pill ? 'yc-month yc-month-pill' : 'yc-month';
       set(b.ml, 'class', tone);
       const size = labelSize(ar, R, g, p);
       setStyle(b.ml, 'fontSize', `${Math.round(size * 10) / 10}px`);
       const txt = monthLabel(b.short, tp.spacing(ar), g);
       if (b.mlT !== txt) { b.mlT = txt; b.ml.textContent = txt; }
       set(b.ml, 'opacity', lerp(edge, 1, g));
+      if (pr > 0.01) {
+        const pw = Math.max(26, size * 2.9);
+        set(b.pill, 'display', 'inline');
+        set(b.pill, 'x', lx - pw / 2); set(b.pill, 'width', pw); set(b.pill, 'y', G.LABEL_Y - 11.5);
+        set(b.pill, 'opacity', pr);
+      } else set(b.pill, 'display', 'none');
       if (b.yl) {
         set(b.yl, 'x', lerp(xc, b.xm, g)); set(b.yl, 'y', lerp(G.YEAR_Y, G.MINI_YEAR_Y, g));
-        set(b.yl, 'class', `${tone} yc-year`);
+        set(b.yl, 'class', `${pill ? 'yc-month yc-month-centre' : tone} yc-year`);
         setStyle(b.yl, 'fontSize', `${Math.round(size * 8.8) / 10}px`);
         set(b.yl, 'opacity', lerp(edge, 1, g) * 0.85);
       }
