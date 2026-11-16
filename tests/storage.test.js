@@ -294,28 +294,47 @@ test('replace import tombstones what it removes; a later merge brings an item ba
 
 /* ------------------------------------------------------------------ Export / import */
 
-test('export → JSON → replace import into an empty database round-trips; settings stay out', async () => {
+test('export → JSON → replace import into an empty database round-trips, settings included', async () => {
   freshDb();
   const items = [item(), item({ id: 'b', cycle: 'once', date: '2026-11-10', nextRenewal: '', emoji: '🔧' }),
     item({ id: 'c', type: 'income', name: 'Example Salary', price: 50000 })];
   for (const s of items) await storage.save(s);
-  await storage.saveSettings({ defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } });
+  // Device-only values that must never travel in a backup, stored next to the real settings.
+  await storage.saveSettings({ defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' }, pro: true, entitlement: 'pro', palette: 'ocean' });
+  storage.setPref('palette', 'ocean');
   const file = JSON.stringify(await storage.exportAll());
   const parsed = JSON.parse(file);
-  eq(Object.keys(parsed), ['app', 'schemaVersion', 'exportedAt', 'items'], 'envelope keys');
+  eq(Object.keys(parsed), ['app', 'schemaVersion', 'exportedAt', 'items', 'settings'], 'envelope keys');
   eq([parsed.app, parsed.schemaVersion], ['substracker', 4], 'header');
-  for (const word of ['groupColors', 'defaultCurrency', 'deviceId', 'hlc', 'outbox', 'syncCursor', '"ts"', '"del"']) {
-    assert(!file.includes(word), `export must not contain ${word}`);
+  eq(parsed.settings, { defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } }, 'only the backup settings');
+  for (const word of ['pro', 'entitlement', 'palette', 'ocean', 'deviceId', 'hlc', 'outbox', 'syncCursor', '"ts"', '"del"']) {
+    assert(!file.includes(`"${word}"`), `export must not contain ${word}`);
   }
 
   freshDb();
   const summary = await storage.importAll(file, 'replace');
-  eq([summary.total, summary.added], [3, 3], 'summary');
+  eq([summary.total, summary.added, summary.withSettings], [3, 3, true], 'summary');
   const back = (await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id));
   eq(back, items, 'items identical');
-  await storage.saveSettings({ defaultCurrency: 'TWD' });
+  eq(await storage.getSettings(), { defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } }, 'same currency and colours, no Pro flag');
+});
+
+test('import never writes settings outside the backup list, even if a file has them', async () => {
+  freshDb();
+  await storage.importAll(backup([item()], { schemaVersion: 4, settings: { defaultCurrency: 'eur', groupColors: {}, pro: true, palette: 'x' } }), 'replace');
+  eq(await storage.getSettings(), { defaultCurrency: 'EUR', groupColors: {} }, 'pro and palette ignored');
+  await storage.importAll(backup([item()], { schemaVersion: 4, settings: { pro: true } }), 'merge');
+  eq('pro' in (await storage.getSettings()), false, 'merge ignores it too');
+});
+
+test('a file without settings leaves them as they are', async () => {
+  freshDb();
+  await storage.saveSettings({ defaultCurrency: 'TWD', groupColors: { Mine: 'g4' } });
+  const file = backup([item()], { schemaVersion: 4 });
+  delete file.settings;
+  eq((await storage.previewImport(file)).replace.withSettings, false, 'preview says so');
   await storage.importAll(file, 'replace');
-  eq(await storage.getSettings(), { defaultCurrency: 'TWD' }, 'importing a new-format file leaves settings alone');
+  eq(await storage.getSettings(), { defaultCurrency: 'TWD', groupColors: { Mine: 'g4' } }, 'untouched');
 });
 
 test('records without a type (pre-1.1.0) export as expenses and re-import', async () => {

@@ -472,18 +472,24 @@ export async function requestPersistence() {
 /* --------------------------------------------------------------------------
    Export / import
    -------------------------------------------------------------------------- */
-// Backups: { app, schemaVersion: 4, exportedAt, items }, the live (not deleted) items with their ids.
-// Settings, preferences and sync bookkeeping (device id, clock, outbox) are never exported.
-// Older files still import: schemaVersion 3 has the same envelope plus `settings`, and files from
-// 1.0–1.2 use { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2).
+// Backups: { app, schemaVersion: 4, exportedAt, items, settings }: the live (not deleted) items with
+// their ids, and the settings worth restoring (BACKUP_SETTINGS). Nothing else from the device goes in:
+// no sync bookkeeping (device id, clock, cursor, outbox, field stamps), no entitlement flags, and no
+// appearance or other preferences. Settings are restored by import but never synced.
+// Older files still import: schemaVersion 3 has the same envelope, and files from 1.0–1.2 use
+// { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2).
+
+/** The settings a backup carries. An allowlist, so anything added to settings later stays out until listed here. */
+export const BACKUP_SETTINGS = ['defaultCurrency', 'groupColors'];
 
 /** Everything needed to restore this device's items, as a plain object ready for JSON.stringify. */
 export async function exportAll() {
-  const items = await getAll();
+  const [items, settings] = await Promise.all([getAll(), getSettings()]);
   // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
   // carries the full current shape.
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
-  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full };
+  const kept = Object.fromEntries(BACKUP_SETTINGS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
+  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings: kept };
 }
 
 /** A problem with an import file. `message` is written for the person importing. */
@@ -538,7 +544,7 @@ export function parseBackup(json) {
     checkItem(raw, i, firstSeen);
     return { item: normalize(raw, data.exportedAt), ts: stamp(raw.updatedAt) };
   });
-  // Backups up to schemaVersion 3 carry settings; newer ones don't.
+  // A file without settings (hand-made, or from a pre-release build of format 4) leaves them as they are.
   return { version, items, settings: data.settings ?? null };
 }
 
@@ -617,9 +623,10 @@ export function planFromBackup(backup, existing, current) {
     if (!cur) { added++; mergeWrites.push(item); } else if (ts > stamp(cur.updatedAt)) { updated++; mergeWrites.push(item); } else kept++;
   }
 
-  // Settings only come from older files that have them; a file without settings leaves them as they are.
-  // Merge lets the file's colours win for the groups it names; replace takes the file's colours and
-  // its default currency. Files without colours import fine; the app assigns any gaps.
+  // Only the backup settings are read from a file, so it can't set anything else (such as an
+  // entitlement). A file without settings leaves them as they are. Merge lets the file's colours win
+  // for the groups it names; replace takes the file's colours and its default currency. Files
+  // without colours import fine; the app assigns any gaps.
   const fileColors = withSettings ? cleanColors(backup.settings.groupColors) : {};
   const cur = withSettings ? backup.settings.defaultCurrency : null;
   const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;

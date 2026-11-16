@@ -132,10 +132,22 @@ test('imports 1.1–1.2 (version 2) and 1.3 (schemaVersion 3) exports by id, new
   assert.deepEqual(live(replica).map((s) => [s.id, s.price]), [['a', 2], ['b', 1], ['v2', 5]]);
 });
 
-test('a schemaVersion 4 export has no settings, so importing it leaves settings alone', () => {
+test('a schemaVersion 4 export restores currency and colours; other settings in a file are ignored', () => {
   const { replica } = migrate([item()]);
-  const file = { app: 'substracker', schemaVersion: 4, exportedAt: T2, items: live(replica) };
-  const backup = storage.parseBackup(JSON.stringify(file));
+  const file = {
+    app: 'substracker', schemaVersion: 4, exportedAt: T2, items: live(replica),
+    settings: { defaultCurrency: 'usd', groupColors: { Entertainment: 'g2' }, pro: true, palette: 'ocean' },
+  };
+  const plans = storage.planFromBackup(storage.parseBackup(JSON.stringify(file)), [], { groupColors: { Mine: 'g4' } });
+  assert.deepEqual(plans.replace.settings, { groupColors: { Entertainment: 'g2' }, defaultCurrency: 'USD' });
+  assert.deepEqual(plans.merge.settings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } });
+  assert.equal(plans.replace.summary.withSettings, true);
+  assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors']);
+});
+
+test('a file without settings leaves settings alone', () => {
+  const { replica } = migrate([item()]);
+  const backup = storage.parseBackup({ app: 'substracker', schemaVersion: 4, items: live(replica) });
   const plans = storage.planFromBackup(backup, [], { groupColors: { Mine: 'g4' } });
   assert.deepEqual([plans.merge.settings, plans.replace.settings], [{}, {}]);
   assert.equal(plans.replace.summary.withSettings, false);
