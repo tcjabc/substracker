@@ -186,6 +186,7 @@ export function createYearChart(host, opts) {
     // Away from the centre a bar is muted: less opacity, plus this veil of the card colour over it
     // (a mix with the background, not a filter), so its colours read a little less saturated.
     b.veil = el('rect', { class: 'yc-veil', display: 'none' }, b.grp);
+    b.olGap = el('path', { class: 'yc-outline-gap', 'data-for': i, display: 'none' }, outlineL);
     b.ol = el('rect', { class: 'yc-outline', 'data-for': i, display: 'none' }, outlineL);
     b.markAbove = aboveAverage(d.total, avgVal);
     b.markOver = opts.showIncome && d.over && d.total > 0;
@@ -338,15 +339,24 @@ export function createYearChart(host, opts) {
         set(b.veil, 'x', x); set(b.veil, 'y', topY); set(b.veil, 'width', w); set(b.veil, 'height', barH);
         set(b.veil, 'rx', Math.min(rx, barH / 2)); set(b.veil, 'opacity', veil);
       } else set(b.veil, 'display', 'none');
-      // The outline, in the pill's accent, at full strength on the centre (or opened) bar. Its
-      // bottom edge sits 0.75 above the baseline, so the 1.5 stroke ends on the baseline and never
-      // shows below the bar.
+      // The outline, in the pill's accent, at full strength on the centre (or opened) bar. A 1px
+      // card-coloured gap separates it from the bar (top and sides; open at the baseline), so it
+      // stays visible against an annual segment, which is the same accent. The outline's bottom
+      // edge sits 0.75 above the baseline, so its 1.5 stroke ends on the baseline and never shows
+      // below the bar.
       const ring = b.d.total ? Math.max(pr, u) : 0;
       if (ring > 0.01) {
-        set(b.ol, 'display', 'inline');
-        set(b.ol, 'x', x - 0.75); set(b.ol, 'y', topY - 0.75); set(b.ol, 'width', w + 1.5); set(b.ol, 'height', barH);
-        set(b.ol, 'rx', Math.min(rx + 0.75, barH / 2)); set(b.ol, 'opacity', ring);
-      } else set(b.ol, 'display', 'none');
+        set(b.ol, 'display', 'inline'); set(b.olGap, 'display', 'inline');
+        set(b.ol, 'x', x - 1.75); set(b.ol, 'y', topY - 1.75); set(b.ol, 'width', w + 3.5); set(b.ol, 'height', barH + 1);
+        set(b.ol, 'rx', Math.min(rx + 1.75, (barH + 1) / 2)); set(b.ol, 'opacity', ring);
+        const x0 = x - 0.5;
+        const x1 = x + w + 0.5;
+        const yt = topY - 0.5;
+        const r = Math.min(rx + 0.5, (x1 - x0) / 2, Math.max(0, baseY - yt) / 2);
+        const f = (v) => Math.round(v * 100) / 100;
+        set(b.olGap, 'd', `M${f(x0)} ${f(baseY)}V${f(yt + r)}Q${f(x0)} ${f(yt)} ${f(x0 + r)} ${f(yt)}H${f(x1 - r)}Q${f(x1)} ${f(yt)} ${f(x1)} ${f(yt + r)}V${f(baseY)}`);
+        set(b.olGap, 'opacity', ring);
+      } else { set(b.ol, 'display', 'none'); set(b.olGap, 'display', 'none'); }
       if (pts) pts.push({ i: b.i, rel, x: x + w / 2, y: G.BASE - b.d.income * SCALE });
       // Labels.
       const lx = lerp(xc, b.xm, g);

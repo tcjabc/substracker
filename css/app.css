@@ -38,9 +38,10 @@
   --group-9: #2d8a8c;  /* teal */
   --group-10: #a8474f; /* brick */
   --group-other: #a3a6b4; /* "Other" slice: neutral */
-  /* Year chart: plan types (monthly muted slate, annual the accent, one-offs warm orange) and the
-     veil that mutes the bars away from the centre (the card colour). */
-  --type-monthly: #7d8299;
+  /* Year chart: plan types (monthly teal, annual the accent, one-offs warm orange: three hues at
+     different lightness, >= 3:1 on the card, distinct under protan/deutan/tritan simulation) and
+     the veil that mutes the bars away from the centre (the card colour). */
+  --type-monthly: #0e8378;
   --type-annual: var(--accent);
   --type-once: #dd7a35;
   --chart-veil: var(--surface);
@@ -190,7 +191,7 @@
     --group-9: #5bb3b3;
     --group-10: #d0727a;
     --group-other: #5f6270;
-    --type-monthly: #5d6283;
+    --type-monthly: #5eead4;
     --type-annual: var(--accent);
     --type-once: #f0a35e;
     --scrim: rgb(0 0 0 / 0.6);
@@ -233,7 +234,7 @@
   --group-9: #5bb3b3;
   --group-10: #d0727a;
   --group-other: #5f6270;
-  --type-monthly: #5d6283;
+  --type-monthly: #5eead4;
   --type-annual: var(--accent);
   --type-once: #f0a35e;
   --scrim: rgb(0 0 0 / 0.6);
@@ -972,6 +973,8 @@ dialog::backdrop { background: var(--scrim); }
    the card colour (their group also drops to ~58% opacity). Nothing behind or under the bar. */
 .yc-veil { fill: var(--chart-veil); }
 .yc-outline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+/* 1px of card colour between the outlined bar and its outline (top and sides). */
+.yc-outline-gap { fill: none; stroke: var(--surface); stroke-width: 1; }
 .yc-pill { fill: var(--accent); }
 .yc-mark-above { fill: var(--text-muted); }
 .yc-mark-over { fill: none; stroke: var(--text); stroke-width: 1.4; }

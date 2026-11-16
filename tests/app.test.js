@@ -622,6 +622,21 @@ test('centre highlight: an outline in the pill colour and the label pill; nothin
   eq(getComputedStyle(ring).stroke, getComputedStyle(pill).fill, 'outline in the pill colour');
   eq(getComputedStyle(ring).strokeWidth, '1.5px', '1.5 wide');
   assert(Number(ring.getAttribute('rx')) > 0, 'rounded');
+  // A 1px card-coloured gap between the bar and its outline (the annual segment is the accent too).
+  const gap = $(`#year-chart .yc-outline-gap[data-for="${centre}"]`);
+  eq(getComputedStyle(gap).stroke, getComputedStyle($('#year-chart .yc-stage')).backgroundColor, 'gap in the card colour');
+  eq(getComputedStyle(gap).strokeWidth, '1px', 'a 1px gap');
+  const barsLayer = $$('#year-chart .yc-svg > g')[1]; // after the grid: one group per bar, in order
+  const segment = [...barsLayer.children[centre].querySelectorAll('rect[style]')].find((r) => r.closest('g[display="none"]') === null);
+  eq(Math.round((Number(segment.getAttribute('x')) - Number(ring.getAttribute('x'))) * 100) / 100, 1.75, 'outline 1px off the bar (plus half its stroke)');
+  // The monthly type colour: the theme's teal token, not the old slate, in the bars and the legend.
+  const teal = getComputedStyle(document.documentElement).getPropertyValue('--type-monthly').trim().toLowerCase();
+  assert(['#0e8378', '#5eead4'].includes(teal), `monthly is teal (${teal})`);
+  const asRgb = (c) => { const i = document.createElement('i'); i.style.color = c; document.body.append(i); const v = getComputedStyle(i).color; i.remove(); return v; };
+  const swatch = $$('#year-chart .yc-key').find((k) => text(k) === 'Monthly plans').querySelector('i');
+  eq(getComputedStyle(swatch).backgroundColor, asRgb(teal), 'legend swatch in the teal');
+  const monthlySeg = $$('#year-chart .yc-svg rect[style]').find((r) => r.getAttribute('style').includes('--type-monthly'));
+  eq(getComputedStyle(monthlySeg).fill, asRgb(teal), 'monthly segments in the teal');
   const noShadows = (where) => {
     assert(!$('#year-chart .yc-spot, #year-chart .yc-shadow'), `no spotlight or shadow layer (${where})`);
     assert(!$('#year-chart filter, #year-chart [filter], #year-chart feGaussianBlur'), `no SVG filters (${where})`);
