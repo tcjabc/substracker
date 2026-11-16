@@ -128,7 +128,8 @@ test('imports 1.1–1.2 (version 2) and 1.3 (schemaVersion 3) exports by id, new
     items: [item({ id: 'a', price: 2, updatedAt: T2 }), item({ id: 'b', price: 2, updatedAt: T1 })],
   }, 'merge');
   assert.deepEqual([plan.summary.added, plan.summary.updated, plan.summary.kept], [0, 1, 1]);
-  assert.deepEqual(plan.settings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } }, 'old files still bring colours');
+  assert.deepEqual(plan.settings, { groupColors: { Entertainment: 'g2' } }, 'old files still bring colours (as a patch)');
+  assert.deepEqual(plan.localSettings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } }, 'merged for an unshared device');
   assert.deepEqual(live(replica).map((s) => [s.id, s.price]), [['a', 2], ['b', 1], ['v2', 5]]);
 });
 
@@ -140,7 +141,9 @@ test('a schemaVersion 4 export restores currency and colours; other settings in 
   };
   const plans = storage.planFromBackup(storage.parseBackup(JSON.stringify(file)), [], { groupColors: { Mine: 'g4' } });
   assert.deepEqual(plans.replace.settings, { groupColors: { Entertainment: 'g2' }, defaultCurrency: 'USD' });
-  assert.deepEqual(plans.merge.settings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } });
+  assert.deepEqual(plans.merge.settings, { groupColors: { Entertainment: 'g2' } });
+  assert.deepEqual(plans.merge.localSettings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } });
+  assert.deepEqual(plans.replace.localSettings, plans.replace.settings);
   assert.equal(plans.replace.summary.withSettings, true);
   assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors']);
 });

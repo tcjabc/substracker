@@ -158,7 +158,7 @@ test('an unverifiable migration falls back to the old store', async () => {
 /* ------------------------------------------------------------------ Sync-ready records */
 
 /** A database in the 1.3–1.4 layout (version 2: items + meta + settings, items already verified). */
-async function seedV2(name, items, { stray = null } = {}) {
+async function seedV2(name, items, { stray = null, settings = {} } = {}) {
   const db = await rawOpen(name, 2, (d) => {
     d.createObjectStore('items', { keyPath: 'id' });
     d.createObjectStore('meta', { keyPath: 'key' });
@@ -166,6 +166,7 @@ async function seedV2(name, items, { stray = null } = {}) {
   });
   await rawPut(db, 'items', items);
   await rawPut(db, 'meta', [{ key: 'schemaVersion', value: 3 }]);
+  await rawPut(db, 'settings', Object.entries(settings).map(([key, value]) => ({ key, value })));
   db.close();
   if (stray) await stray(name);
 }
@@ -392,6 +393,103 @@ test('sync config: a new household key resets the cursor and queues every record
 });
 
 /* ------------------------------------------------------------------ Export / import */
+
+/* ------------------------------------------------------------------ Shared settings */
+
+const settingsOps = (outbox) => outbox.filter((op) => op.rec === storage.SETTINGS_ID);
+
+test('upgrade: stored currency and colours are seeded into the shared record once, verified, settings store kept', async () => {
+  const name = freshDb();
+  const stored = { defaultCurrency: 'TWD', groupColors: { Entertainment: 'g2', Software: 'g5' }, pro: true };
+  await seedV2(name, [item(), v1Record()], { settings: stored });
+  eq((await storage.getAll()).length, 2, 'two items, no settings item');
+  const st = await storage.status();
+  eq([st.settingsShared, st.settingsMigration.verified, st.settingsMigration.fields], [true, true, 3], 'settings step');
+  eq(await storage.getSettings(), { pro: true, defaultCurrency: 'TWD', groupColors: { Entertainment: 'g2', Software: 'g5' } }, 'same values');
+  const ops = settingsOps((await storage.syncState()).outbox);
+  eq(ops.length, 3, 'currency and two colours queued');
+  eq(new Set(ops.map((o) => o.t)).size, 1, 'one stamp');
+  assert(ops.every((o) => o.f !== 'del'), 'never a del op');
+  eq((await storage.exportAll()).items.length, 2, 'not exported as an item');
+  const [rawSettings, rec] = await inspect(name, async (db) => [await rawAll(db, 'settings'), (await rawAll(db, 'records')).find((r) => r.id === 'settings')]);
+  eq(Object.fromEntries(rawSettings.map((r) => [r.key, r.value])), stored, 'old settings store untouched');
+  eq('del' in rec.fields, false, 'the record is not an item');
+});
+
+test('upgrade seeding re-runs safely: an unrecorded step adds no second set of ops', async () => {
+  const name = freshDb();
+  await seedV2(name, [item()], { settings: { defaultCurrency: 'EUR' } });
+  await storage.getAll();
+  const first = settingsOps((await storage.syncState()).outbox);
+  // As if the app closed after the copy but before the check was recorded.
+  await inspect(name, (db) => new Promise((resolve) => {
+    const tx = db.transaction('meta', 'readwrite');
+    tx.objectStore('meta').delete('settingsMigration');
+    tx.oncomplete = resolve;
+  }));
+  storage.useDatabase(name);
+  await storage.getAll();
+  eq(settingsOps((await storage.syncState()).outbox), first, 'same ops, nothing duplicated');
+  eq((await storage.status()).settingsMigration.verified, true, 'verified again');
+  eq((await storage.getSettings()).defaultCurrency, 'EUR', 'value kept');
+});
+
+test('a fresh install shares settings with nothing seeded; automatic picks never make ops', async () => {
+  freshDb();
+  await storage.getAll();
+  eq((await storage.status()).settingsShared, true, 'shared from the start');
+  await storage.saveLocalDefaults({ defaultCurrency: 'GBP', groupColors: { Food: 'g1' } });
+  await storage.saveLocalDefaults({ groupColors: { Home: 'g2' } });
+  eq((await storage.syncState()).outbox, [], 'nothing queued');
+  eq(await storage.getSettings(), { defaultCurrency: 'GBP', groupColors: { Food: 'g1', Home: 'g2' } }, 'shown on this device');
+  eq((await storage.exportAll()).settings, { defaultCurrency: 'GBP', groupColors: { Food: 'g1', Home: 'g2' } }, 'and exported as before');
+});
+
+test('an explicit choice is queued per field; colours are saved per group', async () => {
+  freshDb();
+  await storage.saveLocalDefaults({ groupColors: { Food: 'g1', Home: 'g2' } });
+  await storage.saveSettings({ defaultCurrency: 'jpy' });
+  await storage.saveSettings({ groupColors: { Food: 'g7' } });
+  const ops = settingsOps((await storage.syncState()).outbox);
+  eq(ops.map((o) => o.f).sort(), [storage.colorField('Food'), 'defaultCurrency'].sort(), 'only the chosen fields');
+  eq(await storage.getSettings(), { defaultCurrency: 'JPY', groupColors: { Food: 'g7', Home: 'g2' } }, 'chosen colour over automatic, Home kept');
+  await storage.saveSettings({ defaultCurrency: 'JPY' });
+  eq(settingsOps((await storage.syncState()).outbox).length, 2, 'an unchanged value queues nothing');
+});
+
+test('applyRemote: the household currency and colours replace this device\'s automatic picks', async () => {
+  freshDb();
+  await storage.saveLocalDefaults({ defaultCurrency: 'GBP', groupColors: { Food: 'g1' } });
+  await storage.save(item({ category: 'Food' }));
+  const t = syncCore.formatStamp(Date.now(), 0, 'remote-device');
+  const op = (f, v) => ({ id: crypto.randomUUID(), rec: storage.SETTINGS_ID, f, v, t, dev: 'remote-device' });
+  const out = await storage.applyRemote([op('defaultCurrency', 'TWD'), op(storage.colorField('Food'), { name: 'Food', swatch: 'g4' }), op('del', false)], 3);
+  eq([out.changed, out.skipped], [2, 1], 'the del op is refused');
+  eq(await storage.getSettings(), { defaultCurrency: 'TWD', groupColors: { Food: 'g4' } }, 'household values');
+  eq((await storage.getAll()).map((s) => s.id), ['a'], 'still one item');
+});
+
+test('a device whose records migration is not verified keeps settings local, as before', async () => {
+  const name = freshDb();
+  const db = await rawOpen(name, 2, (d) => {
+    d.createObjectStore('subscriptions', { keyPath: 'id' });
+    d.createObjectStore('settings', { keyPath: 'key' });
+    d.createObjectStore('items', { keyPath: 'id' });
+    d.createObjectStore('meta', { keyPath: 'key' });
+  });
+  await rawPut(db, 'subscriptions', [v1Record()]);
+  await rawPut(db, 'items', [item({ id: 'stray' })]);
+  db.close();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await storage.saveSettings({ defaultCurrency: 'USD', groupColors: { A: 'g1' } });
+    await storage.saveSettings({ groupColors: { B: 'g2' } });
+    await storage.saveLocalDefaults({ groupColors: { C: 'g3' } });
+    eq((await storage.status()).settingsShared, false, 'not shared');
+    eq(await storage.getSettings(), { defaultCurrency: 'USD', groupColors: { A: 'g1', B: 'g2', C: 'g3' } }, 'stored locally, colours merged');
+  } finally { console.warn = warn; }
+});
 
 test('export → JSON → replace import into an empty database round-trips, settings included', async () => {
   freshDb();

@@ -5,7 +5,13 @@
 // Items are stored sync-ready (see js/sync-core.js): every record has a stable id, a timestamp per
 // field and a deleted flag, and every change is written as ops to an outbox in the same
 // transaction. The app still sees plain items: getAll() returns live records in the old shape.
-// Settings, preferences and anything device-specific are not records and are never synced.
+//
+// Two settings are shared by the household: the default currency and the group colours. They live
+// in one reserved record (SETTINGS_ID) that is never live, so it never shows up as an item. Values
+// the app picks by itself (the locale currency, auto-assigned colours) stay on this device and only
+// fill gaps, so a device that never chose anything can't override a household choice. Everything
+// else (theme and other preferences, entitlement flags, device id, clock, cursor, sync config) is
+// per device and never synced or exported.
 
 import { firstEmoji, uid } from './util.js';
 import { cleanDomain } from './services.js';
@@ -40,6 +46,8 @@ let dbPromise = null;
 let source = RECORDS; // ITEMS or LEGACY only while a migration could not be verified
 let migration = null; // the 1.3.0 subscriptions → items record, for status()
 let syncMigration = null; // the items → records record, for status()
+let settingsMigration = null; // the settings → shared settings record step, for status()
+let settingsShared = false; // true once that step is verified: settings are read from the record
 let onBlocked = () => {};
 let onEnqueued = () => {};
 
@@ -51,6 +59,8 @@ export function useDatabase(name) {
   source = RECORDS;
   migration = null;
   syncMigration = null;
+  settingsMigration = null;
+  settingsShared = false;
   old?.then((db) => db.close()).catch(() => {});
 }
 
@@ -111,11 +121,67 @@ async function migrate(db) {
   const meta = await readMeta(db);
   migration = meta.migration ?? null;
   syncMigration = meta.syncMigration ?? null;
+  settingsMigration = meta.settingsMigration ?? null;
+  settingsShared = false;
   if (db.objectStoreNames.contains(LEGACY) && !meta.migration?.verified) {
     if (!(await migrateLegacy(db))) { source = LEGACY; return; }
   }
-  if (meta.syncMigration?.verified) { source = RECORDS; return; }
-  source = (await migrateToRecords(db)) ? RECORDS : ITEMS;
+  if (meta.syncMigration?.verified) source = RECORDS;
+  else source = (await migrateToRecords(db)) ? RECORDS : ITEMS;
+  if (source !== RECORDS) return;
+  settingsShared = meta.settingsMigration?.verified ? true : await migrateSettings(db);
+}
+
+/**
+ * Shared settings: copy the default currency and group colours stored on this device into the
+ * settings record once, stamped now, and queue them so the household gets them. A field the record
+ * already has (it came from another device) is left as it is. Then read it back and check it.
+ * The settings store is never modified or deleted here; until the check has passed, settings keep
+ * being read from and written to it as before, and the step is tried again on the next load.
+ * Safe to interrupt and re-run: the copy is one transaction, and a re-run only adds what's missing.
+ */
+async function migrateSettings(db) {
+  let stored;
+  try {
+    const tx = db.transaction([SETTINGS, RECORDS, OUTBOX, META], 'readwrite');
+    const metaStore = tx.objectStore(META);
+    const [rows, rec, devRow, hlcRow] = await Promise.all([
+      result(tx.objectStore(SETTINGS).getAll()), result(tx.objectStore(RECORDS).get(SETTINGS_ID)),
+      result(metaStore.get('deviceId')), result(metaStore.get('hlc')),
+    ]);
+    let ops;
+    let replica;
+    try {
+      if (!sync.isDeviceId(devRow?.value)) throw new Error('this device has no sync id');
+      stored = storedSharedSettings(Object.fromEntries(rows.map((r) => [r.key, r.value])));
+      replica = { clock: loadClock(hlcRow?.value, devRow.value), records: new Map(rec ? [[rec.id, rec]] : []) };
+      ops = seedSettingsOps(replica, stored);
+    } catch (err) {
+      tx.abort();
+      throw err;
+    }
+    if (ops.length) {
+      tx.objectStore(RECORDS).put(replica.records.get(SETTINGS_ID));
+      for (const op of ops) tx.objectStore(OUTBOX).put(op);
+      metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+    }
+    await done(tx);
+  } catch (err) {
+    settingsMigration = { verified: false };
+    console.warn(`Storage: could not copy settings to the shared record (${err?.message ?? err}). Settings stay on this device.`);
+    return false;
+  }
+
+  const rec = await result(db.transaction(RECORDS).objectStore(RECORDS).get(SETTINGS_ID));
+  const problem = verifySettingsSeed(stored, rec);
+  if (problem) {
+    settingsMigration = { verified: false };
+    console.warn(`Storage: shared settings check failed (${problem}). Settings stay on this device.`);
+    return false;
+  }
+  settingsMigration = { fields: settingsFieldCount(stored), verified: true, at: new Date().toISOString() };
+  await writeMeta(db, { settingsMigration });
+  return true;
 }
 
 /**
@@ -233,7 +299,10 @@ async function writeMeta(db, obj) {
 export async function status() {
   const db = await open();
   const meta = await readMeta(db);
-  return { schemaVersion: meta.schemaVersion ?? null, migration, syncMigration, usingLegacy: source !== RECORDS };
+  return {
+    schemaVersion: meta.schemaVersion ?? null, migration, syncMigration, settingsMigration,
+    usingLegacy: source !== RECORDS, settingsShared,
+  };
 }
 
 /** Sync bookkeeping for this device: id, clock, cursor and pending ops (oldest first). Null on a fallback store. */
@@ -509,6 +578,7 @@ export function importOps(replica, { clear, writes }, opts) {
  * kept, since a newer version may have added them (sync-core has already checked they're plain JSON).
  */
 function acceptableRemote(op) {
+  if (op.rec === SETTINGS_ID) return acceptableSetting(op);
   if (op.f === sync.DELETED) return typeof op.v === 'boolean';
   if (op.f === 'price') return typeof op.v === 'number' && Number.isFinite(op.v) && op.v >= 0;
   if (ITEM_FIELDS.includes(op.f)) return typeof op.v === 'string' && op.v.length <= 2000;
@@ -548,13 +618,144 @@ export function requeueOps(records) {
 }
 
 /* --------------------------------------------------------------------------
+   Shared settings record. Pure functions, also used by the Node tests.
+   -------------------------------------------------------------------------- */
+// The record has no `del` field, so it is never live and never an item. Fields:
+//   defaultCurrency      a 3-letter code (null: cleared)
+//   color_<16 hex>       { name, swatch } for one expense group (null: cleared)
+// One field per group means concurrent colour changes to different groups both survive; for the
+// same field the later stamp wins, as for items. Field names allow only letters, digits and `_`,
+// so the group name is hashed into the field name (colorField) and carried in the value.
+export const SETTINGS_ID = 'settings';
+const CURRENCY_FIELD = 'defaultCurrency';
+const COLOR_PREFIX = 'color_';
+// Kept in the settings store on this device only: values the app picked by itself, used where the
+// household has no value. Never synced, never exported, never seeded into the record.
+const AUTO_CURRENCY = 'autoCurrency';
+const AUTO_COLORS = 'autoGroupColors';
+
+const isCurrency = (v) => typeof v === 'string' && /^[A-Z]{3}$/.test(v);
+const isGroupName = (v) => typeof v === 'string' && v.length > 0 && v.length <= 40 && v === v.trim();
+const isSwatchKey = (v) => typeof v === 'string' && v.length > 0 && v.length <= 8;
+
+/**
+ * The field name for a group's colour: a 64-bit hash of the name (cyrb53's two 32-bit lanes) in
+ * hex. Every device must compute the same name, so this function is part of the sync format.
+ */
+export function colorField(name) {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = (n) => (n >>> 0).toString(16).padStart(8, '0');
+  return `${COLOR_PREFIX}${hex(h2)}${hex(h1)}`;
+}
+
+/** Whether a field value from another device is a usable shared setting (null clears). */
+function acceptableSetting(op) {
+  if (op.f === sync.DELETED) return false; // the record must never become an item
+  if (op.f === CURRENCY_FIELD) return op.v === null || isCurrency(op.v);
+  if (op.f.startsWith(COLOR_PREFIX)) {
+    return op.v === null || (isObj(op.v) && isGroupName(op.v.name) && isSwatchKey(op.v.swatch) && colorField(op.v.name) === op.f);
+  }
+  return true; // a shared setting a newer version added: kept, not used here
+}
+
+/** The shared settings in the record: { defaultCurrency?, groupColors }. Cleared or bad fields are skipped. */
+export function settingsFromRecord(record) {
+  const out = {};
+  const f = record?.fields ?? {};
+  if (isCurrency(f[CURRENCY_FIELD])) out.defaultCurrency = f[CURRENCY_FIELD];
+  out.groupColors = {};
+  for (const [k, v] of Object.entries(f)) {
+    if (k.startsWith(COLOR_PREFIX) && isObj(v) && isGroupName(v.name) && isSwatchKey(v.swatch) && colorField(v.name) === k) {
+      out.groupColors[v.name] = v.swatch;
+    }
+  }
+  return out;
+}
+
+/**
+ * Record fields for a settings change ({ defaultCurrency?, groupColors? }, groupColors a patch by
+ * group name). With replaceColors, colours in the record that the change doesn't name are cleared.
+ */
+export function settingsFields(record, change, { replaceColors = false } = {}) {
+  const fields = {};
+  const cur = change?.defaultCurrency;
+  if (typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur)) fields[CURRENCY_FIELD] = cur.toUpperCase();
+  for (const [raw, swatch] of Object.entries(isObj(change?.groupColors) ? change.groupColors : {})) {
+    const name = typeof raw === 'string' ? raw.trim() : '';
+    if (isGroupName(name) && isSwatchKey(swatch)) fields[colorField(name)] = { name, swatch };
+  }
+  if (replaceColors) {
+    for (const [k, v] of Object.entries(record?.fields ?? {})) {
+      if (k.startsWith(COLOR_PREFIX) && v !== null && !(k in fields)) fields[k] = null;
+    }
+  }
+  return fields;
+}
+
+/** Ops for an explicit settings change (a choice in the app or an import). Unchanged values make none. */
+export function settingsOps(replica, change, { replaceColors, ...opts } = {}) {
+  const fields = settingsFields(replica.records.get(SETTINGS_ID), change, { replaceColors });
+  return sync.setFields(replica, SETTINGS_ID, fields, opts);
+}
+
+/** The explicitly stored shared settings in this device's settings store (its key → value rows). */
+export function storedSharedSettings(rows) {
+  const out = {};
+  const cur = rows?.defaultCurrency;
+  if (typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur)) out.defaultCurrency = cur.toUpperCase();
+  out.groupColors = cleanColors(rows?.groupColors);
+  return out;
+}
+
+/** Upgrade seeding: ops for the stored settings the record doesn't have yet, all with one stamp of now. */
+export function seedSettingsOps(replica, stored, opts) {
+  const rec = replica.records.get(SETTINGS_ID);
+  const fields = settingsFields(null, stored);
+  for (const f of Object.keys(fields)) if (rec && f in rec.ts) delete fields[f];
+  return sync.setFields(replica, SETTINGS_ID, fields, opts);
+}
+
+const settingsFieldCount = (stored) => Object.keys(settingsFields(null, stored)).length;
+
+/** Check the seeding: every stored setting has a stamped field in the record. Null, or what's wrong (counts only). */
+export function verifySettingsSeed(stored, record) {
+  const want = Object.keys(settingsFields(null, stored));
+  if (record && sync.DELETED in record.fields) return 'the settings record looks like an item';
+  const missing = want.filter((f) => !sync.isStamp(record?.ts?.[f])).length;
+  return missing ? `${missing} of ${want.length} settings missing` : null;
+}
+
+/**
+ * What the app sees, from this device's settings store and the record: the household's value
+ * where there is one, else the one this device picked by itself. Other stored keys come through
+ * unchanged (they are per device); the old per-device copies of the two shared settings don't.
+ */
+export function effectiveSettings(local, record) {
+  const { defaultCurrency, groupColors, [AUTO_CURRENCY]: autoCurrency, [AUTO_COLORS]: autoColors, ...rest } = local ?? {};
+  const shared = settingsFromRecord(record);
+  const out = { ...rest };
+  const cur = shared.defaultCurrency ?? (isCurrency(autoCurrency) ? autoCurrency : undefined);
+  if (cur) out.defaultCurrency = cur;
+  out.groupColors = { ...cleanColors(autoColors), ...shared.groupColors };
+  return out;
+}
+
+/* --------------------------------------------------------------------------
    Items and settings
    -------------------------------------------------------------------------- */
 /** Every item that hasn't been deleted, in the plain item shape. */
 export async function getAll() {
   const db = await open();
   const rows = await result(db.transaction(source).objectStore(source).getAll());
-  return source === RECORDS ? rows.map(toItem).filter(Boolean) : rows;
+  return source === RECORDS ? rows.filter((r) => r.id !== SETTINGS_ID).map(toItem).filter(Boolean) : rows;
 }
 
 /**
@@ -593,6 +794,7 @@ async function commit(change, { ids, settings } = {}) {
 /** Add or update an item. Only the fields that changed are recorded as ops. */
 export async function save(item) {
   if (!sync.isRecordId(item?.id)) throw new Error('Storage: an item needs an id.');
+  if (item.id === SETTINGS_ID) throw new Error('Storage: that item id is reserved.');
   const db = await open();
   if (source === RECORDS) {
     await commit((r) => sync.putRecord(r, item.id, itemFields(item)), { ids: [item.id] });
@@ -616,10 +818,16 @@ export async function remove(id) {
   await done(tx);
 }
 
-/** All settings as one object, e.g. { defaultCurrency: 'TWD', groupColors: {…} }. */
+/**
+ * All settings as one object, e.g. { defaultCurrency: 'TWD', groupColors: {…} }. The default
+ * currency and group colours are the household's where it has chosen them (see effectiveSettings).
+ */
 export async function getSettings() {
   const db = await open();
-  return readSettings(db.transaction(SETTINGS).objectStore(SETTINGS));
+  if (!settingsShared) return readSettings(db.transaction(SETTINGS).objectStore(SETTINGS));
+  const tx = db.transaction([SETTINGS, RECORDS]);
+  const [local, rec] = await Promise.all([readSettings(tx.objectStore(SETTINGS)), result(tx.objectStore(RECORDS).get(SETTINGS_ID))]);
+  return effectiveSettings(local, rec);
 }
 
 async function readSettings(store) {
@@ -627,13 +835,49 @@ async function readSettings(store) {
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
-/** Store the given keys; keys not mentioned are left as they are. Settings are per device and never synced. */
+const COLOR_KEYS = new Set(['groupColors', AUTO_COLORS]);
+
+/** Put settings rows; a group-colour map is merged into the stored one (it's a patch by group). */
+async function putLocalSettings(store, obj) {
+  for (const [key, value] of Object.entries(obj)) {
+    if (COLOR_KEYS.has(key)) {
+      const row = await result(store.get(key));
+      store.put({ key, value: { ...cleanColors(row?.value), ...cleanColors(value) } });
+    } else store.put({ key, value });
+  }
+}
+
+async function writeLocalSettings(db, obj) {
+  if (!Object.keys(obj).length) return;
+  const tx = db.transaction(SETTINGS, 'readwrite');
+  await putLocalSettings(tx.objectStore(SETTINGS), obj);
+  await done(tx);
+}
+
+/**
+ * A setting the person chose. `groupColors` is a patch: { groupName: swatchKey } for the groups
+ * that changed. The default currency and group colours go to the shared record as ops, so they
+ * sync; other keys stay on this device. Before the shared record is set up, all of it stays here.
+ */
 export async function saveSettings(obj) {
   const db = await open();
-  const tx = db.transaction(SETTINGS, 'readwrite');
-  const store = tx.objectStore(SETTINGS);
-  for (const [key, value] of Object.entries(obj)) store.put({ key, value });
-  await done(tx);
+  if (!settingsShared) return writeLocalSettings(db, obj);
+  const shared = Object.fromEntries(Object.entries(obj).filter(([k]) => BACKUP_SETTINGS.includes(k)));
+  const local = Object.fromEntries(Object.entries(obj).filter(([k]) => !BACKUP_SETTINGS.includes(k)));
+  await commit((r) => settingsOps(r, shared), { ids: [SETTINGS_ID], settings: local });
+}
+
+/**
+ * A value the app picked by itself ({ defaultCurrency?, groupColors? }, colours as a patch): the
+ * locale currency, an auto-assigned group colour. Kept on this device only and never synced, so it
+ * can't override what the household chose; the household's value replaces it when it arrives.
+ */
+export async function saveLocalDefaults({ defaultCurrency, groupColors } = {}) {
+  const db = await open();
+  const obj = {};
+  if (defaultCurrency !== undefined) obj[settingsShared ? AUTO_CURRENCY : 'defaultCurrency'] = defaultCurrency;
+  if (groupColors !== undefined) obj[settingsShared ? AUTO_COLORS : 'groupColors'] = groupColors;
+  await writeLocalSettings(db, obj);
 }
 
 /* --------------------------------------------------------------------------
@@ -664,7 +908,7 @@ export async function requestPersistence() {
 // Backups: { app, schemaVersion: 4, exportedAt, items, settings }: the live (not deleted) items with
 // their ids, and the settings worth restoring (BACKUP_SETTINGS). Nothing else from the device goes in:
 // no sync bookkeeping (device id, clock, cursor, outbox, field stamps), no entitlement flags, and no
-// appearance or other preferences. Settings are restored by import but never synced.
+// appearance or other preferences. Import restores the two settings as explicit changes, so they sync.
 // Older files still import: schemaVersion 3 has the same envelope, and files from 1.0–1.2 use
 // { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2).
 
@@ -743,6 +987,7 @@ function checkItem(raw, i, firstSeen) {
   const label = `Item ${i + 1}${name ? ` ("${name.slice(0, 40)}")` : ''}`;
   const fail = (msg) => { throw new ImportError(`${label}: ${msg}`); };
   if (typeof raw.id !== 'string' || !raw.id || raw.id.length > 64) fail('"id" must be text of 1–64 characters.');
+  if (raw.id === SETTINGS_ID) fail(`"id" can't be "${SETTINGS_ID}", which is reserved.`);
   if (firstSeen.has(raw.id)) fail(`"id" is the same as item ${firstSeen.get(raw.id) + 1}.`);
   firstSeen.set(raw.id, i);
   if (!name) fail('"name" must be non-empty text.');
@@ -816,16 +1061,21 @@ export function planFromBackup(backup, existing, current) {
   // entitlement). A file without settings leaves them as they are. Merge lets the file's colours win
   // for the groups it names; replace takes the file's colours and its default currency. Files
   // without colours import fine; the app assigns any gaps.
+  // `settings` is the change to make (merge: a patch of the file's colours; replace: the whole
+  // set). `localSettings` is the same result as whole values, for a device whose settings aren't
+  // shared yet and are stored as plain values.
   const fileColors = withSettings ? cleanColors(backup.settings.groupColors) : {};
   const cur = withSettings ? backup.settings.defaultCurrency : null;
   const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;
+  const replaceSettings = withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {};
 
   return {
     merge: {
       summary: { ...base, mode: 'merge', added, updated, kept, removed: 0 },
       clear: false,
       writes: mergeWrites,
-      settings: withSettings ? { groupColors: { ...cleanColors(current.groupColors), ...fileColors } } : {},
+      settings: withSettings ? { groupColors: fileColors } : {},
+      localSettings: withSettings ? { groupColors: { ...cleanColors(current.groupColors), ...fileColors } } : {},
     },
     replace: {
       summary: {
@@ -838,7 +1088,8 @@ export function planFromBackup(backup, existing, current) {
       },
       clear: true,
       writes: backup.items.map(({ item }) => item),
-      settings: withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {},
+      settings: replaceSettings,
+      localSettings: replaceSettings,
     },
   };
 }
@@ -856,15 +1107,22 @@ export async function previewImport(json) {
 /**
  * Import a backup (JSON text or a parsed object). `mode` is "merge" or "replace".
  * The whole file is checked before anything is written, and the write is one transaction,
- * so a bad file or a failed write leaves existing data untouched. Items are written as ops like
- * any other change, so an import syncs too; replace tombstones the items it removes.
- * Returns the summary.
+ * so a bad file or a failed write leaves existing data untouched. Items and the two shared
+ * settings are written as ops like any other change, so an import syncs too; replace tombstones
+ * the items it removes and clears group colours the file doesn't have. Returns the summary.
  */
 export async function importAll(json, mode) {
   if (mode !== 'merge' && mode !== 'replace') throw new Error(`Unknown import mode: ${mode}`);
   const plan = (await planImport(json))[mode];
+  if (source === RECORDS && settingsShared) {
+    const replaceColors = plan.clear && 'groupColors' in plan.settings;
+    // Replace takes the file's colours as they are, so this device's own picks go too.
+    await commit((replica) => [...importOps(replica, plan), ...settingsOps(replica, plan.settings, { replaceColors })],
+      { settings: replaceColors ? { [AUTO_COLORS]: {} } : {} });
+    return plan.summary;
+  }
   if (source === RECORDS) {
-    await commit((replica) => importOps(replica, plan), { settings: plan.settings });
+    await commit((replica) => importOps(replica, plan), { settings: plan.localSettings });
     return plan.summary;
   }
   // A fallback store (migration not verified): plain writes, as before.
@@ -874,7 +1132,7 @@ export async function importAll(json, mode) {
   if (plan.clear) store.clear();
   for (const item of plan.writes) store.put(item);
   const sstore = tx.objectStore(SETTINGS);
-  for (const [key, value] of Object.entries(plan.settings)) sstore.put({ key, value });
+  for (const [key, value] of Object.entries(plan.localSettings)) sstore.put({ key, value });
   await done(tx);
   return plan.summary;
 }

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as box from '../js/crypto.js';
-import { applyRemoteOps, requeueOps, toItem } from '../js/storage.js';
+import { applyRemoteOps, requeueOps, toItem, settingsOps, effectiveSettings, SETTINGS_ID } from '../js/storage.js';
 import { createSyncEngine, RelayHttpError, normalizeRelayUrl } from '../js/sync.js';
 import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
 
@@ -157,6 +157,10 @@ function device(name, relay, { skewMs = 0, hooks, key = KEY } = {}) {
     add(id, fields) { return local((r) => core.putRecord(r, id, { ...fields, updatedAt: new Date(now()).toISOString() }, { now: now() })); },
     edit(id, fields) { return local((r) => core.editRecord(r, id, { ...fields, updatedAt: new Date(now()).toISOString() }, { now: now() })); },
     remove(id) { return local((r) => core.deleteRecord(r, id, { now: now() })); },
+    /** An explicit settings choice ({ defaultCurrency?, groupColors? }), as the Settings screen makes it. */
+    choose(change) { return local((r) => settingsOps(r, change, { now: now() })); },
+    /** What the app would show, given this device's own automatic picks. */
+    settings(auto = {}) { return effectiveSettings(auto, s.records.get(SETTINGS_ID)); },
     items() {
       return [...s.records.values()].map(toItem).filter(Boolean).map(({ updatedAt, ...rest }) => rest).sort((a, b) => a.id.localeCompare(b.id));
     },
@@ -476,4 +480,44 @@ test('relay URLs: HTTPS anywhere, plain HTTP only to this machine', () => {
   for (const bad of ['http://relay.example', 'ftp://x', 'not a url', 'https://u:p@relay.example', 'https://relay.example/?t=1', '']) {
     assert.equal(normalizeRelayUrl(bad), null, bad);
   }
+});
+
+/* ------------------------------------------------------------------ Shared settings */
+
+test('a currency chosen on one device reaches the others, and colours for different groups merge', async () => {
+  const relay = memoryRelay();
+  const a = device('devA', relay);
+  const b = device('devB', relay);
+  const c = device('devC', relay, { skewMs: -3600_000 });
+  for (const d of [a, b, c]) await d.engine.start();
+  a.add('x', expense('Example Streaming', 250));
+  a.choose({ defaultCurrency: 'TWD' });
+  await sync(a, b, c);
+  for (const d of [b, c]) assert.equal(d.settings({ autoCurrency: 'GBP' }).defaultCurrency, 'TWD', d.name);
+
+  b.choose({ groupColors: { Food: 'g3' } });
+  c.choose({ groupColors: { Home: 'g5' } });
+  await sync(b, c, a, b, c);
+  for (const d of [a, b, c]) assert.deepEqual(d.settings().groupColors, { Food: 'g3', Home: 'g5' }, d.name);
+  for (const d of [a, b, c]) assert.deepEqual(d.items().map((i) => i.id), ['x'], `${d.name}: settings are not an item`);
+});
+
+test('a fresh device joins empty, sends no settings, and adopts the household currency', async () => {
+  const relay = memoryRelay();
+  const a = device('devA', relay);
+  await a.engine.start();
+  a.add('x', expense('Example Streaming', 250));
+  a.choose({ defaultCurrency: 'TWD', groupColors: { Uncategorised: 'g2' } });
+  await sync(a);
+  const b = device('devB', relay, { key: '' });
+  b.s.config.enabled = false;
+  await b.engine.start();
+  const auto = { autoCurrency: 'GBP' }; // its locale, kept on the device only
+  assert.equal(b.settings(auto).defaultCurrency, 'GBP');
+  await b.engine.configure({ householdKey: KEY, enabled: true });
+  assert.equal(b.s.outbox.size, 0, 'nothing of its own to send');
+  assert.equal(b.settings(auto).defaultCurrency, 'TWD');
+  assert.deepEqual(b.settings(auto).groupColors, { Uncategorised: 'g2' });
+  await sync(a);
+  assert.equal(a.settings().defaultCurrency, 'TWD', 'the household value is untouched');
 });

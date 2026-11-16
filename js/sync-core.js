@@ -258,6 +258,16 @@ export function deleteRecord(replica, rec, opts) {
   return emit(replica, rec, { [DELETED]: true }, opts);
 }
 
+/**
+ * Set fields on a record that isn't an item (such as the shared settings), creating it if needed.
+ * It never gets a `del` field, so it is never live: item lists, counts and exports skip it, on this
+ * version and on older ones. Only fields with a new value produce ops; null clears a field.
+ */
+export function setFields(replica, rec, fields, opts) {
+  checkChange(rec, fields);
+  return emit(replica, rec, changedFields(replica.records.get(rec), fields), opts);
+}
+
 /** Create, update, or bring back a deleted record, so that it ends up live with these field values. */
 export function putRecord(replica, rec, fields, opts) {
   checkChange(rec, fields);
