@@ -551,6 +551,19 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .stat-value { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: var(--leading-tight); margin-top: var(--space-1); overflow-wrap: anywhere; }
 .stat-primary .stat-value { font-size: var(--text-2xl); }
 .stat-sub { font-size: var(--text-xs); opacity: 0.75; margin-top: var(--space-1); }
+/* Yearly card: Income / Outgoings / Left over rows. On a phone (two cards side by side) each row
+   is the label over its amount; from 640px the amount sits on the right of its label. */
+.year-lines { display: grid; gap: var(--space-1); margin: var(--space-2) 0 0; }
+.year-line { display: grid; font-size: var(--text-sm); }
+@media (min-width: 640px) {
+  .year-line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-2); }
+}
+.year-line dt { opacity: 0.8; }
+.year-line dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.year-line-total { padding-top: var(--space-1); border-top: var(--border-width) solid var(--border); }
+.year-line-total dd { font-weight: var(--weight-bold); }
+/* Short: the minus sign and the note under it say so too, not only the colour. */
+.year-short dd, .stat-sub.year-short-note { color: var(--warn); opacity: 1; }
 @media (min-width: 640px) {
   .stats { grid-template-columns: 2fr 1.4fr 1fr; }
   .stat-primary { grid-column: auto; }

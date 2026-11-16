@@ -56,7 +56,9 @@ const SEED = [
   { ...base, type: 'income', id: 'test-refund', name: 'Refund', price: 3000, cycle: 'once', date: day(Y, M, 8) },
   { ...base, type: 'income', id: 'test-lodger', name: 'Lodger', price: 5000, cycle: 'monthly', nextRenewal: '' },
   // USD: an expense, and one-off income next month only, so this month has no USD income.
+  // The year: income 200, outgoings 10 × 12 + Big 500 (annual, three months from now) = 620.
   { ...base, currency: 'USD', id: 'test-usd-tool', name: 'Tool', price: 10, cycle: 'monthly', nextRenewal: day(Y, M, 2) },
+  { ...base, currency: 'USD', id: 'test-usd-big', name: 'Big', price: 500, cycle: 'annual', nextRenewal: day(Y, M + 3, 1) },
   { ...base, currency: 'USD', type: 'income', id: 'test-usd-gig', name: 'Gig', price: 200, cycle: 'once', date: day(Y, M + 1, 5) },
 ];
 
@@ -80,10 +82,41 @@ test('headline card shows the cash due this month, with the Avg line', async () 
   eq($$('.stat-sub', card).map(text), ['Cash due this month', `Avg ${T(1629)}/mo`], 'subtitle and Avg');
 });
 
-test('the yearly card keeps its figure (monthly × 12 + annual + one-offs)', async () => {
-  const year = $$('#insights .stat')[1];
-  eq(text($('.stat-label', year)), String(Y), 'year label');
-  eq(text($('.stat-value', year)), T(19548), 'year total');
+const yearCard = () => $('#insights .stat-year');
+const yearLines = () => $$('.year-line', yearCard()).map((el) => [text($('dt', el)), text($('dd', el))]);
+const yearNotes = () => $$('.stat-sub', yearCard()).map(text);
+
+// Year Y in TWD from its twelve cash months (undated Gym, Yoga and Lodger left out):
+//   income     Salary 40,000 × 12 + Bonus 12,000 + Refund 3,000             = 495,000
+//   outgoings  Phone 499 × 12 + Cloud 1,200 + Domain 360                    =   7,548
+//   left over                                                               = 487,452
+// The old card showed 19,548: the same plans plus the undated Gym (900 × 12) and Yoga (1,200).
+test('the yearly card shows income, outgoings and left over from the twelve cash months', async () => {
+  eq(text($('.stat-label', yearCard())), String(Y), 'year label');
+  eq(yearLines(), [['Income', T(495000)], ['Outgoings', T(7548)], ['Left over', T(487452)]], 'three lines');
+  eq(yearNotes(), ['Excludes 3 undated items'], 'one line for the undated items, not the notices again');
+  assert(!$('.year-short', yearCard()), 'not short');
+});
+
+test('a year with more going out than coming in, and a year with no income', async () => {
+  const usd = (n) => money(n, 'USD');
+  // Gig is paid next month; in December that's next year, so view that year instead.
+  const gigYear = new Date(Y, M + 1, 5).getFullYear();
+  const offset = gigYear === Y ? 0 : 1;
+  chip('USD').click();
+  await step(offset);
+  eq(text($('.stat-label', yearCard())), String(gigYear), 'the year Gig is paid in');
+  eq(yearLines(), [['Income', usd(200)], ['Outgoings', usd(620)], ['Left over', usd(-420)]], 'short year');
+  assert(usd(-420).includes('-') || usd(-420).includes('−'), 'the amount has a minus sign');
+  assert($('.year-line.year-short', yearCard()), 'short style on the left-over line');
+  eq(yearNotes(), ['More going out than coming in'], 'said in words too; no undated items in USD');
+  await step(-12);
+  eq(text($('.stat-label', yearCard())), String(gigYear - 1), 'previous year');
+  eq(yearLines(), [['Outgoings', usd(620)]], 'no income line and no left-over figure');
+  eq(yearNotes(), [`No income dated in ${gigYear - 1}`], 'says why');
+  await step(12 - offset);
+  chip('TWD').click();
+  eq(text($('.stat-label', yearCard())), String(Y), 'back to this year in TWD');
 });
 
 test('the income bar, the donut and the category list all use the month cash total', async () => {

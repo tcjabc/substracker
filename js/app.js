@@ -13,7 +13,7 @@ import {
   chooseImportMode,
 } from './util.js';
 import {
-  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome,
+  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
 } from './insights-calc.js';
 
 const APP_VERSION = '1.9.1';
@@ -570,7 +570,9 @@ function renderInsights() {
   const incomeMonth = incomeDue(incomeItems, y, m);
   const due = breakdown(subs, y, m);
   const monthly = due.total;
-  const annual = subs.reduce((t, s) => t + amountInYear(s, y), 0);
+  // The year of the viewed month from its twelve cash months; undated items are left out, as in
+  // the month figures. Avg keeps its own definition (the yearly total ÷ 12, see monthlyAverage).
+  const year = yearSummary(inCur, y);
   const avg = monthlyAverage(subs, y);
   const countOf = (key) => due.byType.find((t) => t.key === key)?.names.length ?? 0;
   const nMonthly = countOf('monthly');
@@ -581,6 +583,10 @@ function renderInsights() {
   const undatedTotal = undated.reduce((t, s) => t + s.price, 0);
   const undatedIn = undatedIncome(incomeItems);
   const undatedInTotal = undatedIn.reduce((t, s) => t + s.price, 0);
+  const nUndated = undated.length + undatedIn.length; // a count of items; amounts are never mixed
+  const yearShort = year.income > 0 && year.leftOver < 0;
+  const yearLine = (label, value, cls = '') => `
+          <div class="year-line${cls}"><dt>${label}</dt><dd>${esc(money(value, cur))}</dd></div>`;
 
   const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
@@ -627,10 +633,14 @@ function renderInsights() {
         <div class="stat-sub">Cash due this month</div>
         <div class="stat-sub">Avg ${esc(money(avg, cur))}/mo</div>
       </div>
-      <div class="stat">
+      <div class="stat stat-year">
         <div class="stat-label">${y}</div>
-        <div class="stat-value">${esc(money(annual, cur))}</div>
-        <div class="stat-sub">Monthly × 12, annual, and one-offs dated ${y}</div>
+        <dl class="year-lines">${year.income > 0 ? yearLine('Income', year.income) : ''}${yearLine('Outgoings', year.outgoings)}${year.income > 0
+          ? yearLine('Left over', year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
+        </dl>
+        ${year.income > 0 ? '' : `<div class="stat-sub">No income dated in ${y}</div>`}
+        ${yearShort ? '<div class="stat-sub year-short-note">More going out than coming in</div>' : ''}
+        ${nUndated ? `<div class="stat-sub">Excludes ${plural(nUndated, 'undated item')}</div>` : ''}
       </div>
       <div class="stat">
         <div class="stat-label">Outgoings</div>
