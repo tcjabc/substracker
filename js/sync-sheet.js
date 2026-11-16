@@ -7,6 +7,7 @@ import qrcode from './qrcode.js';
 import { generateKey } from './crypto.js';
 import { keyToWords, parseRecovery, wordProblems, WordsError } from './words.js';
 import * as pairing from './pairing.js';
+import { scanSupport, scanNative, createWebScanner, recoveryFromQr, NOT_RECOVERY_CODE, ScanError } from './qr-scan.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -73,8 +74,54 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   };
 
   const show = (name) => {
+    if (name !== 'join') stopScan();
     for (const v of $$('[data-sync-view]', dlg)) v.hidden = v.dataset.syncView !== name;
   };
+
+  /* ---------------- scanning the QR code (Join) ---------------- */
+  const scanBox = $('#sync-scan');
+  const scanView = $('#sync-scan-view');
+  const scanMsg = $('#sync-scan-msg');
+  const scanBtn = $('#sync-scan-start');
+  let webScanner = null;
+  const supportP = scanSupport().catch(() => null);
+  const scanMessage = (text, isError = false) => { scanMsg.textContent = text; scanMsg.classList.toggle('is-error', isError); };
+  function stopScan() {
+    webScanner?.stop();
+    scanView.hidden = true;
+    scanBtn.hidden = false;
+  }
+  async function useScanned(text) {
+    const words = await recoveryFromQr(text);
+    if (!words) { scanMessage(NOT_RECOVERY_CODE, true); return; } // nothing is filled in
+    joinInput.value = words;
+    joinTried = true;
+    setProblems(wordProblems(words).map((p) => p.message)); // the same checks as typing
+    scanMessage('Scanned. Check the words, then tap Join.');
+    $('#sync-join').focus();
+  }
+  scanBtn.addEventListener('click', async () => {
+    scanMessage('');
+    const how = await supportP;
+    try {
+      if (how === 'native') {
+        await useScanned(await scanNative({ onStatus: (m) => scanMessage(m) }));
+        return;
+      }
+      webScanner ??= createWebScanner({ video: $('#sync-scan-video') });
+      scanView.hidden = false;
+      scanBtn.hidden = true;
+      const text = await webScanner.start();
+      stopScan();
+      await useScanned(text);
+    } catch (err) {
+      stopScan();
+      if (err instanceof ScanError && err.code === 'cancelled') { scanMessage(''); return; }
+      scanMessage(err instanceof ScanError ? err.message : "The scan didn't work. Try again, or type the words instead.", true);
+    }
+  });
+  $('#sync-scan-stop').addEventListener('click', stopScan);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopScan(); });
 
   const setBusy = (text) => {
     busy = Boolean(text);
@@ -146,6 +193,8 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   $$('[data-sync-close]', dlg).forEach((b) => b.addEventListener('click', close));
   dlg.addEventListener('cancel', (e) => { if (busy) e.preventDefault(); });
   dlg.addEventListener('close', () => {
+    stopScan();
+    scanMessage('');
     document.body.classList.remove('sheet-open');
     choiceResolve?.(null);
     clearWords();
@@ -192,11 +241,13 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   });
 
   /* ---------------- join a household ---------------- */
-  $('#sync-join-open').addEventListener('click', () => {
+  $('#sync-join-open').addEventListener('click', async () => {
     setProblems([]);
+    scanMessage('');
     joinTried = false;
     show('join');
     joinInput.focus();
+    scanBox.hidden = !(await supportP); // only where scanning is possible
   });
 
   // Messages appear once someone has tried to join, then follow their typing.
@@ -217,6 +268,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
 
   $('#sync-join').addEventListener('click', async () => {
     joinTried = true;
+    stopScan();
     const typed = wordProblems(joinInput.value);
     if (typed.length) { setProblems(typed.map((p) => p.message)); joinInput.focus(); return; }
     let key;

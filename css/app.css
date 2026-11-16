@@ -126,6 +126,7 @@
   --empty-mark: 72px;
   --alert-max: 380px;
   --qr-size: 12rem;     /* the recovery-words QR code */
+  --scan-height: 16rem; /* the camera picture while scanning a QR code (web) */
   --check: 1.25rem;     /* checkboxes and radio buttons */
   --hairline-gap: 2px;
 
@@ -687,6 +688,12 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .sync-words-input { font-family: var(--font-mono); }
 .sync-problems { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--danger); }
 .sync-problems:empty { display: none; }
+.sync-scan, .scan-view { display: grid; gap: var(--space-2); justify-items: start; }
+.scan-view { justify-items: stretch; }
+.scan-video { width: 100%; height: var(--scan-height); object-fit: cover; border-radius: var(--radius-md); background: var(--surface-2); }
+.sync-scan-msg { font-size: var(--text-sm); color: var(--text-muted); }
+.sync-scan-msg:empty { display: none; }
+.sync-scan-msg.is-error { color: var(--danger); }
 
 .word-grid {
   margin: 0; padding: var(--space-3); list-style: none;

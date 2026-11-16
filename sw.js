@@ -23,6 +23,8 @@ const SHELL = [
   './js/sync-sheet.js',
   './js/pairing.js',
   './js/qrcode.js',
+  './js/qr-scan.js',
+  './js/jsqr.js',
   './js/files.js',
   './js/platform.js',
   './js/services.js',

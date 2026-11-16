@@ -341,6 +341,15 @@
       <!-- Join with the 12 words -->
       <div class="sync-view" data-sync-view="join" hidden>
         <div class="sheet-body">
+          <div class="sync-scan" id="sync-scan" hidden>
+            <button type="button" class="btn" id="sync-scan-start">Scan QR code</button>
+            <div class="scan-view" id="sync-scan-view" hidden>
+              <video class="scan-video" id="sync-scan-video" playsinline muted aria-label="Camera"></video>
+              <p class="setting-hint">Point the camera at the QR code under Show recovery words on the other device. The camera picture stays on this device.</p>
+              <div><button type="button" class="btn" id="sync-scan-stop">Stop scanning</button></div>
+            </div>
+            <p class="sync-scan-msg" id="sync-scan-msg" role="status" aria-live="polite"></p>
+          </div>
           <label class="field">
             <span class="field-label">Recovery words</span>
             <textarea class="input sync-words-input" id="sync-join-words" rows="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12 words, separated by spaces"></textarea>

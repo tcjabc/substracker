@@ -10,6 +10,11 @@ export function isNative() {
   try { return Boolean(cap()?.isNativePlatform?.()); } catch { return false; }
 }
 
+/** 'android', 'ios' or 'web'. */
+export function platformName() {
+  try { return cap()?.getPlatform?.() || 'web'; } catch { return 'web'; }
+}
+
 /** The native plugin called `name` (e.g. "Filesystem"), or null on the web or if it isn't installed. */
 export function plugin(name) {
   if (!isNative()) return null;
