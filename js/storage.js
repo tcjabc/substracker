@@ -1,40 +1,72 @@
-// SubsTracker persistence. This is the only module that touches IndexedDB or localStorage:
+// Peek Budget persistence. This is the only module that touches IndexedDB or localStorage:
 // items and settings live in IndexedDB, a few per-device UI preferences in localStorage.
 // Nothing here logs item contents.
+//
+// Items are stored sync-ready (see js/sync-core.js): every record has a stable id, a timestamp per
+// field and a deleted flag, and every change is written as ops to an outbox in the same
+// transaction. The app still sees plain items: getAll() returns live records in the old shape.
+// Settings, preferences and anything device-specific are not records and are never synced.
 
-import { firstEmoji } from './util.js';
+import { firstEmoji, uid } from './util.js';
 import { cleanDomain } from './services.js';
+import * as sync from './sync-core.js';
 
 export const APP_ID = 'substracker';
 
-// Database versions: 1 had `subscriptions` + `settings`. 2 adds `items` + `meta`; the old
-// `subscriptions` store is copied into `items` once and kept untouched as a fallback for at
-// least one release. SCHEMA_VERSION is the data/export format, recorded in `meta`.
+// Database versions:
+//   1  `subscriptions` + `settings` (app 1.0–1.2).
+//   2  adds `items` + `meta` (1.3.0). `subscriptions` is copied into `items` once, verified,
+//      and kept untouched as a fallback.
+//   3  adds `records` + `outbox` (sync-ready data). `items` is copied into `records` once,
+//      verified, and kept untouched as a fallback in the same way.
+// SCHEMA_VERSION is the data/export format, recorded in `meta`: 3 = plain items, 4 = records.
 let dbName = 'substracker';
-const DB_VERSION = 2;
-export const SCHEMA_VERSION = 3;
+const DB_VERSION = 3;
+export const SCHEMA_VERSION = 4;
+const RECORDS = 'records';
+const OUTBOX = 'outbox';
 const ITEMS = 'items';
 const SETTINGS = 'settings';
 const META = 'meta';
 const LEGACY = 'subscriptions';
 
+/** The fields of an item, in the order the app writes them (besides `id`). */
+export const ITEM_FIELDS = [
+  'type', 'name', 'domain', 'emoji', 'plan', 'price', 'currency', 'cycle',
+  'nextRenewal', 'date', 'category', 'notes', 'createdAt', 'updatedAt',
+];
+
 let dbPromise = null;
-let itemStore = ITEMS; // LEGACY only if the migration could not be verified
-let migration = null; // what happened on this load, for status()
+let source = RECORDS; // ITEMS or LEGACY only while a migration could not be verified
+let migration = null; // the 1.3.0 subscriptions → items record, for status()
+let syncMigration = null; // the items → records record, for status()
 let onBlocked = () => {};
+let onEnqueued = () => {};
 
 /** Point the module at another database (tests use a throwaway one). */
 export function useDatabase(name) {
   const old = dbPromise;
   dbPromise = null;
   dbName = name;
-  itemStore = ITEMS;
+  source = RECORDS;
   migration = null;
+  syncMigration = null;
   old?.then((db) => db.close()).catch(() => {});
 }
 
 /** Called when another open tab of an older version holds the database and delays the upgrade. */
 export function setBlockedHandler(fn) { onBlocked = fn; }
+
+/**
+ * TODO(sync): the sync engine registers here to hear that local changes were added to the outbox
+ * (to schedule a push to the relay). Called with the number of new ops after the transaction that
+ * stored them has committed. Nothing listens yet.
+ */
+export function onChangesEnqueued(fn) { onEnqueued = fn; }
+
+function changesEnqueued(count) {
+  try { onEnqueued(count); } catch (err) { console.error(err); }
+}
 
 function openRaw() {
   return new Promise((resolve, reject) => {
@@ -44,6 +76,12 @@ function openRaw() {
       if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: 'key' });
       if (!db.objectStoreNames.contains(ITEMS)) db.createObjectStore(ITEMS, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: 'key' });
+      if (!db.objectStoreNames.contains(RECORDS)) db.createObjectStore(RECORDS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(OUTBOX)) {
+        // One pending op per record field: a newer local change to the same field replaces the
+        // unsent older one, which last-write-wins would discard anyway. Index `t` gives send order.
+        db.createObjectStore(OUTBOX, { keyPath: ['rec', 'f'] }).createIndex('t', 't');
+      }
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -57,7 +95,7 @@ function openRaw() {
   });
 }
 
-/** The open database, with the one-time migration done. Every public function goes through this. */
+/** The open database, with the one-time migrations done. Every public function goes through this. */
 function open() {
   if (dbPromise) return dbPromise;
   dbPromise = openRaw().then(async (db) => { await migrate(db); return db; });
@@ -66,20 +104,25 @@ function open() {
 }
 
 /**
- * Copy the old `subscriptions` store into `items` the first time (only when `items` is empty),
- * then check every old record arrived. Until that check passes the old store stays in charge.
- * The old store is never modified or deleted here. Logs counts only.
+ * Bring the data up to date, one verified step at a time. A step that can't be verified leaves
+ * the app on the store before it, unchanged, and is tried again on the next load.
  */
 async function migrate(db) {
   const meta = await readMeta(db);
-  if (meta.schemaVersion !== SCHEMA_VERSION && !db.objectStoreNames.contains(LEGACY)) {
-    await writeMeta(db, { schemaVersion: SCHEMA_VERSION });
+  migration = meta.migration ?? null;
+  syncMigration = meta.syncMigration ?? null;
+  if (db.objectStoreNames.contains(LEGACY) && !meta.migration?.verified) {
+    if (!(await migrateLegacy(db))) { source = LEGACY; return; }
   }
-  if (!db.objectStoreNames.contains(LEGACY) || meta.migration?.verified) {
-    migration = meta.migration ?? null;
-    return;
-  }
+  if (meta.syncMigration?.verified) { source = RECORDS; return; }
+  source = (await migrateToRecords(db)) ? RECORDS : ITEMS;
+}
 
+/**
+ * 1.3.0: copy the old `subscriptions` store into `items` the first time (only when `items` is
+ * empty), then check every old record arrived. The old store is never modified or deleted here.
+ */
+async function migrateLegacy(db) {
   let tx = db.transaction([LEGACY, ITEMS], 'readwrite');
   const [legacy, itemCount] = await Promise.all([
     result(tx.objectStore(LEGACY).getAll()), result(tx.objectStore(ITEMS).count()),
@@ -94,15 +137,85 @@ async function migrate(db) {
     result(tx.objectStore(LEGACY).getAllKeys()), result(tx.objectStore(ITEMS).getAllKeys()),
   ]);
   const have = new Set(newKeys);
-  const verified = oldKeys.length === newKeys.length && oldKeys.every((k) => have.has(k));
-  if (verified) {
+  if (oldKeys.length === newKeys.length && oldKeys.every((k) => have.has(k))) {
     migration = { from: LEGACY, items: oldKeys.length, copied, verified: true, at: new Date().toISOString() };
-    await writeMeta(db, { schemaVersion: SCHEMA_VERSION, migration });
-  } else {
-    itemStore = LEGACY;
-    migration = { from: LEGACY, verified: false };
-    console.warn(`Storage: migration check failed (${oldKeys.length} old, ${newKeys.length} new). Using the old store.`);
+    await writeMeta(db, { schemaVersion: 3, migration });
+    return true;
   }
+  migration = { from: LEGACY, verified: false };
+  console.warn(`Storage: migration check failed (${oldKeys.length} old, ${newKeys.length} new). Using the old store.`);
+  return false;
+}
+
+/**
+ * Sync-ready data: copy every item into `records` with per-field timestamps, and queue one op per
+ * field in the outbox so a future sync sends the existing data too. Then read everything back and
+ * check it. `items` is never modified or deleted here.
+ *
+ * Safe to interrupt and re-run: the copy is one transaction (all of it lands or none of it), and
+ * until the check has passed and been recorded nothing reads or writes `records`, so a re-run
+ * simply clears it and copies again from `items`.
+ */
+async function migrateToRecords(db) {
+  try {
+    if ((await copyItemsToRecords(db)) === 'already-done') {
+      syncMigration = (await readMeta(db)).syncMigration;
+      return true;
+    }
+  } catch (err) {
+    syncMigration = { from: ITEMS, verified: false };
+    console.warn(`Storage: could not copy items to records (${err?.message ?? err}). Using the previous store.`);
+    return false;
+  }
+
+  const tx = db.transaction([ITEMS, RECORDS, OUTBOX]);
+  const [items, records, outbox] = await Promise.all([
+    result(tx.objectStore(ITEMS).getAll()), result(tx.objectStore(RECORDS).getAll()), result(tx.objectStore(OUTBOX).getAll()),
+  ]);
+  const problem = verifyRecords(items, records, outbox);
+  if (problem) {
+    syncMigration = { from: ITEMS, verified: false };
+    console.warn(`Storage: sync migration check failed (${problem}). Using the previous store.`);
+    return false;
+  }
+  syncMigration = { from: ITEMS, records: records.length, verified: true, at: new Date().toISOString() };
+  await writeMeta(db, { schemaVersion: SCHEMA_VERSION, syncMigration });
+  return true;
+}
+
+async function copyItemsToRecords(db) {
+  const tx = db.transaction([ITEMS, RECORDS, OUTBOX, META], 'readwrite');
+  const metaStore = tx.objectStore(META);
+  const [items, metaRows] = await Promise.all([result(tx.objectStore(ITEMS).getAll()), result(metaStore.getAll())]);
+  const m = Object.fromEntries(metaRows.map((r) => [r.key, r.value]));
+  // Another tab of this version may have finished while this one was starting.
+  if (m.syncMigration?.verified) { await done(tx); return 'already-done'; }
+
+  let built;
+  try {
+    const deviceId = sync.isDeviceId(m.deviceId) ? m.deviceId : uid();
+    built = recordsFromItems(items, loadClock(m.hlc, deviceId), Date.now());
+  } catch (err) {
+    tx.abort();
+    throw err;
+  }
+  const recStore = tx.objectStore(RECORDS);
+  const outStore = tx.objectStore(OUTBOX);
+  recStore.clear(); // leftovers of an earlier attempt that was never verified, so never used
+  outStore.clear();
+  for (const r of built.records) recStore.put(r);
+  for (const op of built.ops) outStore.put(op);
+  metaStore.put({ key: 'deviceId', value: built.clock.dev });
+  metaStore.put({ key: 'hlc', value: { wall: built.clock.wall, count: built.clock.count } });
+  if (!Number.isInteger(m.syncCursor)) metaStore.put({ key: 'syncCursor', value: 0 });
+  await done(tx);
+  return 'copied';
+}
+
+/** The stored clock ({ wall, count }) for this device, or a new one. */
+function loadClock(saved, deviceId) {
+  const c = { wall: saved?.wall, count: saved?.count, dev: deviceId };
+  return sync.isClock(c) ? c : sync.newClock(deviceId);
 }
 
 async function readMeta(db) {
@@ -116,11 +229,23 @@ async function writeMeta(db, obj) {
   await done(tx);
 }
 
-/** Where the data stands: schema version, the migration record, and whether the old store is in use. */
+/** Where the data stands: schema version, the migration records, and whether an older store is in use. */
 export async function status() {
   const db = await open();
   const meta = await readMeta(db);
-  return { schemaVersion: meta.schemaVersion ?? null, migration, usingLegacy: itemStore === LEGACY };
+  return { schemaVersion: meta.schemaVersion ?? null, migration, syncMigration, usingLegacy: source !== RECORDS };
+}
+
+/** Sync bookkeeping for this device: id, clock, cursor and pending ops (oldest first). Null on a fallback store. */
+export async function syncState() {
+  const db = await open();
+  if (source !== RECORDS) return null;
+  const tx = db.transaction([META, OUTBOX]);
+  const [rows, outbox] = await Promise.all([
+    result(tx.objectStore(META).getAll()), result(tx.objectStore(OUTBOX).index('t').getAll()),
+  ]);
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return { deviceId: m.deviceId, clock: m.hlc, syncCursor: m.syncCursor, outbox };
 }
 
 function done(tx) {
@@ -139,25 +264,166 @@ function result(req) {
 }
 
 /* --------------------------------------------------------------------------
-   Items and settings
+   Records ↔ items. Pure functions, also used by the Node tests.
    -------------------------------------------------------------------------- */
-export async function getAll() {
-  const db = await open();
-  return result(db.transaction(itemStore).objectStore(itemStore).getAll());
+/** The app's view of a record: the plain item, or null for a deleted (tombstoned) record. */
+export function toItem(record) {
+  if (!sync.isLive(record)) return null;
+  const item = { id: record.id };
+  for (const [f, v] of Object.entries(record.fields)) if (f !== sync.DELETED) item[f] = v;
+  return item;
 }
 
-export async function save(item) {
+/** The item fields to store, in ITEM_FIELDS order. Fields the item doesn't have are left alone. */
+function itemFields(item) {
+  return Object.fromEntries(ITEM_FIELDS.filter((f) => item[f] !== undefined).map((f) => [f, item[f]]));
+}
+
+/** First timestamp for a migrated item: its updatedAt (else createdAt, else 0), never later than now. */
+function initialWall(item, now) {
+  for (const v of [item.updatedAt, item.createdAt]) {
+    const t = typeof v === 'string' ? Date.parse(v) : NaN;
+    if (Number.isFinite(t)) return Math.max(0, Math.min(Math.floor(t), now));
+  }
+  return 0;
+}
+
+/**
+ * Turn stored items into records plus the ops that describe them. Every field of the item is
+ * kept exactly as it is (nothing is filled in or trimmed), plus `del: false`. Each item's fields
+ * are stamped with its own `updatedAt`, so when two devices hold copies of the same item (moved
+ * by a backup) the more recently edited copy wins, as it does for an import merge. Throws if
+ * an item can't be represented (unusable id or a value that isn't plain JSON).
+ */
+export function recordsFromItems(items, clock, now) {
+  const records = new Map();
+  const ops = [];
+  let latest = null;
+  for (const item of items) {
+    if (!sync.isRecordId(item?.id)) throw new Error('an item has an unusable id');
+    const t = sync.formatStamp(initialWall(item, now), 0, clock.dev);
+    const fields = { ...item, [sync.DELETED]: false };
+    delete fields.id;
+    for (const [f, v] of Object.entries(fields)) {
+      const op = { id: uid(), rec: item.id, f, v, t, dev: clock.dev };
+      if (!sync.isOp(op)) throw new Error(`an item has an unusable "${f}"`);
+      sync.applyOp(records, op);
+      ops.push(op);
+    }
+    if (latest === null || sync.compare(t, latest) > 0) latest = t;
+  }
+  return { records: [...records.values()], ops, clock: latest ? sync.receive(clock, latest, now) : clock };
+}
+
+/**
+ * Check migrated data against the items it came from: one live record per item whose view equals
+ * the item exactly, a valid stamp on every field, and a matching pending op for every field.
+ * Returns null when everything checks out, else a short description with counts only.
+ */
+export function verifyRecords(items, records, outbox) {
+  if (records.length !== items.length) return `${items.length} items, ${records.length} records`;
+  const byId = new Map(records.map((r) => [r.id, r]));
+  const pending = new Map(outbox.map((op) => [`${op.rec}\u0000${op.f}`, op]));
+  let differ = 0;
+  let unstamped = 0;
+  let fields = 0;
+  for (const item of items) {
+    const rec = byId.get(item.id);
+    if (!rec || !sync.sameValue(toItem(rec), item)) { differ++; continue; }
+    for (const [f, v] of Object.entries(rec.fields)) {
+      fields++;
+      const op = pending.get(`${rec.id}\u0000${f}`);
+      if (!sync.isStamp(rec.ts[f]) || !op || op.t !== rec.ts[f] || !sync.sameValue(op.v, v)) unstamped++;
+    }
+  }
+  if (differ) return `${differ} of ${items.length} records differ`;
+  if (unstamped || outbox.length !== fields) return `${unstamped} of ${fields} fields without a matching op, ${outbox.length} ops`;
+  return null;
+}
+
+/**
+ * The ops an import makes, applied to `replica` ({ clock, records }). Replace deletes (tombstones)
+ * every live record that isn't in the file; both modes then write the file's items, which brings
+ * back any that were deleted here. Only fields that actually change produce ops.
+ */
+export function importOps(replica, { clear, writes }, opts) {
+  const ops = [];
+  if (clear) {
+    const keep = new Set(writes.map((item) => item.id));
+    for (const [id, rec] of replica.records) {
+      if (sync.isLive(rec) && !keep.has(id)) ops.push(...sync.deleteRecord(replica, id, opts));
+    }
+  }
+  for (const item of writes) ops.push(...sync.putRecord(replica, item.id, itemFields(item), opts));
+  return ops;
+}
+
+/* --------------------------------------------------------------------------
+   Items and settings
+   -------------------------------------------------------------------------- */
+/** Every item that hasn't been deleted, in the plain item shape. */
+export async function getAll() {
   const db = await open();
-  const tx = db.transaction(itemStore, 'readwrite');
-  tx.objectStore(itemStore).put(item);
+  const rows = await result(db.transaction(source).objectStore(source).getAll());
+  return source === RECORDS ? rows.map(toItem).filter(Boolean) : rows;
+}
+
+/**
+ * Apply a change to records in one transaction: load the records (`ids`, or all of them), run
+ * `change(replica)` to make ops, then store the changed records, the new ops in the outbox, the
+ * clock, and any `settings` given. Either all of it is stored or none of it.
+ */
+async function commit(change, { ids, settings } = {}) {
+  const db = await open();
+  const tx = db.transaction([RECORDS, OUTBOX, META, ...(settings ? [SETTINGS] : [])], 'readwrite');
+  const recStore = tx.objectStore(RECORDS);
+  const metaStore = tx.objectStore(META);
+  const [rows, devRow, hlcRow] = await Promise.all([
+    ids ? Promise.all(ids.map((id) => result(recStore.get(id)))) : result(recStore.getAll()),
+    result(metaStore.get('deviceId')), result(metaStore.get('hlc')),
+  ]);
+  let ops;
+  let replica;
+  try {
+    if (!sync.isDeviceId(devRow?.value)) throw new Error('Storage: this device has no sync id.');
+    replica = { clock: loadClock(hlcRow?.value, devRow.value), records: new Map(rows.filter(Boolean).map((r) => [r.id, r])) };
+    ops = change(replica);
+  } catch (err) {
+    tx.abort();
+    throw err;
+  }
+  for (const id of new Set(ops.map((op) => op.rec))) recStore.put(replica.records.get(id));
+  for (const op of ops) tx.objectStore(OUTBOX).put(op);
+  if (ops.length) metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+  for (const [key, value] of Object.entries(settings ?? {})) tx.objectStore(SETTINGS).put({ key, value });
+  await done(tx);
+  if (ops.length) changesEnqueued(ops.length);
+  return ops;
+}
+
+/** Add or update an item. Only the fields that changed are recorded as ops. */
+export async function save(item) {
+  if (!sync.isRecordId(item?.id)) throw new Error('Storage: an item needs an id.');
+  const db = await open();
+  if (source === RECORDS) {
+    await commit((r) => sync.putRecord(r, item.id, itemFields(item)), { ids: [item.id] });
+    return item;
+  }
+  const tx = db.transaction(source, 'readwrite');
+  tx.objectStore(source).put(item);
   await done(tx);
   return item;
 }
 
+/** Delete an item. Its record stays as a tombstone so other devices learn about the delete. */
 export async function remove(id) {
   const db = await open();
-  const tx = db.transaction(itemStore, 'readwrite');
-  tx.objectStore(itemStore).delete(id);
+  if (source === RECORDS) {
+    await commit((r) => sync.deleteRecord(r, id), { ids: [id] });
+    return;
+  }
+  const tx = db.transaction(source, 'readwrite');
+  tx.objectStore(source).delete(id);
   await done(tx);
 }
 
@@ -172,7 +438,7 @@ async function readSettings(store) {
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
-/** Store the given keys; keys not mentioned are left as they are. */
+/** Store the given keys; keys not mentioned are left as they are. Settings are per device and never synced. */
 export async function saveSettings(obj) {
   const db = await open();
   const tx = db.transaction(SETTINGS, 'readwrite');
@@ -206,16 +472,18 @@ export async function requestPersistence() {
 /* --------------------------------------------------------------------------
    Export / import
    -------------------------------------------------------------------------- */
-// Backups: { app, schemaVersion, exportedAt, items, settings }. Files from 1.0–1.2 use
-// { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2); they still import.
+// Backups: { app, schemaVersion: 4, exportedAt, items }, the live (not deleted) items with their ids.
+// Settings, preferences and sync bookkeeping (device id, clock, outbox) are never exported.
+// Older files still import: schemaVersion 3 has the same envelope plus `settings`, and files from
+// 1.0–1.2 use { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2).
 
-/** Everything needed to restore this device, as a plain object ready for JSON.stringify. */
+/** Everything needed to restore this device's items, as a plain object ready for JSON.stringify. */
 export async function exportAll() {
-  const [items, settings] = await Promise.all([getAll(), getSettings()]);
+  const items = await getAll();
   // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
   // carries the full current shape.
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
-  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings };
+  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full };
 }
 
 /** A problem with an import file. `message` is written for the person importing. */
@@ -234,7 +502,7 @@ const stamp = (v) => { const t = typeof v === 'string' ? Date.parse(v) : NaN; re
  * (id, name, price, currency, cycle; date for one-offs) and only their types are checked;
  * `type` may be missing (an expense) but not an unknown value. Unknown fields are ignored, so backups from newer versions import too.
  */
-function parseBackup(json) {
+export function parseBackup(json) {
   let data = json;
   if (typeof json === 'string') {
     if (json.length > MAX_IMPORT_CHARS) throw new ImportError('That file is too large to be a Peek Budget backup.');
@@ -270,7 +538,8 @@ function parseBackup(json) {
     checkItem(raw, i, firstSeen);
     return { item: normalize(raw, data.exportedAt), ts: stamp(raw.updatedAt) };
   });
-  return { version, items, settings: data.settings ?? {} };
+  // Backups up to schemaVersion 3 carry settings; newer ones don't.
+  return { version, items, settings: data.settings ?? null };
 }
 
 function checkItem(raw, i, firstSeen) {
@@ -324,11 +593,21 @@ function cleanColors(raw) {
 async function planImport(json) {
   const backup = parseBackup(json);
   const [existing, current] = await Promise.all([getAll(), getSettings()]);
+  return planFromBackup(backup, existing, current);
+}
+
+/**
+ * The plan for each mode from a parsed backup, the live items here and the current settings.
+ * Pure. Each plan has a summary, whether to clear (replace), the items to write, and settings.
+ */
+export function planFromBackup(backup, existing, current) {
   const have = new Map(existing.map((s) => [s.id, s]));
   const inFile = new Set(backup.items.map(({ item }) => item.id));
-  const base = { total: backup.items.length, existing: existing.length, newerVersion: backup.version > SCHEMA_VERSION };
+  const withSettings = backup.settings !== null;
+  const base = { total: backup.items.length, existing: existing.length, newerVersion: backup.version > SCHEMA_VERSION, withSettings };
 
   // Merge: match by id; the newer `updatedAt` wins, and a missing or unreadable date counts as oldest.
+  // Deleted items aren't "here", so an item deleted since the backup counts as new and comes back.
   const mergeWrites = [];
   let added = 0;
   let updated = 0;
@@ -338,10 +617,11 @@ async function planImport(json) {
     if (!cur) { added++; mergeWrites.push(item); } else if (ts > stamp(cur.updatedAt)) { updated++; mergeWrites.push(item); } else kept++;
   }
 
-  // Files without colours import fine; the app assigns any gaps. Merge lets the file's colours win for
-  // the groups it names; replace takes the file's colours and its default currency.
-  const fileColors = cleanColors(backup.settings.groupColors);
-  const cur = backup.settings.defaultCurrency;
+  // Settings only come from older files that have them; a file without settings leaves them as they are.
+  // Merge lets the file's colours win for the groups it names; replace takes the file's colours and
+  // its default currency. Files without colours import fine; the app assigns any gaps.
+  const fileColors = withSettings ? cleanColors(backup.settings.groupColors) : {};
+  const cur = withSettings ? backup.settings.defaultCurrency : null;
   const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;
 
   return {
@@ -349,7 +629,7 @@ async function planImport(json) {
       summary: { ...base, mode: 'merge', added, updated, kept, removed: 0 },
       clear: false,
       writes: mergeWrites,
-      settings: { groupColors: { ...cleanColors(current.groupColors), ...fileColors } },
+      settings: withSettings ? { groupColors: { ...cleanColors(current.groupColors), ...fileColors } } : {},
     },
     replace: {
       summary: {
@@ -362,14 +642,14 @@ async function planImport(json) {
       },
       clear: true,
       writes: backup.items.map(({ item }) => item),
-      settings: { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) },
+      settings: withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {},
     },
   };
 }
 
 /**
  * What importing would do in each mode, as { merge, replace } summaries. Writes nothing.
- * A summary has total, existing, added, updated, kept, removed and newerVersion.
+ * A summary has total, existing, added, updated, kept, removed, newerVersion and withSettings.
  * Throws ImportError, with a message naming the problem, for a file that can't be imported.
  */
 export async function previewImport(json) {
@@ -380,18 +660,25 @@ export async function previewImport(json) {
 /**
  * Import a backup (JSON text or a parsed object). `mode` is "merge" or "replace".
  * The whole file is checked before anything is written, and the write is one transaction,
- * so a bad file or a failed write leaves existing data untouched. Returns the summary.
+ * so a bad file or a failed write leaves existing data untouched. Items are written as ops like
+ * any other change, so an import syncs too; replace tombstones the items it removes.
+ * Returns the summary.
  */
 export async function importAll(json, mode) {
   if (mode !== 'merge' && mode !== 'replace') throw new Error(`Unknown import mode: ${mode}`);
-  const { summary, clear, writes, settings } = (await planImport(json))[mode];
+  const plan = (await planImport(json))[mode];
+  if (source === RECORDS) {
+    await commit((replica) => importOps(replica, plan), { settings: plan.settings });
+    return plan.summary;
+  }
+  // A fallback store (migration not verified): plain writes, as before.
   const db = await open();
-  const tx = db.transaction([itemStore, SETTINGS], 'readwrite');
-  const store = tx.objectStore(itemStore);
-  if (clear) store.clear();
-  for (const item of writes) store.put(item);
+  const tx = db.transaction([source, SETTINGS], 'readwrite');
+  const store = tx.objectStore(source);
+  if (plan.clear) store.clear();
+  for (const item of plan.writes) store.put(item);
   const sstore = tx.objectStore(SETTINGS);
-  for (const [key, value] of Object.entries(settings)) sstore.put({ key, value });
+  for (const [key, value] of Object.entries(plan.settings)) sstore.put({ key, value });
   await done(tx);
-  return summary;
+  return plan.summary;
 }

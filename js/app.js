@@ -1098,7 +1098,7 @@ async function importFile(file) {
   const message = merge.existing
     ? `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
       + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
-      + `Replace deletes your ${plural(merge.existing, 'item')} and uses the file's items and settings`
+      + `Replace deletes your ${plural(merge.existing, 'item')} and uses the file's items${replace.withSettings ? ' and settings' : ''}`
       + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
     : `${plural(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
   const mode = await confirmDialog({

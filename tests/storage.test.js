@@ -1,5 +1,5 @@
-// In-browser tests for js/storage.js: migration, export/import round trip, merge rules and
-// bad-file rejection. Open tests/storage.html from a local server. Each test uses its own
+// In-browser tests for js/storage.js: migrations (including to sync-ready records), the outbox,
+// tombstones, export/import round trip, merge rules and bad-file rejection. Open tests/storage.html from a local server. Each test uses its own
 // throwaway database; the fixtures below are made up. This file talks to IndexedDB directly
 // only to seed old-format databases; the code under test goes through storage.js.
 
@@ -87,7 +87,8 @@ test('migrates the old subscriptions store into items and verifies it', async ()
   eq(items.map((s) => s.id).sort(), ['b', 'c', 'old'], 'all old records are in items');
   eq(items.find((s) => s.id === 'old'), subs[0], 'records are copied unchanged');
   const st = await storage.status();
-  eq([st.schemaVersion, st.usingLegacy, st.migration.verified, st.migration.items, st.migration.copied], [3, false, true, 3, 3], 'status');
+  eq([st.schemaVersion, st.usingLegacy, st.migration.verified, st.migration.items, st.migration.copied], [4, false, true, 3, 3], 'status');
+  eq([st.syncMigration.verified, st.syncMigration.records], [true, 3], 'records step');
   eq((await storage.getSettings()).defaultCurrency, 'TWD', 'settings survive');
 });
 
@@ -99,8 +100,10 @@ test('keeps the old store untouched as a fallback', async () => {
   await new Promise((r) => setTimeout(r, 50));
   const db = await rawOpen(name);
   const legacy = await rawAll(db, 'subscriptions');
+  const items = await rawAll(db, 'items');
   db.close();
   eq(legacy.map((s) => s.id).sort(), ['a', 'old'], 'old store still has both records');
+  eq(items.map((s) => s.id).sort(), ['a', 'old'], 'items store is kept untouched too');
 });
 
 test('runs only once: a deleted item does not come back on the next load', async () => {
@@ -118,15 +121,15 @@ test('an empty old database migrates to an empty, verified one', async () => {
   eq((await storage.status()).migration.verified, true, 'verified');
 });
 
-test('a fresh install has no old store and records schemaVersion 3', async () => {
+test('a fresh install has no old store and records schemaVersion 4', async () => {
   const name = freshDb();
   await storage.getAll();
   const st = await storage.status();
-  eq([st.schemaVersion, st.migration, st.usingLegacy], [3, null, false], 'status');
+  eq([st.schemaVersion, st.migration, st.usingLegacy, st.syncMigration.verified], [4, null, false, true], 'status');
   storage.useDatabase('substracker-test-idle');
   await new Promise((r) => setTimeout(r, 50));
   const db = await rawOpen(name);
-  eq([...db.objectStoreNames].sort(), ['items', 'meta', 'settings'], 'stores');
+  eq([...db.objectStoreNames].sort(), ['items', 'meta', 'outbox', 'records', 'settings'], 'stores');
   db.close();
 });
 
@@ -147,12 +150,151 @@ test('an unverifiable migration falls back to the old store', async () => {
   try {
     eq((await storage.getAll()).map((s) => s.id), ['old'], 'reads the old store');
     eq((await storage.status()).usingLegacy, true, 'usingLegacy');
+    eq(await storage.syncState(), null, 'no sync state on a fallback store');
   } finally { console.warn = warn; }
+});
+
+/* ------------------------------------------------------------------ Sync-ready records */
+
+/** A database in the 1.3–1.4 layout (version 2: items + meta + settings, items already verified). */
+async function seedV2(name, items, { stray = null } = {}) {
+  const db = await rawOpen(name, 2, (d) => {
+    d.createObjectStore('items', { keyPath: 'id' });
+    d.createObjectStore('meta', { keyPath: 'key' });
+    d.createObjectStore('settings', { keyPath: 'key' });
+  });
+  await rawPut(db, 'items', items);
+  await rawPut(db, 'meta', [{ key: 'schemaVersion', value: 3 }]);
+  db.close();
+  if (stray) await stray(name);
+}
+
+/** Close storage.js's connection and open the database directly to look inside. */
+async function inspect(name, fn) {
+  storage.useDatabase('substracker-test-idle');
+  await new Promise((r) => setTimeout(r, 50));
+  const db = await rawOpen(name);
+  try { return await fn(db); } finally { db.close(); storage.useDatabase(name); }
+}
+
+const fieldCount = (items) => items.reduce((n, s) => n + Object.keys(s).length, 0); // minus id, plus del
+
+test('migrates a 1.3–1.4 database into records, verifies it and keeps items as they were', async () => {
+  const name = freshDb();
+  const items = [v1Record(), item(), item({ id: 'c', type: 'income', name: 'Example Salary' })];
+  await seedV2(name, items);
+  eq((await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id)), [item(), item({ id: 'c', type: 'income', name: 'Example Salary' }), v1Record()], 'same items, same shape');
+  const st = await storage.status();
+  eq([st.schemaVersion, st.usingLegacy, st.migration, st.syncMigration.verified, st.syncMigration.records], [4, false, null, true, 3], 'status');
+  const sync = await storage.syncState();
+  assert(/^[0-9a-f-]{36}$/.test(sync.deviceId), 'device id is a UUID');
+  eq(sync.syncCursor, 0, 'cursor starts at 0');
+  eq(sync.outbox.length, fieldCount(items), 'one pending op per field');
+
+  await storage.save({ ...item(), price: 999 });
+  await storage.remove('old');
+  const [raw, kept] = await inspect(name, async (db) => [await rawAll(db, 'records'), await rawAll(db, 'items')]);
+  const byKey = (list) => [...list].sort((x, y) => x.id.localeCompare(y.id));
+  eq(byKey(kept), byKey(items), 'items store untouched by later edits');
+  const old = raw.find((r) => r.id === 'old');
+  eq([old.fields.del, old.fields.name], [true, 'Sample Cloud'], 'deleted record kept as a tombstone');
+  assert(Object.values(old.ts).every((t) => /^\d{15}-\d{6}-/.test(t)), 'every field has a stamp');
+});
+
+test('every save and delete goes to the outbox; a newer change to a field replaces its pending op', async () => {
+  freshDb();
+  const heard = [];
+  storage.onChangesEnqueued((n) => heard.push(n));
+  try {
+    await storage.save(item());
+    const first = (await storage.syncState()).outbox;
+    eq(first.length, Object.keys(item()).length, 'create: every field plus del');
+    await storage.save(item({ price: 300, updatedAt: T2 }));
+    const second = (await storage.syncState()).outbox;
+    eq(second.length, first.length, 'no growth: price and updatedAt ops were replaced');
+    const price = second.find((op) => op.f === 'price');
+    eq(price.v, 300, 'pending op has the new value');
+    assert(price.t > first.find((op) => op.f === 'price').t, 'and a later stamp');
+    await storage.save(item({ price: 300, updatedAt: T2 }));
+    await storage.remove('a');
+    await storage.remove('a'); // already deleted: nothing more
+    eq(heard, [Object.keys(item()).length, 2, 1], 'the TODO(sync) hook hears each change');
+    eq(await storage.getAll(), [], 'deleted items are absent');
+    eq((await storage.exportAll()).items, [], 'and not exported');
+    const del = (await storage.syncState()).outbox.find((op) => op.f === 'del');
+    eq(del.v, true, 'the delete is pending');
+  } finally { storage.onChangesEnqueued(() => {}); }
+});
+
+test('the device id and clock survive a reload and stamps keep increasing', async () => {
+  const name = freshDb();
+  await storage.save(item());
+  const before = await storage.syncState();
+  storage.useDatabase(name);
+  await storage.save(item({ notes: 'later' }));
+  const after = await storage.syncState();
+  eq(after.deviceId, before.deviceId, 'same device');
+  const t = (s) => s.outbox.find((op) => op.f === 'name')?.t ?? s.outbox.find((op) => op.f === 'notes').t;
+  assert(after.outbox.find((op) => op.f === 'notes').t > t(before), 'later stamp after reload');
+});
+
+test('an interrupted records migration is redone from items', async () => {
+  const name = freshDb();
+  // Version 3 layout as left by a run that copied but never recorded its check: a stray record
+  // and op that items doesn't have, and no syncMigration in meta.
+  await seedV2(name, [item()], {
+    stray: async (n) => {
+      const db = await rawOpen(n, 3, (d) => {
+        d.createObjectStore('records', { keyPath: 'id' });
+        d.createObjectStore('outbox', { keyPath: ['rec', 'f'] }).createIndex('t', 't');
+      });
+      await rawPut(db, 'records', [{ id: 'stray', fields: { name: 'x', del: false }, ts: { name: '000000000000001-000000-x', del: '000000000000001-000000-x' } }]);
+      await rawPut(db, 'outbox', [{ id: 'o', rec: 'stray', f: 'name', v: 'x', t: '000000000000001-000000-x', dev: 'x' }]);
+      await rawPut(db, 'meta', [{ key: 'deviceId', value: 'device-from-first-run' }]);
+      db.close();
+    },
+  });
+  eq(await storage.getAll(), [item()], 'only what items has');
+  const st = await storage.syncState();
+  eq(st.deviceId, 'device-from-first-run', 'keeps the device id it already had');
+  eq(st.outbox.some((op) => op.rec === 'stray'), false, 'stray op gone');
+  eq((await storage.status()).syncMigration.verified, true, 'verified this time');
+});
+
+test('an item that cannot be copied keeps the app on items, unchanged, and it retries next load', async () => {
+  const name = freshDb();
+  await seedV2(name, [item(), item({ id: 'bad', price: NaN })]);
+  const warn = console.warn;
+  console.warn = () => {}; // the expected warning
+  try {
+    eq((await storage.getAll()).length, 2, 'reads items');
+    const st = await storage.status();
+    eq([st.usingLegacy, st.syncMigration.verified, st.schemaVersion], [true, false, 3], 'status');
+    await storage.save(item({ notes: 'still works' }));
+    storage.useDatabase(name);
+    eq((await storage.getAll()).find((s) => s.id === 'a').notes, 'still works', 'writes land in items');
+    eq((await storage.status()).usingLegacy, true, 'still on items after a reload');
+  } finally { console.warn = warn; }
+  const records = await inspect(name, (db) => rawAll(db, 'records'));
+  eq(records, [], 'nothing half-copied');
+});
+
+test('replace import tombstones what it removes; a later merge brings an item back', async () => {
+  const name = freshDb();
+  await storage.save(item({ id: 'gone' }));
+  await storage.importAll(backup([item({ id: 'a' })]), 'replace');
+  eq((await storage.getAll()).map((s) => s.id), ['a'], 'live items');
+  const gone = (await inspect(name, (db) => rawAll(db, 'records'))).find((r) => r.id === 'gone');
+  eq(gone.fields.del, true, 'tombstone kept');
+  const preview = await storage.previewImport(backup([item({ id: 'gone' })]));
+  eq(preview.merge.added, 1, 'a deleted item counts as new');
+  await storage.importAll(backup([item({ id: 'gone' })]), 'merge');
+  eq((await storage.getAll()).map((s) => s.id).sort(), ['a', 'gone'], 'back again');
 });
 
 /* ------------------------------------------------------------------ Export / import */
 
-test('export → JSON → replace import into an empty database round-trips', async () => {
+test('export → JSON → replace import into an empty database round-trips; settings stay out', async () => {
   freshDb();
   const items = [item(), item({ id: 'b', cycle: 'once', date: '2026-11-10', nextRenewal: '', emoji: '🔧' }),
     item({ id: 'c', type: 'income', name: 'Example Salary', price: 50000 })];
@@ -160,15 +302,20 @@ test('export → JSON → replace import into an empty database round-trips', as
   await storage.saveSettings({ defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } });
   const file = JSON.stringify(await storage.exportAll());
   const parsed = JSON.parse(file);
-  eq(Object.keys(parsed), ['app', 'schemaVersion', 'exportedAt', 'items', 'settings'], 'envelope keys');
-  eq([parsed.app, parsed.schemaVersion], ['substracker', 3], 'header');
+  eq(Object.keys(parsed), ['app', 'schemaVersion', 'exportedAt', 'items'], 'envelope keys');
+  eq([parsed.app, parsed.schemaVersion], ['substracker', 4], 'header');
+  for (const word of ['groupColors', 'defaultCurrency', 'deviceId', 'hlc', 'outbox', 'syncCursor', '"ts"', '"del"']) {
+    assert(!file.includes(word), `export must not contain ${word}`);
+  }
 
   freshDb();
   const summary = await storage.importAll(file, 'replace');
   eq([summary.total, summary.added], [3, 3], 'summary');
   const back = (await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id));
   eq(back, items, 'items identical');
-  eq(await storage.getSettings(), { defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } }, 'settings identical');
+  await storage.saveSettings({ defaultCurrency: 'TWD' });
+  await storage.importAll(file, 'replace');
+  eq(await storage.getSettings(), { defaultCurrency: 'TWD' }, 'importing a new-format file leaves settings alone');
 });
 
 test('records without a type (pre-1.1.0) export as expenses and re-import', async () => {
