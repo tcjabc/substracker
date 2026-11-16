@@ -6,8 +6,8 @@
 //
 // Performance: the animation loop runs only while something moves, all DOM writes happen in one
 // pass per frame and only when a value changed, and the centre month is picked out with plain
-// shapes and opacity (an outline, a faint spotlight column, a label pill, muted neighbours): no
-// shadows or SVG filters.
+// shapes and opacity (an accent outline, a label pill, muted neighbours): no shadows, glows,
+// background columns or SVG filters.
 
 import {
   GEOM as G, lerp, clamp, wrapRel, centreIndex, nearestPos, taper, edgeOpacity, prominence,
@@ -102,9 +102,6 @@ export function createYearChart(host, opts) {
 
   el('rect', { x: 0, y: 0, width: G.W, height: G.H, fill: 'transparent' }, svg);
   const gridL = el('g', {}, svg);
-  // The centre month's spotlight: a faint accent column behind it, the plot's full height.
-  const spotL = el('g', {}, svg);
-  const spot = el('rect', { class: 'yc-spot', y: G.BASE - G.BAR_H - 6, height: G.BAR_H + 6, rx: 6 }, spotL);
   const barsL = el('g', {}, svg);
   const outlineL = el('g', {}, svg); // the centre (or opened) bar's outline, over the bars
   const incomeL = el('g', {}, svg);
@@ -269,11 +266,6 @@ export function createYearChart(host, opts) {
     dock.classList.toggle('hide', focus);
     back.classList.toggle('on', focus);
     set(gridL, 'opacity', ga);
-    // Spotlight column at the centre, as wide as the centre bar plus a margin; gone in focus.
-    const spotW = tp.width(0) + 10;
-    set(spot, 'x', G.CX - spotW / 2); set(spot, 'width', spotW);
-    set(spot, 'opacity', 1 - gl);
-    set(spotL, 'display', gl > 0.99 ? 'none' : 'inline');
     setStyle(readout, 'opacity', String(Math.round((1 - gl) * 100) / 100));
     set(incomeL, 'opacity', 1 - gl);
     if (c !== lastC) {
@@ -346,11 +338,14 @@ export function createYearChart(host, opts) {
         set(b.veil, 'x', x); set(b.veil, 'y', topY); set(b.veil, 'width', w); set(b.veil, 'height', barH);
         set(b.veil, 'rx', Math.min(rx, barH / 2)); set(b.veil, 'opacity', veil);
       } else set(b.veil, 'display', 'none');
-      const ring = b.d.total ? 0.7 * Math.max(pr, u) : 0;
+      // The outline, in the pill's accent, at full strength on the centre (or opened) bar. Its
+      // bottom edge sits 0.75 above the baseline, so the 1.5 stroke ends on the baseline and never
+      // shows below the bar.
+      const ring = b.d.total ? Math.max(pr, u) : 0;
       if (ring > 0.01) {
         set(b.ol, 'display', 'inline');
-        set(b.ol, 'x', x - 0.75); set(b.ol, 'y', topY - 0.75); set(b.ol, 'width', w + 1.5); set(b.ol, 'height', barH + 1.5);
-        set(b.ol, 'rx', Math.min(rx + 0.75, (barH + 1.5) / 2)); set(b.ol, 'opacity', ring);
+        set(b.ol, 'x', x - 0.75); set(b.ol, 'y', topY - 0.75); set(b.ol, 'width', w + 1.5); set(b.ol, 'height', barH);
+        set(b.ol, 'rx', Math.min(rx + 0.75, barH / 2)); set(b.ol, 'opacity', ring);
       } else set(b.ol, 'display', 'none');
       if (pts) pts.push({ i: b.i, rel, x: x + w / 2, y: G.BASE - b.d.income * SCALE });
       // Labels.

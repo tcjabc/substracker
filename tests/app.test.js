@@ -603,7 +603,7 @@ test('Show income: an income line, and the months-over marker instead of above-a
   mode('month');
 });
 
-test('centre highlight: outline, spotlight and label pill on the centre month; none of it in focus but the outline', async () => {
+test('centre highlight: an outline in the pill colour and the label pill; nothing shadow-like, in the carousel or in focus', async () => {
   mode('year');
   await settle();
   const shown = (sel) => $$(`#year-chart ${sel}`)
@@ -617,8 +617,21 @@ test('centre highlight: outline, spotlight and label pill on the centre month; n
   eq(strong('.yc-pill'), [centre], 'label pill on the centre month');
   const label = $$('#year-chart .yc-month:not(.yc-year)')[centre];
   assert(label.classList.contains('yc-month-pill'), 'centre label styled for the pill');
-  eq($('#year-chart .yc-spot').parentNode.getAttribute('display'), 'inline', 'spotlight shown');
-  assert(!$$('#year-chart .yc-shadow').length, 'no shadow rects');
+  const ring = $(`#year-chart .yc-outline[data-for="${centre}"]`);
+  const pill = $(`#year-chart .yc-pill[data-for="${centre}"]`);
+  eq(getComputedStyle(ring).stroke, getComputedStyle(pill).fill, 'outline in the pill colour');
+  eq(getComputedStyle(ring).strokeWidth, '1.5px', '1.5 wide');
+  assert(Number(ring.getAttribute('rx')) > 0, 'rounded');
+  const noShadows = (where) => {
+    assert(!$('#year-chart .yc-spot, #year-chart .yc-shadow'), `no spotlight or shadow layer (${where})`);
+    assert(!$('#year-chart filter, #year-chart [filter], #year-chart feGaussianBlur'), `no SVG filters (${where})`);
+    const below = $$('#year-chart .yc-svg g rect[style], #year-chart .yc-veil')
+      .filter((e) => e.getAttribute('display') !== 'none' && e.closest('g[display="none"]') === null)
+      .filter((e) => Number(e.getAttribute('y')) + Number(e.getAttribute('height')) > 340.01 && Number(e.getAttribute('y')) < 340);
+    eq(below.length, 0, `nothing in the carousel reaches below the baseline (${where})`);
+  };
+  noShadows('carousel');
+  eq(Number(ring.getAttribute('y')) + Number(ring.getAttribute('height')) + 0.75, 340, 'the outline stroke ends on the baseline');
   const veils = $$('#year-chart .yc-veil').filter((e) => e.getAttribute('display') !== 'none').length;
   assert(veils >= 10, `other bars are muted (${veils} veils)`);
   // It follows the carousel: one month on, the highlight moves with it.
@@ -632,7 +645,9 @@ test('centre highlight: outline, spotlight and label pill on the centre month; n
   eq(shown('.yc-outline'), [centre + 1], 'only the opened bar is outlined');
   eq(shown('.yc-pill'), [], 'no pill in focus');
   eq($$('#year-chart .yc-veil').filter((e) => e.getAttribute('display') !== 'none').length, 0, 'no veils in focus');
-  eq($('#year-chart .yc-spot').parentNode.getAttribute('display'), 'none', 'no spotlight in focus');
+  assert(!$('#year-chart .yc-spot, #year-chart .yc-shadow, #year-chart filter, #year-chart [filter]'), 'nothing shadow-like in focus');
+  const opened = $(`#year-chart .yc-outline[data-for="${centre + 1}"]`);
+  eq(getComputedStyle(opened).stroke, getComputedStyle(pill).fill, 'the opened bar keeps the accent outline');
   key('Escape');
   await settle();
   eq(strong('.yc-pill'), [centre + 1], 'back in the carousel');
