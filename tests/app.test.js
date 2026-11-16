@@ -1,6 +1,7 @@
-// In-browser tests for the app screens (js/app.js): the Insights month view on a cash basis, the
-// "needs a renewal date" notice, and the add/edit form requiring a renewal date (with field-level
-// saves and rollover still working). Open tests/app.html from a local server. The app runs with
+// In-browser tests for the app screens (js/app.js): the Insights month view on a cash basis
+// (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
+// add/edit form requiring a renewal or payment date (with field-level saves and rollover still
+// working). Open tests/app.html from a local server. The app runs with
 // index.html's markup against a throwaway database, seeded with made-up items dated relative to
 // today, so the tests work in any month. The tests run in order, as one session in the app.
 
@@ -48,11 +49,28 @@ const SEED = [
   { ...base, id: 'test-domain', name: 'Domain', price: 360, cycle: 'annual', nextRenewal: day(Y, M + 6, 1) },
   { ...base, id: 'test-gym', name: 'Gym', price: 900, cycle: 'monthly', nextRenewal: '', category: 'Health' },
   { ...base, id: 'test-yoga', name: 'Yoga', price: 1200, cycle: 'annual', nextRenewal: '', category: 'Health' },
+  // Income paid this month: Salary 40,000 + Refund 3,000 = 43,000. Bonus 12,000 is paid two months
+  // from now (stored last year), so that month has 52,000. Lodger 5,000 /mo has no payment date.
+  { ...base, type: 'income', id: 'test-salary', name: 'Salary', price: 40000, cycle: 'monthly', nextRenewal: day(Y, M, 25) },
+  { ...base, type: 'income', id: 'test-bonus', name: 'Bonus', price: 12000, cycle: 'annual', nextRenewal: day(Y - 1, M + 2, 10) },
+  { ...base, type: 'income', id: 'test-refund', name: 'Refund', price: 3000, cycle: 'once', date: day(Y, M, 8) },
+  { ...base, type: 'income', id: 'test-lodger', name: 'Lodger', price: 5000, cycle: 'monthly', nextRenewal: '' },
+  // USD: an expense, and one-off income next month only, so this month has no USD income.
+  { ...base, currency: 'USD', id: 'test-usd-tool', name: 'Tool', price: 10, cycle: 'monthly', nextRenewal: day(Y, M, 2) },
+  { ...base, currency: 'USD', type: 'income', id: 'test-usd-gig', name: 'Gig', price: 200, cycle: 'once', date: day(Y, M + 1, 5) },
 ];
 
 const dialog = () => $('#sub-dialog');
 const isOpen = () => dialog().open || dialog().hasAttribute('open');
-const notice = () => $('#insights .notice-action');
+const notice = () => $('#insights [data-notice="plans"]');
+const incomeNotice = () => $('#insights [data-notice="income"]');
+const step = async (n) => {
+  for (let i = 0; i < Math.abs(n); i++) {
+    $(`#insights [data-month-step="${n > 0 ? 1 : -1}"]`).click();
+    await tick(10);
+  }
+};
+const chip = (code) => $(`#currency-chips [data-currency="${code}"]`);
 
 /* ---------------------------------------------------------------- Insights */
 
@@ -81,6 +99,33 @@ test('the income bar, the donut and the category list all use the month cash tot
 
 test('the notice names the undated plans and their amount', async () => {
   eq(text(notice()), `2 plans need a renewal date, ${T(2100)} not shown`, 'notice text');
+});
+
+test('the month income is what is paid in it, not a monthly equivalent', async () => {
+  eq(text($('#insights .headline-text')), `Outgoings ${T(1699)} of ${T(43000)} income (4%)`, 'this month');
+  await step(2);
+  eq(text($('#insights .headline-text')), `Outgoings ${T(499)} of ${T(52000)} income (1%)`, 'bonus month');
+  await step(-1);
+  eq(text($('#insights .headline-text')), `Outgoings ${T(499)} of ${T(40000)} income (1%)`, 'salary only');
+  await step(-1);
+});
+
+test('a month with no income shows no percentage and says why', async () => {
+  chip('USD').click();
+  const usd = (n) => money(n, 'USD');
+  const monthName = (k) => new Date(Y, M + k, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  eq(text($('#insights .headline-text')), `Outgoings ${usd(10)} · no USD income paid in ${monthName(0)}, so no percentage`, 'none paid');
+  assert(!$('#insights .headline .bar'), 'no bar');
+  await step(1);
+  eq(text($('#insights .headline-text')), `Outgoings ${usd(10)} of ${usd(200)} income (5%)`, 'next month');
+  await step(-1);
+  chip('TWD').click();
+  assert(text($('#insights .headline-text')).includes(T(43000)), 'back to TWD');
+});
+
+test('undated income has its own notice; income and plan amounts are never added', async () => {
+  eq(text(incomeNotice()), `1 income item needs a payment date, ${T(5000)} not shown`, 'income notice');
+  eq(text(notice()), `2 plans need a renewal date, ${T(2100)} not shown`, 'plans notice unchanged');
 });
 
 test('tapping the notice opens the first undated plan for editing', async () => {
@@ -194,15 +239,86 @@ test('a new monthly or annual expense needs a renewal date; a one-off needs its 
   eq((await storage.getAll()).find((s) => s.name === 'Dated service')?.nextRenewal, day(Y, M, 9), 'stored');
 });
 
-test('income needs no renewal date', async () => {
+test('tapping the income notice opens the undated income; saving it needs a payment date', async () => {
+  incomeNotice().click();
+  await until(isOpen, 'edit sheet opens');
+  eq(text($('#sub-dialog-title')), 'Edit income', 'edit title');
+  eq(field('name').value, 'Lodger', 'the undated income');
+  eq(text($('#label-renewal')), 'Next payment', 'payment label');
+  eq(field('nextRenewal').value, '', 'date not filled in');
+  const before = await opStamps('test-lodger');
+  setValue('notes', 'Room 2');
+  save();
+  await tick(50);
+  assert(isOpen(), 'sheet stays open');
+  eq(errorFor('nextRenewal'), 'Pick a payment date.', 'payment message');
+  assert(document.activeElement === field('nextRenewal'), 'date field focused');
+  eq((await stored('test-lodger')).notes, '', 'nothing saved');
+  setValue('nextRenewal', day(Y, M, 1));
+  save();
+  await until(() => !isOpen(), 'sheet closes');
+  await tick(50);
+  eq(written(before, await opStamps('test-lodger')), ['nextRenewal', 'notes', 'updatedAt'], 'fields written');
+  assert(!incomeNotice(), 'income notice gone');
+  assert(text($('#insights .headline-text')).includes(`of ${T(48000)} income`), 'Lodger now paid this month');
+});
+
+test('new income needs a payment date when monthly or annual, and its date when one-off', async () => {
   $('[data-action="add-income"]').click();
   await until(isOpen, 'income sheet opens');
-  assert($('#field-renewal').hidden, 'no renewal field for income');
-  setValue('name', 'Test salary');
+  assert(!$('#field-renewal').hidden, 'date field shown for income');
+  eq(text($('#label-renewal')), 'Next payment', 'monthly label');
+  setValue('name', 'Test pay');
   setValue('price', '100');
   save();
-  await until(() => !isOpen(), 'income saves');
-  eq((await storage.getAll()).find((s) => s.name === 'Test salary').nextRenewal, '', 'no date stored');
+  await tick(50);
+  assert(isOpen(), 'monthly income without a date is not saved');
+  eq(errorFor('nextRenewal'), 'Pick a payment date.', 'monthly message');
+  dialog().querySelector('input[name="cycle"][value="annual"]').click();
+  eq(text($('#label-renewal')), 'Next payment', 'annual label');
+  save();
+  await tick(50);
+  assert(isOpen(), 'annual income without a date is not saved');
+  eq(errorFor('nextRenewal'), 'Pick a payment date.', 'annual message');
+  dialog().querySelector('input[name="cycle"][value="once"]').click();
+  assert($('#field-renewal').hidden && !$('#field-date').hidden, 'one-off shows its Date field');
+  eq(text($('#field-date .field-label')), 'Date', 'one-off label, as for expenses');
+  eq(errorFor('nextRenewal'), '', 'payment error cleared');
+  setValue('date', '');
+  save();
+  await tick(50);
+  assert(isOpen(), 'one-off income without a date is not saved');
+  eq(errorFor('date'), 'Pick the date it happens.', 'one-off message');
+  dialog().querySelector('input[name="cycle"][value="monthly"]').click();
+  setValue('nextRenewal', day(Y, M, 28));
+  save();
+  await until(() => !isOpen(), 'monthly income with a date saves');
+  const pay = (await storage.getAll()).find((s) => s.name === 'Test pay');
+  eq([pay.type, pay.cycle, pay.nextRenewal, pay.date], ['income', 'monthly', day(Y, M, 28), ''], 'stored');
+});
+
+test('switching the form between expense and income swaps the date wording', async () => {
+  $('[data-action="add"]').click();
+  await until(isOpen, 'add sheet opens');
+  setValue('name', 'Switch');
+  setValue('price', '1');
+  save();
+  await tick(50);
+  eq(errorFor('nextRenewal'), 'Pick a renewal date.', 'expense message');
+  dialog().querySelector('input[name="kind"][value="income"]').click();
+  eq(text($('#label-renewal')), 'Next payment', 'income label');
+  eq(errorFor('nextRenewal'), '', 'the renewal message is cleared');
+  dialog().querySelector('input[name="kind"][value="expense"]').click();
+  eq(text($('#label-renewal')), 'Next renewal', 'expense label');
+  $('#sub-dialog [data-close]').click();
+  await until(() => !isOpen(), 'sheet closes');
+});
+
+test('dated income on the Money tab says "Payment", never "Renews"', async () => {
+  const tag = text($('#subs-list [data-id="test-salary"] .tag'));
+  assert(/^Payment/.test(tag), `payment tag (${tag})`);
+  const plan = text($('#subs-list [data-id="test-phone"] .tag'));
+  assert(/^Renews/.test(plan), `plans still say Renews (${plan})`);
 });
 
 /* ------------------------------------------------------------------ Runner */
@@ -212,6 +328,7 @@ async function run() {
   for (const item of SEED) await storage.save(item);
   storage.setPref('tab', 'insights');
   storage.setPref('catView', 'donut');
+  storage.setPref('view', 'grid'); // cards show the renewal or payment tag
 
   // Bring in the app's own markup, then the app itself (which starts on import).
   const html = await (await fetch('../index.html', { cache: 'no-store' })).text();

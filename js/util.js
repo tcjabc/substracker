@@ -108,13 +108,15 @@ export function daysUntil(date) {
   return Math.round((date - today) / 86400000);
 }
 
-export function renewalText(date) {
+/** "Renews in 3 days" for a plan; for income (`income` true) "Payment in 3 days", never "renews". */
+export function renewalText(date, income = false) {
+  const word = income ? 'Payment' : 'Renews';
   const n = daysUntil(date);
-  if (n === 0) return 'Renews today';
-  if (n === 1) return 'Renews tomorrow';
-  if (n < 7) return `Renews in ${n} days`;
+  if (n === 0) return `${word} today`;
+  if (n === 1) return `${word} tomorrow`;
+  if (n < 7) return `${word} in ${n} days`;
   const sameYear = date.getFullYear() === new Date().getFullYear();
-  return 'Renews ' + date.toLocaleDateString(undefined, {
+  return `${word} ` + date.toLocaleDateString(undefined, {
     day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
   });
 }

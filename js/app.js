@@ -13,7 +13,7 @@ import {
   chooseImportMode,
 } from './util.js';
 import {
-  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring,
+  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome,
 } from './insights-calc.js';
 
 const APP_VERSION = '1.9.0';
@@ -380,7 +380,7 @@ function renewalTag(sub) {
   const d = nextRenewal(sub);
   if (!d) return '';
   const soon = daysUntil(d) <= 7;
-  return `<span class="tag${soon ? ' tag-soon' : ''}">${esc(renewalText(d))}</span>`;
+  return `<span class="tag${soon ? ' tag-soon' : ''}">${esc(renewalText(d, isIncome(sub)))}</span>`;
 }
 
 const ONE_OFF_TAG = '<span class="tag tag-once">One-off</span>';
@@ -490,7 +490,7 @@ function cardHTML(s) {
 
 function rowHTML(s) {
   const d = nextRenewal(s);
-  const parts = [isIncome(s) ? '' : s.plan, isOnce(s) ? onceDate(s) : d ? renewalText(d) : ''];
+  const parts = [isIncome(s) ? '' : s.plan, isOnce(s) ? onceDate(s) : d ? renewalText(d, isIncome(s)) : ''];
   const sub = parts.filter(Boolean).map(esc).join(' · ');
   return `
     <button type="button" class="sub-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
@@ -565,9 +565,9 @@ function renderInsights() {
   const incomeItems = inCur.filter(isIncome);
   const subs = inCur.filter((s) => !isIncome(s)); // expenses only from here on
 
-  // Outgoings on a cash basis: what falls due in this month (see insights-calc.js). Income keeps
-  // its monthly equivalent, as it has no renewal date.
-  const incomeMonth = incomeItems.reduce((t, s) => t + amountInMonth(s, y, m), 0);
+  // Outgoings and income on a cash basis: what falls due or is paid in this month (see
+  // insights-calc.js). The two are compared, never added together.
+  const incomeMonth = incomeDue(incomeItems, y, m);
   const due = breakdown(subs, y, m);
   const monthly = due.total;
   const annual = subs.reduce((t, s) => t + amountInYear(s, y), 0);
@@ -579,6 +579,8 @@ function renderInsights() {
   const inMonth = due.byCategory.flatMap((c) => c.items); // each with its `due` amount
   const undated = undatedRecurring(subs);
   const undatedTotal = undated.reduce((t, s) => t + s.price, 0);
+  const undatedIn = undatedIncome(incomeItems);
+  const undatedInTotal = undatedIn.reduce((t, s) => t + s.price, 0);
 
   const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
@@ -588,7 +590,10 @@ function renderInsights() {
   const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
   const headline = incomeMonth
     ? `Outgoings <strong>${esc(money(monthly, cur))}</strong> of <strong>${esc(money(incomeMonth, cur))}</strong> income <span class="pct">(${pct}%)</span>`
-    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">· no ${esc(cur)} income recorded</span>`;
+    // No percentage without income this month: say whether there's none at all or none paid now.
+    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">· ${incomeItems.length
+      ? `no ${esc(cur)} income paid in ${esc(monthName)}, so no percentage`
+      : `no ${esc(cur)} income recorded`}</span>`;
 
   root.innerHTML = `
     <div class="month-nav">
@@ -608,8 +613,12 @@ function renderInsights() {
 
     ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
     ${undated.length ? `
-    <button type="button" class="notice-action" data-id="${esc(undated[0].id)}">
+    <button type="button" class="notice-action" data-notice="plans" data-id="${esc(undated[0].id)}">
       ${esc(`${plural(undated.length, 'plan')} ${undated.length === 1 ? 'needs' : 'need'} a renewal date, ${money(undatedTotal, cur)} not shown`)}
+    </button>` : ''}
+    ${undatedIn.length ? `
+    <button type="button" class="notice-action" data-notice="income" data-id="${esc(undatedIn[0].id)}">
+      ${esc(`${plural(undatedIn.length, 'income item')} ${undatedIn.length === 1 ? 'needs' : 'need'} a payment date, ${money(undatedInTotal, cur)} not shown`)}
     </button>` : ''}
     <div class="stats">
       <div class="stat stat-primary">
@@ -871,12 +880,13 @@ function syncFormMode() {
   const once = f.cycle.value === 'once';
   $('#sub-dialog-title').textContent = `${state.editingId ? 'Edit' : 'New'} ${income ? 'income' : 'expense'}`;
   $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
-  $('#field-renewal').hidden = income || once;
+  $('#field-renewal').hidden = once;
+  $('#label-renewal').textContent = income ? 'Next payment' : 'Next renewal';
   $('#field-date').hidden = !once;
   $('#field-row-dates').hidden = $$('#field-row-dates > .field', form).every((el) => el.hidden);
   if (once && !f.date.value) f.date.value = todayStamp();
   if (!once) clearErrors('date');
-  if (income || once) clearErrors('nextRenewal');
+  if (once) clearErrors('nextRenewal');
 
   f.name.placeholder = income ? 'e.g. My salary' : 'e.g. Netflix';
   // Service suggestions only make sense for expenses.
@@ -932,6 +942,7 @@ function bindForm() {
   // Saving an existing item with the other type selected converts it (readForm uses formType).
   $$('input[name="kind"]', form).forEach((r) => r.addEventListener('change', () => {
     state.formType = f.kind.value === 'income' ? 'income' : 'expense';
+    clearErrors('nextRenewal'); // its message names a renewal or a payment
     syncFormMode();
     suggestFromName();
   }));
@@ -998,10 +1009,11 @@ function readForm() {
     setError('price', `Enter ${income ? 'an amount' : 'a price'} of 0 or more.`); valid = false;
   }
   if (cycle === 'once' && !isDay(f.date.value)) { setError('date', 'Pick the date it happens.'); valid = false; }
-  // Recurring expenses need a renewal date to show in a month. A plan saved before this was
-  // required keeps working without one until it's edited; then the date has to be picked.
-  if (!income && cycle !== 'once' && !isDay(f.nextRenewal.value)) {
-    setError('nextRenewal', 'Pick a renewal date.'); valid = false;
+  // Recurring items need a date to show in a month: a renewal for an expense, a payment for income
+  // (both kept in nextRenewal). An item saved before this was required keeps working without one
+  // until it's edited; then the date has to be picked.
+  if (cycle !== 'once' && !isDay(f.nextRenewal.value)) {
+    setError('nextRenewal', income ? 'Pick a payment date.' : 'Pick a renewal date.'); valid = false;
   }
   if (!valid) {
     const bad = form.querySelector('[aria-invalid="true"]');
@@ -1024,7 +1036,7 @@ function readForm() {
     price: Math.round(price * 100) / 100,
     currency: f.currency.value || state.settings.defaultCurrency,
     cycle,
-    nextRenewal: income || cycle === 'once' ? '' : f.nextRenewal.value || '',
+    nextRenewal: cycle === 'once' ? '' : f.nextRenewal.value || '',
     date: cycle === 'once' ? f.date.value : '',
     category: income ? '' : f.category.value.trim(),
     notes: f.notes.value.trim(),
