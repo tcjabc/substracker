@@ -224,7 +224,7 @@ How the native app differs from the PWA:
 - **Sync key:** kept in the Android Keystore (see "Where the household key is kept").
 - **QR scanning:** through Google Play services' code scanner; no camera permission.
 
-Native plugins: `@capacitor/filesystem`, `@capacitor/share`, `@capacitor/status-bar`, `@aparajita/capacitor-secure-storage` 8.0.1, `@capacitor-mlkit/barcode-scanning` 8.2.2 (all on Capacitor 8). The scanning plugin brings ML Kit, CameraX and Google Play services libraries into the APK. The debug APK grew from about 5 MB to about 29 MB, mostly ML Kit's bundled barcode model for four CPU types, which `scan()` doesn't use. Those libraries also add `ACCESS_NETWORK_STATE` and Google's `datatransport`, which ML Kit uses for usage reports.
+Native plugins: `@capacitor/filesystem`, `@capacitor/share`, `@capacitor/status-bar`, `@aparajita/capacitor-secure-storage` 8.0.1, `@capacitor-mlkit/barcode-scanning` 8.2.2 (all on Capacitor 8). The scanning plugin brings ML Kit, CameraX and Google Play services libraries into the APK. The debug APK grew from about 5 MB to about 28 MB, mostly ML Kit's bundled barcode model for four CPU types, which `scan()` doesn't use. Those libraries also add `ACCESS_NETWORK_STATE` and Google's `datatransport`, which ML Kit uses for usage reports.
 
 **iOS notes** (there's no iOS project yet). When one is added with `npx cap add ios`:
 
