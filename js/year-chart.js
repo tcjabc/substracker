@@ -50,7 +50,8 @@ function setStyle(e, prop, v) {
 const newSpring = (x, w) => ({ x, v: 0, t: x, w });
 const moving = (sp) => !springSettle(sp);
 
-const monthShort = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short' }).replace('.', '');
+// Three letters ("Sep", not the "Sept" some locales use); the carousel cuts to two where it's tight.
+const monthShort = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short' }).replace('.', '').slice(0, 3);
 const monthFull = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'long' });
 
 /**
@@ -62,6 +63,8 @@ export function createYearChart(host, opts) {
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const W = (w) => (reduced ? REDUCED_OMEGA : w);
   const money = opts.money;
+  // Derived figures (the average, differences) in whole units once they're 10 or more.
+  const approx = (v) => money(Math.abs(v) >= 10 ? Math.round(v) : v);
   const list = opts.months;
   const n = list.length;
   const avgVal = opts.average;
@@ -116,18 +119,15 @@ export function createYearChart(host, opts) {
   }
   el('line', { x1: 16, x2: 344, y1: G.BASE, y2: G.BASE, class: 'yc-baseline' }, gridL);
   const avgY = G.BASE - avgVal * SCALE;
-  if (avgVal > 0) {
-    el('line', { x1: 16, x2: 344, y1: avgY, y2: avgY, class: 'yc-avg' }, gridL);
-    el('text', { x: 344, y: avgY - 5, 'text-anchor': 'end', class: 'yc-avg-label' }, gridL)
-      .textContent = `Average of these months ${money(avgVal)}`;
-  }
+  // The dashed average line; its label is in the legend, where no bar can cover it.
+  if (avgVal > 0) el('line', { x1: 16, x2: 344, y1: avgY, y2: avgY, class: 'yc-avg' }, gridL);
   const incomePath = el('path', { class: 'yc-income', d: '' }, incomeL);
   incomeL.setAttribute('display', opts.showIncome ? 'inline' : 'none');
 
   const deltaText = (total) => {
     const d = monthDelta(total, avgVal);
     if (d.kind === 'about') return { text: 'About the average', cls: 'yc-about' };
-    return { text: `${money(d.amount)} ${d.kind} the average`, cls: d.kind === 'above' ? 'yc-above' : 'yc-below' };
+    return { text: `${approx(d.amount)} ${d.kind} the average`, cls: d.kind === 'above' ? 'yc-above' : 'yc-below' };
   };
   const monthTitle = (d) => `${monthFull(d.y, d.m)} ${d.y}`;
 
@@ -217,6 +217,7 @@ export function createYearChart(host, opts) {
     } else {
       ['monthly', 'annual', 'once'].forEach((k) => add('yc-swatch', TYPE_COLOUR[k], TYPE_NAMES[k]));
     }
+    if (avgVal > 0) add('yc-swatch-avg', null, `Average of these months ${approx(avgVal)}`);
     if (opts.showIncome) {
       add('yc-swatch-line', null, 'Income');
       if (bars.some((b) => b.markOver)) add('yc-swatch-over', null, 'More out than in');

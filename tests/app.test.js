@@ -10,7 +10,7 @@ import { money } from '../js/util.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'period'];
+const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -416,6 +416,193 @@ test('dated income on the Money tab says "Payment", never "Renews"', async () =>
   assert(/^Renews/.test(plan), `plans still say Renews (${plan})`);
 });
 
+/* ------------------------------------------------------------- Year chart */
+// These run last, on the data as the tests above left it. Rolling is 13 months with the real
+// current month at index 6; This year has it at index M.
+
+const host = () => $('#year-chart');
+const chart = () => host()?.yearChart;
+const ycSvg = () => $('#year-chart .yc-svg');
+const options = () => $$('#year-chart .yc-hit');
+const key = (k) => ycSvg().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+const settle = () => until(() => chart() && !chart().state().animating, 'chart settles', 6000);
+const centreOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+const pointer = (type, target, x, y) => target.dispatchEvent(new PointerEvent(type, {
+  clientX: x, clientY: y, pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true,
+}));
+const tapBar = async (i) => {
+  const hit = options()[i];
+  const c = centreOf(hit);
+  pointer('pointerdown', hit, c.x, c.y);
+  pointer('pointerup', ycSvg(), c.x, c.y);
+  await tick(10);
+};
+const mode = (m) => $(`[data-insights-mode="${m}"]`).click();
+const monthTitle = (k) => { const d = new Date(Y, M + k, 1); return `${d.toLocaleDateString(undefined, { month: 'long' })} ${d.getFullYear()}`; };
+
+test('Month | Year: Year shows the chart and the yearly card; Month is unchanged', async () => {
+  $('.tab[data-tab="insights"]').click();
+  mode('month');
+  const cardMonth = text($('#insights .stat-primary .stat-value'));
+  mode('year');
+  assert(chart(), 'chart drawn');
+  assert(!$('#insights .month-nav'), 'no month arrows in Year');
+  eq(storage.getPref('insightsMode'), 'year', 'remembered');
+  eq(text($('#insights .stat-year .stat-label')), String(Y), 'yearly card for this year');
+  eq(chart().state().centre, 6, 'rolling, centred on the current month');
+  eq(text($('#year-chart .yc-read-name')), `${monthTitle(0)} · now`, 'readout');
+  eq(text($('#year-chart .yc-read-total')), cardMonth, 'the chart agrees with the month headline');
+  mode('month');
+  assert($('#insights .month-nav') && !host(), 'Month view is back');
+  eq(text($('#insights .stat-primary .stat-value')), cardMonth, 'unchanged');
+  mode('year');
+});
+
+test('every bar has an aria-label and the listbox is one tab stop', async () => {
+  eq(options().length, 13, 'rolling: 13 months');
+  eq(options()[6].getAttribute('aria-label'), `${monthTitle(0)}, ${text($('#year-chart .yc-read-total'))}`, 'label');
+  assert(options().every((o) => /^\S+ \d{4}, /.test(o.getAttribute('aria-label'))), 'all labelled');
+  assert(options().every((o) => !o.hasAttribute('tabindex')), 'bars are not tab stops');
+  eq(ycSvg().getAttribute('tabindex'), '0', 'the chart is');
+  eq(ycSvg().getAttribute('aria-activedescendant'), options()[6].id, 'active = centre');
+  eq($('#year-chart [aria-live]').getAttribute('aria-live'), 'polite', 'live readout');
+});
+
+test('range toggle: This year is 12 months, Rolling 13 with the year under each month', async () => {
+  $('[data-year-range="year"]').click();
+  await settle();
+  eq(options().length, 12, '12 months');
+  eq(chart().state().centre, M, 'centred on the current month');
+  eq($$('#year-chart .yc-year').length, 0, 'no year labels');
+  eq(storage.getPref('yearRange'), 'year', 'remembered');
+  $('[data-year-range="roll"]').click();
+  await settle();
+  eq(options().length, 13, '13 months');
+  eq($$('#year-chart .yc-year').length, 13, "'YY under every month");
+  eq(text($$('#year-chart .yc-year')[0]), `'${String(new Date(Y, M - 6, 1).getFullYear()).slice(2)}`, 'first month’s year');
+});
+
+test('stack toggle crossfades on the same chart', async () => {
+  const before = chart();
+  $('[data-year-stack="category"]').click();
+  eq(chart(), before, 'no redraw');
+  eq(chart().state().stack, 'category', 'by category');
+  assert(text($('#year-chart .yc-legend')).includes('Utilities'), 'category legend');
+  await settle();
+  eq(chart().state().stack, 'category', 'still by category');
+  $('[data-year-stack="type"]').click();
+  await settle();
+  assert(text($('#year-chart .yc-legend')).includes('Monthly plans'), 'type legend');
+});
+
+test('Jump to now: faded when centred, full when not, hidden in focus', async () => {
+  const now = $('#year-chart .yc-now');
+  assert(!now.classList.contains('on'), 'faded on the current month');
+  key('ArrowRight');
+  await settle();
+  eq(chart().state().centre, 7, 'one month on');
+  assert(now.classList.contains('on'), 'full when another month is centred');
+  eq(text($('#year-chart .yc-read-name')), monthTitle(1), 'readout follows, no "now"');
+  now.click();
+  await settle();
+  eq(chart().state().centre, 6, 'back on now');
+  assert(!now.classList.contains('on'), 'faded again');
+});
+
+test('keyboard: arrows move, Enter focuses, arrows move within focus, Esc closes', async () => {
+  ycSvg().focus();
+  key('ArrowLeft');
+  await settle();
+  eq(chart().state().centre, 5, 'left');
+  key('ArrowRight');
+  await settle();
+  key('Enter');
+  await settle();
+  const s = chart().state();
+  eq([s.focus, s.selected], [true, 6], 'focused on the centre month');
+  assert($('#year-chart .yc-dock').classList.contains('hide'), 'dock (and Jump to now) hidden');
+  assert($('#year-chart .yc-back').classList.contains('on'), 'All months shown');
+  const live = text($('#year-chart [aria-live]'));
+  assert(live.startsWith(`${monthTitle(0)}, `) && live.includes('Monthly plans'), `detail announced: ${live}`);
+  key('ArrowRight');
+  await settle();
+  eq(chart().state().selected, 7, 'next month in focus');
+  eq(ycSvg().getAttribute('aria-activedescendant'), options()[7].id, 'active follows');
+  key('Escape');
+  await settle();
+  eq(chart().state().focus, false, 'closed');
+  eq(chart().state().centre, 7, 'stays on that month');
+  $('#year-chart .yc-now').click();
+  await settle();
+});
+
+test('tap a bar to focus, tap the mini strip to move (wrapping), All months returns', async () => {
+  await tapBar(8);
+  await settle();
+  eq([chart().state().focus, chart().state().selected], [true, 8], 'tapped month focused');
+  await tapBar(9);
+  await settle();
+  eq(chart().state().selected, 9, 'mini strip moves');
+  key('ArrowRight'); await settle();
+  key('ArrowRight'); await settle();
+  key('ArrowRight'); await settle();
+  key('ArrowRight'); await settle();
+  eq(chart().state().selected, 0, 'wraps from the last month to the first');
+  await tapBar(0);
+  await settle();
+  eq(chart().state().focus, false, 'tapping the focused bar returns');
+  await tapBar(3);
+  await settle();
+  $('#year-chart .yc-back').click();
+  await settle();
+  eq(chart().state().focus, false, 'All months returns');
+  $('#year-chart .yc-now').click();
+  await settle();
+});
+
+test('swipe: dragging moves the loop, past the seam, and settles on a whole month', async () => {
+  const svg = ycSvg();
+  const r = svg.getBoundingClientRect();
+  const unit = r.width / 360; // px per viewBox unit
+  let x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  pointer('pointerdown', svg, x, y);
+  // 8 months to the left: 8 × 30 units; past index 12 into index 0, 1.
+  for (let k = 0; k < 24; k++) { x -= 10 * unit; pointer('pointermove', svg, x, y); await tick(4); }
+  await tick(120); // pause, so the release has no fling
+  pointer('pointerup', svg, x, y);
+  await settle();
+  const s = chart().state();
+  eq(s.centre, (6 + 8) % 13, 'eight months on, wrapped round');
+  assert(Number.isInteger(s.pos), `settled on a whole month (${s.pos})`);
+  eq(s.focus, false, 'a drag is not a tap');
+  $('#year-chart .yc-now').click();
+  await settle();
+});
+
+test('Show income: an income line, and the months-over marker instead of above-average', async () => {
+  chip('USD').click();
+  const markers = () => ({ above: $$('#year-chart .yc-mark-above').length, over: $$('#year-chart .yc-mark-over').length });
+  // USD: Tool 10 /mo, Big 500 in month M+3, Gig 200 income in month M+1 only.
+  eq(markers(), { above: 1, over: 0 }, 'income off: the above-average marker (Big)');
+  assert(text($('#year-chart .yc-legend')).includes('Above average'), 'explained in the legend');
+  $('[data-year-income]').click();
+  eq($('[data-year-income]').getAttribute('aria-pressed'), 'true', 'chip on');
+  eq(markers(), { above: 0, over: 12 }, 'income on: every month but Gig’s is over; never both markers');
+  const d = $('#year-chart .yc-income').getAttribute('d');
+  assert(/^M[\d.]+ [\d.]+(L[\d.]+ [\d.]+){12}$/.test(d), `one line through 13 months, not across the seam: ${d}`);
+  const legend = text($('#year-chart .yc-legend'));
+  assert(legend.includes('Income') && legend.includes('More out than in') && !legend.includes('Above average'), legend);
+  key('ArrowRight'); await settle();
+  key('ArrowRight'); await settle();
+  const moved = $('#year-chart .yc-income').getAttribute('d');
+  eq((moved.match(/M/g) || []).length, 2, 'the line breaks at the loop seam once it is on screen');
+  $('[data-year-income]').click();
+  eq(markers(), { above: 1, over: 0 }, 'off again');
+  chip('TWD').click();
+  mode('month');
+});
+
 /* ------------------------------------------------------------------ Runner */
 
 async function run() {
@@ -425,6 +612,8 @@ async function run() {
   storage.setPref('catView', 'donut');
   storage.setPref('view', 'grid'); // cards show the renewal or payment tag
   storage.setPref('period', 'monthly');
+  storage.setPref('insightsMode', 'month');
+  storage.setPref('yearRange', 'roll');
 
   // Bring in the app's own markup, then the app itself (which starts on import).
   const html = await (await fetch('../index.html', { cache: 'no-store' })).text();

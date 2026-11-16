@@ -7,6 +7,8 @@ import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
 import { createKeyVault } from './secure-key.js';
+import { createYearChart } from './year-chart.js';
+import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
@@ -43,6 +45,11 @@ const state = {
   period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
   insightsMonth: startOfMonth(new Date()),
+  insightsMode: storage.getPref('insightsMode') === 'year' ? 'year' : 'month', // Insights Month | Year
+  yearRange: storage.getPref('yearRange') === 'year' ? 'year' : 'roll',     // This year | Rolling (default)
+  yearStack: 'type',   // year chart: By type | By category
+  yearIncome: false,   // year chart: Show income
+  yearPos: null,       // year chart position, kept across redraws
   editingId: null,
   formType: 'expense', // what the open add/edit sheet is editing
 };
@@ -550,11 +557,31 @@ function renderInsights() {
     renderInsights();
   }));
 
+  const inCur = state.subs.filter((s) => s.currency === cur);
+  const modeHTML = `
+    <div class="insights-mode">
+      <div class="segmented" role="group" aria-label="Insights view">
+        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="${state.insightsMode === 'month'}">Month</button>
+        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="${state.insightsMode === 'year'}">Year</button>
+      </div>
+    </div>`;
+  const bindMode = () => $$('[data-insights-mode]', root).forEach((b) => b.addEventListener('click', () => {
+    if (state.insightsMode === b.dataset.insightsMode) return;
+    state.insightsMode = b.dataset.insightsMode;
+    storage.setPref('insightsMode', state.insightsMode);
+    renderInsights();
+  }));
+  if (state.insightsMode === 'year') {
+    renderYearView(root, { inCur, cur, currencies, modeHTML });
+    bindMode();
+    return;
+  }
+  stopYearChart();
+
   const month = state.insightsMonth;
   const y = month.getFullYear();
   const m = month.getMonth();
   const monthName = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const inCur = state.subs.filter((s) => s.currency === cur);
   const incomeItems = inCur.filter(isIncome);
   const subs = inCur.filter((s) => !isIncome(s)); // expenses only from here on
 
@@ -577,9 +604,6 @@ function renderInsights() {
   const undatedIn = undatedIncome(incomeItems);
   const undatedInTotal = undatedIn.reduce((t, s) => t + s.price, 0);
   const nUndated = undated.length + undatedIn.length; // a count of items; amounts are never mixed
-  const yearShort = year.income > 0 && year.leftOver < 0;
-  const yearLine = (label, value, cls = '') => `
-          <div class="year-line${cls}"><dt>${label}</dt><dd>${esc(money(value, cur))}</dd></div>`;
 
   const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
@@ -594,7 +618,7 @@ function renderInsights() {
       ? `no ${esc(cur)} income paid in ${esc(monthName)}, so no percentage`
       : `no ${esc(cur)} income recorded`}</span>`;
 
-  root.innerHTML = `
+  root.innerHTML = `${modeHTML}
     <div class="month-nav">
       <button type="button" class="icon-btn" data-month-step="-1" aria-label="Previous month">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
@@ -626,15 +650,7 @@ function renderInsights() {
         <div class="stat-sub">Cash due this month</div>
         <div class="stat-sub">Avg ${esc(money(avg, cur))}/mo</div>
       </div>
-      <div class="stat stat-year">
-        <div class="stat-label">${y}</div>
-        <dl class="year-lines">${year.income > 0 ? yearLine('Income', year.income) : ''}${yearLine('Outgoings', year.outgoings)}${year.income > 0
-          ? yearLine('Left over', year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
-        </dl>
-        ${year.income > 0 ? '' : `<div class="stat-sub">No income dated in ${y}</div>`}
-        ${yearShort ? '<div class="stat-sub year-short-note">More going out than coming in</div>' : ''}
-        ${nUndated ? `<div class="stat-sub">Excludes ${plural(nUndated, 'undated item')}</div>` : ''}
-      </div>
+      ${yearCardHTML(year, y, cur, nUndated)}
       <div class="stat">
         <div class="stat-label">Outgoings</div>
         <div class="stat-value">${inMonth.length}</div>
@@ -692,6 +708,7 @@ function renderInsights() {
       </div>
     </section>` : ''}`;
 
+  bindMode();
   $$('[data-month-step]', root).forEach((b) => b.addEventListener('click', () => {
     state.insightsMonth = new Date(y, m + Number(b.dataset.monthStep), 1);
     state.donutActive = null;
@@ -708,6 +725,87 @@ function renderInsights() {
     applyDonutHighlight(root);
   }));
   applyDonutHighlight(root);
+}
+
+/** The yearly card: Income, Outgoings and Left over from yearSummary(), for `y`. */
+function yearCardHTML(year, y, cur, nUndated) {
+  const yearShort = year.income > 0 && year.leftOver < 0;
+  const yearLine = (label, value, cls = '') => `
+          <div class="year-line${cls}"><dt>${label}</dt><dd>${esc(money(value, cur))}</dd></div>`;
+  return `
+      <div class="stat stat-year">
+        <div class="stat-label">${y}</div>
+        <dl class="year-lines">${year.income > 0 ? yearLine('Income', year.income) : ''}${yearLine('Outgoings', year.outgoings)}${year.income > 0
+          ? yearLine('Left over', year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
+        </dl>
+        ${year.income > 0 ? '' : `<div class="stat-sub">No income dated in ${y}</div>`}
+        ${yearShort ? '<div class="stat-sub year-short-note">More going out than coming in</div>' : ''}
+        ${nUndated ? `<div class="stat-sub">Excludes ${plural(nUndated, 'undated item')}</div>` : ''}
+      </div>`;
+}
+
+/* Year view ---------------------------------------------------------------- */
+let yearChart = null;
+function stopYearChart() {
+  yearChart?.destroy();
+  yearChart = null;
+}
+
+/**
+ * Insights → Year: the range and stack controls, the year chart (js/year-chart.js) for the
+ * months shown, one line for undated items, and the yearly card for the current calendar year.
+ * Figures come from the calculation layer through chartMonths (monthSeries and breakdown).
+ */
+function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
+  const now = new Date();
+  const fadeIn = !!state.yearFadeIn;
+  state.yearFadeIn = false;
+  const undated = undatedItems(inCur);
+  const pressed = (on) => `aria-pressed="${on}"`;
+  root.innerHTML = `${modeHTML}
+    ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
+    <div class="yc-controls">
+      <div class="segmented" role="group" aria-label="Months shown">
+        <button type="button" class="seg-btn seg-btn-text" data-year-range="year" ${pressed(state.yearRange === 'year')}>This year</button>
+        <button type="button" class="seg-btn seg-btn-text" data-year-range="roll" ${pressed(state.yearRange === 'roll')}>Rolling ±6 months</button>
+      </div>
+      <div class="segmented" role="group" aria-label="Colour the bars by">
+        <button type="button" class="seg-btn seg-btn-text" data-year-stack="type" ${pressed(state.yearStack === 'type')}>By type</button>
+        <button type="button" class="seg-btn seg-btn-text" data-year-stack="category" ${pressed(state.yearStack === 'category')}>By category</button>
+      </div>
+      <button type="button" class="chip" data-year-income ${pressed(state.yearIncome)}>Show income</button>
+    </div>
+    <div id="year-chart"></div>
+    ${undated.length ? `<button type="button" class="summary-note summary-note-action yc-undated" data-id="${esc(undated[0].id)}">Excludes ${plural(undated.length, 'undated item')}</button>` : ''}
+    <div class="stats yc-year-stats">${yearCardHTML(yearSummary(inCur, now.getFullYear()), now.getFullYear(), cur, 0)}</div>`;
+
+  stopYearChart();
+  const months = rangeMonths(state.yearRange, now);
+  const data = chartMonths(inCur, months);
+  yearChart = createYearChart($('#year-chart', root), {
+    months: data.months, average: data.average, nowIndex: nowIndex(months, now),
+    rolling: state.yearRange === 'roll', stack: state.yearStack, showIncome: state.yearIncome,
+    money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)),
+    pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn,
+  });
+
+  $$('[data-year-range]', root).forEach((b) => b.addEventListener('click', () => {
+    if (state.yearRange === b.dataset.yearRange) return;
+    state.yearRange = b.dataset.yearRange;
+    storage.setPref('yearRange', state.yearRange);
+    state.yearPos = null; // a new range starts on the current month
+    state.yearFadeIn = true;
+    renderInsights();
+  }));
+  $$('[data-year-stack]', root).forEach((b) => b.addEventListener('click', () => {
+    state.yearStack = b.dataset.yearStack;
+    $$('[data-year-stack]', root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    yearChart?.setStack(state.yearStack); // crossfade, no redraw
+  }));
+  $('[data-year-income]', root).addEventListener('click', () => {
+    state.yearIncome = !state.yearIncome;
+    renderInsights(); // the scale may change; the position is kept
+  });
 }
 
 /* Donut ------------------------------------------------------------------- */

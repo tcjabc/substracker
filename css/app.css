@@ -964,7 +964,7 @@ dialog::backdrop { background: var(--scrim); }
 .yc-baseline { stroke: var(--text-faint); stroke-width: 1; opacity: 0.6; }
 .yc-axis { fill: var(--text-muted); font-size: 9px; opacity: 0.8; }
 .yc-avg { stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1; stroke-dasharray: 4 4; }
-.yc-avg-label { fill: var(--text); font-size: 9px; opacity: 0.85; }
+.yc-swatch-avg { width: 12px; height: 0; display: inline-block; border-top: 1.5px dashed var(--text); opacity: 0.7; }
 .yc-income { fill: none; stroke: var(--positive); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .yc-shadow { fill: var(--chart-shadow); }
 .yc-mark-above { fill: var(--text-muted); }
@@ -979,7 +979,8 @@ dialog::backdrop { background: var(--scrim); }
 .yc-row-name { fill: var(--text); font-size: 12.5px; font-weight: 500; }
 .yc-row-amount { fill: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .yc-row-sub { fill: var(--text-muted); font-size: 10px; }
-.yc-undated { margin: 0 auto var(--space-3); max-width: 32rem; }
+.yc-undated { width: 100%; max-width: 32rem; margin: 0 auto var(--space-3); }
+.yc-year-stats { max-width: 32rem; margin: 0 auto var(--space-6); grid-template-columns: 1fr; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
