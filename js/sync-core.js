@@ -79,17 +79,28 @@ export function tick(clock, now = Date.now()) {
   return { clock: next, stamp: formatStamp(next.wall, next.count, next.dev) };
 }
 
+/** How far ahead of this device's own clock a remote stamp may pull it: 24 hours. */
+export const MAX_DRIFT_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Fold a stamp from another device into this clock, so every later local stamp sorts after it
- * (an edit made after seeing a change always wins over that change). A remote clock that is ahead
- * pulls this one forward; it stays monotonic and settles back to real time as time passes.
- * Returns the new clock; throws on a malformed stamp.
+ * (an edit made after seeing a change wins over that change). A remote clock that is ahead pulls
+ * this one forward; it stays monotonic and settles back to real time as time passes.
+ *
+ * A stamp more than `maxDrift` ahead of this device's physical clock (a phone set to the wrong
+ * year, say) only counts as `now + maxDrift` here, so one bad clock can't drag every device's
+ * clock, and with it all their future edits, far into the future. The cap is measured from the
+ * physical clock, not from this HLC, so repeated far-ahead stamps can't ratchet it forward a day
+ * at a time. The op itself keeps its own stamp for ordering (see applyToRecord). Returns the new
+ * clock; throws on a malformed stamp.
  */
-export function receive(clock, remoteStamp, now = Date.now()) {
+export function receive(clock, remoteStamp, now = Date.now(), maxDrift = MAX_DRIFT_MS) {
   if (!isClock(clock)) throw new Error('Invalid clock');
-  const r = parseStamp(remoteStamp);
-  if (!r) throw new Error('Invalid stamp');
+  const parsed = parseStamp(remoteStamp);
+  if (!parsed) throw new Error('Invalid stamp');
   const pt = physical(now);
+  const limit = Math.min(pt + maxDrift, MAX_WALL);
+  const r = parsed.wall > limit ? { wall: limit, count: 0 } : parsed;
   const wall = Math.max(clock.wall, r.wall, pt);
   let count;
   if (wall === clock.wall && wall === r.wall) count = Math.max(clock.count, r.count) + 1;
@@ -160,6 +171,11 @@ export const isLive = (record) => record?.fields?.[DELETED] === false;
  * so the result doesn't depend on the order ops arrive in, and applying an op twice does nothing.
  * Two ops with the very same stamp can only come from one device; the larger value wins so that
  * even that case is deterministic. Returns { record, changed }; the input record isn't changed.
+ *
+ * Ops are always ordered by their own stamp, even one far in the future that receive() wouldn't let
+ * move the clock. Rewriting or holding back such a stamp would depend on each device's own clock,
+ * so devices would end up with different data; keeping it means every device agrees. The cost is
+ * that the field such an op set keeps its value until real time passes that stamp.
  */
 export function applyToRecord(record, op) {
   if (!isOp(op)) throw new Error('Invalid op');

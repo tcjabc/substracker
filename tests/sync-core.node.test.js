@@ -76,6 +76,62 @@ test('receive moves the clock past a remote stamp, so later local edits win', ()
   assert.throws(() => sync.receive(clock, 'nonsense', T0), /Invalid stamp/);
 });
 
+test('a stamp a year ahead moves the clock no further than MAX_DRIFT_MS', () => {
+  const YEAR = 365 * 24 * HOUR;
+  assert.equal(sync.MAX_DRIFT_MS, 24 * HOUR);
+  const bogus = sync.formatStamp(T0 + YEAR, 3, 'wrongyear');
+  let clock = sync.receive(sync.newClock('local'), bogus, T0);
+  assert.equal(clock.wall <= T0 + sync.MAX_DRIFT_MS, true, 'capped');
+  assert.equal(clock.wall, T0 + sync.MAX_DRIFT_MS);
+  // Seeing it again and again can't ratchet the clock forward a day at a time: the cap is measured
+  // from the physical clock, so it only moves as real time does.
+  for (let i = 0; i < 50; i++) clock = sync.receive(clock, bogus, T0);
+  assert.equal(clock.wall, T0 + sync.MAX_DRIFT_MS, 'same time: no further');
+  for (let i = 1; i <= 50; i++) clock = sync.receive(clock, bogus, T0 + i * 1000);
+  assert.equal(clock.wall, T0 + 50_000 + sync.MAX_DRIFT_MS, 'later: now + cap, never more');
+  // Within the cap nothing changes: the clock follows the remote stamp as before.
+  const near = sync.formatStamp(T0 + 23 * HOUR, 7, 'other');
+  const followed = sync.receive(sync.newClock('local'), near, T0);
+  assert.deepEqual([followed.wall, followed.count], [T0 + 23 * HOUR, 8]);
+  // A custom cap is honoured.
+  assert.equal(sync.receive(sync.newClock('local'), bogus, T0, HOUR).wall, T0 + HOUR);
+});
+
+test('after a far-future stamp, local edits still order correctly and replicas agree', () => {
+  const YEAR = 365 * 24 * HOUR;
+  const a = replica('devA', T0);
+  const created = sync.createRecord(a, 'x', { name: 'Example', price: 10, notes: '' }, a.opts());
+
+  // devZ's phone is a year ahead. It edits price; devB, with a correct clock, edits name.
+  const z = replica('devZ', T0 + YEAR);
+  applyAll(z.records, created);
+  const future = sync.editRecord(z, 'x', { price: 99 }, z.opts());
+  const b = replica('devB', T0);
+  applyAll(b.records, created);
+  b.at = T0 + 1000;
+  const normal = sync.editRecord(b, 'x', { name: 'From B' }, b.opts());
+
+  // devA receives both, folding their stamps into its clock as a sync engine would.
+  for (const op of [...future, ...normal]) { applyAll(a.records, [op]); a.clock = sync.receive(a.clock, op.t, a.at); }
+  assert.equal(a.clock.wall <= T0 + sync.MAX_DRIFT_MS, true, 'clock stayed within the cap');
+
+  // devA's later edits: increasing, after everything it has seen within the cap, and they win there.
+  a.at = T0 + 2000;
+  const e1 = sync.editRecord(a, 'x', { name: 'From A' }, a.opts());
+  const e2 = sync.editRecord(a, 'x', { notes: 'later' }, a.opts());
+  assert.equal(sync.compare(e1[0].t, e2[0].t) < 0, true, 'own edits in order');
+  assert.equal(sync.compare(normal[0].t, e1[0].t) < 0, true, 'after the normal remote edit');
+  assert.equal(sync.parseStamp(e2[0].t).wall <= T0 + sync.MAX_DRIFT_MS, true, 'not dragged a year ahead');
+
+  // Every replica, in every order, ends up the same. The far-future price keeps winning its field
+  // (ordering uses the op's own stamp, the only rule all devices can agree on); other fields are unaffected.
+  const all = [...created, ...future, ...normal, ...e1, ...e2];
+  const results = new Set(orders(all).map((order) => snapshot(applyAll(new Map(), order))));
+  assert.equal(results.size, 1);
+  const x = applyAll(new Map(), all).get('x').fields;
+  assert.deepEqual([x.name, x.notes, x.price], ['From A', 'later', 99]);
+});
+
 test('the counter rolls into the next millisecond instead of overflowing', () => {
   const clock = { wall: T0, count: 999_999, dev: 'dev' };
   const { clock: next, stamp } = sync.tick(clock, T0);
