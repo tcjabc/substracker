@@ -4,6 +4,7 @@
 // only to seed old-format databases; the code under test goes through storage.js.
 
 import * as storage from '../js/storage.js';
+import * as syncCore from '../js/sync-core.js';
 
 const results = [];
 const created = [];
@@ -290,6 +291,104 @@ test('replace import tombstones what it removes; a later merge brings an item ba
   eq(preview.merge.added, 1, 'a deleted item counts as new');
   await storage.importAll(backup([item({ id: 'gone' })]), 'merge');
   eq((await storage.getAll()).map((s) => s.id).sort(), ['a', 'gone'], 'back again');
+});
+
+/* ------------------------------------------------------------------ Sync storage */
+
+/** Ops for a new item made on another device (its own clock and id). */
+function remoteCreate(id, fields, dev = 'remote-device', now = Date.now()) {
+  const r = { clock: syncCore.newClock(dev), records: new Map() };
+  return { replica: r, ops: syncCore.createRecord(r, id, fields, { now }) };
+}
+
+test('applyRemote applies ops and moves the cursor, without queueing anything to send', async () => {
+  const name = freshDb();
+  await storage.save(item());
+  const before = (await storage.syncState()).outbox.length;
+  const { ops } = remoteCreate('r1', { ...item({ id: 'r1', name: 'From elsewhere' }) }, 'remote-device', Date.now() + 60_000);
+  const out = await storage.applyRemote(ops, 7);
+  eq([out.changed, out.skipped, out.touched], [ops.length, 0, ['r1']], 'result');
+  eq((await storage.getAll()).map((s) => s.id).sort(), ['a', 'r1'], 'remote item shown');
+  const st = await storage.syncState();
+  eq(st.outbox.length, before, 'no outbox entries created');
+  eq(st.syncCursor, 7, 'cursor moved with the ops');
+  // The clock moved past the remote stamp, so the next local edit wins over it.
+  await storage.save({ ...(await storage.getAll()).find((s) => s.id === 'r1'), notes: 'local' });
+  const mine = (await storage.syncState()).outbox.find((op) => op.rec === 'r1' && op.f === 'notes');
+  assert(mine.t > ops[0].t, 'later than the remote stamp');
+  eq(await storage.applyRemote(ops, 8).then((o) => o.changed), 0, 'applying again changes nothing');
+  const raw = await inspect(name, (db) => rawAll(db, 'records'));
+  eq(raw.find((r) => r.id === 'r1').fields.notes, 'local', 'local edit kept');
+});
+
+test('applyRemote is all or nothing: a failure leaves records and cursor as they were', async () => {
+  const name = freshDb();
+  await storage.save(item());
+  await storage.applyRemote([], 3);
+  // Break the device id so the transaction fails after it has read everything.
+  await inspect(name, (db) => rawPut(db, 'meta', [{ key: 'deviceId', value: '' }]));
+  const { ops } = remoteCreate('r1', item({ id: 'r1' }));
+  let threw = false;
+  try { await storage.applyRemote(ops, 9); } catch { threw = true; }
+  assert(threw, 'it failed');
+  const [records, meta] = await inspect(name, async (db) => [await rawAll(db, 'records'), await rawAll(db, 'meta')]);
+  eq(records.map((r) => r.id), ['a'], 'no remote record stored');
+  eq(meta.find((m) => m.key === 'syncCursor').value, 3, 'cursor unchanged');
+});
+
+test('applyRemote skips ops with the wrong types for known fields', async () => {
+  freshDb();
+  await storage.getAll();
+  const { ops } = remoteCreate('r1', item({ id: 'r1' }));
+  const t = ops[0].t;
+  const bad = [
+    { id: 'x1', rec: 'r1', f: 'price', v: '1000', t, dev: 'remote-device' },
+    { id: 'x2', rec: 'r1', f: 'name', v: { html: '<b>' }, t, dev: 'remote-device' },
+    { id: 'x3', rec: 'r1', f: 'del', v: 'no', t, dev: 'remote-device' },
+    { id: 'x4', rec: 'r1', f: 'futureField', v: [1, 2], t, dev: 'remote-device' },
+  ];
+  const out = await storage.applyRemote([...ops, ...bad], 1);
+  eq(out.skipped, 3, 'three refused; the unknown field is kept for newer versions');
+  eq((await storage.getAll())[0].price, 250, 'price untouched');
+});
+
+test('removeSentOps keeps an op that a newer local edit replaced while it was being sent', async () => {
+  freshDb();
+  await storage.save(item());
+  const sent = (await storage.syncState()).outbox.map(({ rec, f, t }) => ({ rec, f, t }));
+  await storage.save(item({ price: 999, updatedAt: T2 })); // replaces price and updatedAt in the outbox
+  const removed = await storage.removeSentOps(sent);
+  eq(removed, sent.length - 2, 'all but the two replaced');
+  const left = (await storage.syncState()).outbox;
+  eq(left.map((op) => op.f).sort(), ['price', 'updatedAt'], 'the newer ops remain');
+  eq(left.find((op) => op.f === 'price').v, 999, 'with the new value');
+  eq(await storage.pendingCount(), 2, 'count');
+});
+
+test('sync config: a new household key resets the cursor and queues every record again', async () => {
+  freshDb();
+  await storage.save(item());
+  await storage.save(item({ id: 'b' }));
+  await storage.removeSentOps((await storage.syncState()).outbox.map(({ rec, f, t }) => ({ rec, f, t })));
+  await storage.applyRemote([], 12);
+  eq(await storage.getSyncConfig(), { relayUrl: '', householdKey: '', enabled: false }, 'default');
+
+  await storage.setSyncConfig({ relayUrl: ' http://localhost:8787 ', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true });
+  eq(await storage.getSyncConfig(), { relayUrl: 'http://localhost:8787', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true }, 'stored');
+  eq(await storage.getSyncCursor(), 0, 'cursor reset');
+  eq(await storage.pendingCount(), 2 * Object.keys(item()).length, 'every field of both records queued');
+
+  await storage.removeSentOps((await storage.syncState()).outbox.map(({ rec, f, t }) => ({ rec, f, t })));
+  await storage.applyRemote([], 5);
+  await storage.setSyncConfig({ enabled: false });
+  eq([await storage.getSyncCursor(), await storage.pendingCount()], [5, 0], 'same key: nothing reset or queued');
+
+  const file = JSON.stringify(await storage.exportAll());
+  for (const word of ['AAAAAAAAAAAAAAAAAAAAAA', 'syncConfig', 'relayUrl', 'householdKey', 'lastSyncedAt']) {
+    assert(!file.includes(word), `export must not contain ${word}`);
+  }
+  await storage.setLastSynced(1234);
+  eq(await storage.getLastSynced(), 1234, 'last synced time');
 });
 
 /* ------------------------------------------------------------------ Export / import */

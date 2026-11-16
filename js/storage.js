@@ -248,6 +248,151 @@ export async function syncState() {
   return { deviceId: m.deviceId, clock: m.hlc, syncCursor: m.syncCursor, outbox };
 }
 
+/* --------------------------------------------------------------------------
+   Sync storage, used by js/sync.js. Config and bookkeeping live in `meta`: per device, never
+   exported, never synced. All of this needs the records store (not a fallback store).
+   -------------------------------------------------------------------------- */
+const NO_CONFIG = Object.freeze({ relayUrl: '', householdKey: '', enabled: false });
+
+async function recordsDb() {
+  const db = await open();
+  if (source !== RECORDS) throw new Error('Sync needs the storage update to finish first.');
+  return db;
+}
+
+/**
+ * { relayUrl, householdKey, enabled }.
+ * TODO(secure-storage): the household key is kept in IndexedDB for now. In Phase 2 it moves to the
+ * Android Keystore / iOS Keychain (and stays here only on the web), so it isn't readable from storage.
+ */
+export async function getSyncConfig() {
+  const db = await recordsDb();
+  const row = await result(db.transaction(META).objectStore(META).get('syncConfig'));
+  return { ...NO_CONFIG, ...row?.value };
+}
+
+/**
+ * Change some config fields. A different household key means a different room: the cursor goes
+ * back to 0, and every record is queued again so the new room gets this device's data. One transaction.
+ */
+export async function setSyncConfig(patch) {
+  const db = await recordsDb();
+  const tx = db.transaction([META, RECORDS, OUTBOX], 'readwrite');
+  const metaStore = tx.objectStore(META);
+  const [row, records] = await Promise.all([result(metaStore.get('syncConfig')), result(tx.objectStore(RECORDS).getAll())]);
+  const cur = { ...NO_CONFIG, ...row?.value };
+  const next = {
+    relayUrl: typeof patch.relayUrl === 'string' ? patch.relayUrl.trim() : cur.relayUrl,
+    householdKey: typeof patch.householdKey === 'string' ? patch.householdKey.trim() : cur.householdKey,
+    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled,
+  };
+  metaStore.put({ key: 'syncConfig', value: next });
+  let requeued = 0;
+  if (next.householdKey !== cur.householdKey) {
+    metaStore.put({ key: 'syncCursor', value: 0 });
+    if (next.householdKey) {
+      const ops = requeueOps(records);
+      for (const op of ops) tx.objectStore(OUTBOX).put(op);
+      requeued = ops.length;
+    }
+  }
+  await done(tx);
+  if (requeued) changesEnqueued(requeued);
+  return next;
+}
+
+/** Queue every record again and restart from cursor 0 (the relay lost its data, or the room is new). */
+export async function requeueAll() {
+  const db = await recordsDb();
+  const tx = db.transaction([META, RECORDS, OUTBOX], 'readwrite');
+  const ops = requeueOps(await result(tx.objectStore(RECORDS).getAll()));
+  for (const op of ops) tx.objectStore(OUTBOX).put(op);
+  tx.objectStore(META).put({ key: 'syncCursor', value: 0 });
+  await done(tx);
+  return ops.length;
+}
+
+/** Up to `limit` pending ops, oldest stamp first. */
+export async function pendingOps(limit = 500) {
+  const db = await recordsDb();
+  return result(db.transaction(OUTBOX).objectStore(OUTBOX).index('t').getAll(null, limit));
+}
+
+export async function pendingCount() {
+  const db = await recordsDb();
+  return result(db.transaction(OUTBOX).objectStore(OUTBOX).count());
+}
+
+/**
+ * Remove ops the relay has stored. Each is removed only if the outbox still holds that very stamp
+ * for its field: a newer local edit made while the push was in flight replaced it and must stay.
+ */
+export async function removeSentOps(sent) {
+  const db = await recordsDb();
+  const tx = db.transaction(OUTBOX, 'readwrite');
+  const store = tx.objectStore(OUTBOX);
+  const rows = await Promise.all(sent.map((s) => result(store.get([s.rec, s.f]))));
+  let removed = 0;
+  sent.forEach((s, i) => { if (rows[i]?.t === s.t) { store.delete([s.rec, s.f]); removed++; } });
+  await done(tx);
+  return removed;
+}
+
+export async function getSyncCursor() {
+  const db = await recordsDb();
+  const row = await result(db.transaction(META).objectStore(META).get('syncCursor'));
+  return Number.isSafeInteger(row?.value) ? row.value : 0;
+}
+
+/**
+ * Apply ops from the relay and move the cursor to `cursor`, in ONE transaction over records and
+ * meta only: the outbox isn't part of it, so pulled ops can't be queued to send back, and the
+ * cursor can't move without the ops (or the ops land without the cursor).
+ * Returns { changed, skipped, touched }.
+ */
+export async function applyRemote(ops, cursor) {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor');
+  const db = await recordsDb();
+  const tx = db.transaction([RECORDS, META], 'readwrite');
+  const recStore = tx.objectStore(RECORDS);
+  const metaStore = tx.objectStore(META);
+  const ids = [...new Set(ops.filter((op) => sync.isRecordId(op?.rec)).map((op) => op.rec))];
+  const [rows, devRow, hlcRow] = await Promise.all([
+    Promise.all(ids.map((id) => result(recStore.get(id)))), result(metaStore.get('deviceId')), result(metaStore.get('hlc')),
+  ]);
+  let out;
+  let replica;
+  try {
+    replica = { clock: loadClock(hlcRow?.value, devRow?.value), records: new Map(rows.filter(Boolean).map((r) => [r.id, r])) };
+    out = applyRemoteOps(replica, ops);
+  } catch (err) {
+    tx.abort();
+    throw err;
+  }
+  for (const id of out.touched) recStore.put(replica.records.get(id));
+  metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+  metaStore.put({ key: 'syncCursor', value: cursor });
+  await done(tx);
+  return out;
+}
+
+export async function getLastSynced() {
+  const db = await recordsDb();
+  const row = await result(db.transaction(META).objectStore(META).get('lastSyncedAt'));
+  return typeof row?.value === 'number' ? row.value : null;
+}
+
+export async function setLastSynced(ms) {
+  await writeMeta(await recordsDb(), { lastSyncedAt: ms });
+}
+
+/** Everything js/sync.js needs from storage, as one adapter (tests pass an in-memory one instead). */
+export const syncStore = {
+  getConfig: getSyncConfig, setConfig: setSyncConfig, requeueAll, pendingOps, pendingCount, removeSentOps,
+  getCursor: getSyncCursor, applyRemote, getLastSynced, setLastSynced,
+  onChangesEnqueued: (fn) => onChangesEnqueued(fn),
+};
+
 function done(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -356,6 +501,50 @@ export function importOps(replica, { clear, writes }, opts) {
   }
   for (const item of writes) ops.push(...sync.putRecord(replica, item.id, itemFields(item), opts));
   return ops;
+}
+
+/**
+ * Whether an op from another device is safe to store. Known item fields must have the type the
+ * app expects (so a buggy client can't break the screens); fields this version doesn't know are
+ * kept, since a newer version may have added them (sync-core has already checked they're plain JSON).
+ */
+function acceptableRemote(op) {
+  if (op.f === sync.DELETED) return typeof op.v === 'boolean';
+  if (op.f === 'price') return typeof op.v === 'number' && Number.isFinite(op.v) && op.v >= 0;
+  if (ITEM_FIELDS.includes(op.f)) return typeof op.v === 'string' && op.v.length <= 2000;
+  return true;
+}
+
+/**
+ * Apply ops pulled from the relay to `replica`: fold every stamp into the clock (receive), then
+ * merge with last-write-wins. Invalid ops are skipped and counted. Nothing is returned for the
+ * outbox: these ops came from elsewhere and must not be sent again.
+ */
+export function applyRemoteOps(replica, ops, now = Date.now()) {
+  let changed = 0;
+  let skipped = 0;
+  const touched = new Set();
+  for (const op of ops) {
+    if (!sync.isOp(op) || !acceptableRemote(op)) { skipped++; continue; }
+    replica.clock = sync.receive(replica.clock, op.t, now);
+    if (sync.applyOp(replica.records, op)) { changed++; touched.add(op.rec); }
+  }
+  return { changed, skipped, touched: [...touched] };
+}
+
+/**
+ * One op per field of every record, carrying the record's current value and stamp, so that a
+ * newly joined household (or a relay that lost its data) receives everything this device knows.
+ */
+export function requeueOps(records) {
+  const ops = [];
+  for (const r of records) {
+    for (const [f, v] of Object.entries(r.fields)) {
+      const s = sync.parseStamp(r.ts[f]);
+      if (s) ops.push({ id: uid(), rec: r.id, f, v, t: r.ts[f], dev: s.dev });
+    }
+  }
+  return ops.filter(sync.isOp);
 }
 
 /* --------------------------------------------------------------------------
