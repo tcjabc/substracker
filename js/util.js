@@ -156,12 +156,19 @@ export function firstEmoji(str) {
 
 const countOf = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** The extra line the import dialog shows when this device syncs: Replace reaches every device. */
+/** The extra lines the import dialog shows when this device syncs: both choices reach every device. */
 export const REPLACE_SYNC_WARNING = 'Replace all deletes the current items and settings here and on every device you sync with.';
+export const MERGE_SYNC_NOTE = 'Changes are sent to every device you sync with.';
+
+/** The final confirmation after choosing Replace all. */
+export const REPLACE_CONFIRM_TITLE = 'Replace everything?';
+export const REPLACE_CONFIRM_MESSAGE = "This deletes all current items and settings on this device. This can't be undone.";
+export const REPLACE_CONFIRM_SYNC = 'It also deletes them on every device you sync with.';
 
 /**
  * The import dialog's text from previewImport()'s { merge, replace } summaries. `synced` is
- * whether sync is set up on this device; only then is the Replace warning added, on its own line.
+ * whether sync is set up on this device; only then are the Replace warning and the Merge note
+ * added, each on its own line.
  */
 export function importMessage({ merge, replace }, { synced = false } = {}) {
   const newer = merge.newerVersion
@@ -172,7 +179,38 @@ export function importMessage({ merge, replace }, { synced = false } = {}) {
       + `Replace deletes your ${countOf(merge.existing, 'item')} and uses the file's items${replace.withSettings ? ' and settings' : ''}`
       + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
     : `${countOf(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
-  return synced ? `${text}\n${REPLACE_SYNC_WARNING}` : text;
+  return synced ? `${text}\n${REPLACE_SYNC_WARNING}\n${MERGE_SYNC_NOTE}` : text;
+}
+
+/** The dialog options for the final Replace confirmation. Cancel comes first: it's focused, and dismissing picks it. */
+export function replaceConfirm({ synced = false } = {}) {
+  return {
+    title: REPLACE_CONFIRM_TITLE,
+    message: synced ? `${REPLACE_CONFIRM_MESSAGE}\n${REPLACE_CONFIRM_SYNC}` : REPLACE_CONFIRM_MESSAGE,
+    actions: [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }],
+  };
+}
+
+/**
+ * Ask how to import: the Merge / Replace all choice, then, for Replace, a final confirmation.
+ * `confirm` shows a dialog ({ title, message, actions, stacked }) and resolves with the chosen
+ * action's value (the first action's when dismissed). Resolves with 'merge', 'replace', or null
+ * when the person cancelled at either step, in which case nothing may be applied.
+ */
+export async function chooseImportMode(preview, { synced = false, confirm }) {
+  const mode = await confirm({
+    title: 'Import this backup?',
+    message: importMessage(preview, { synced }),
+    stacked: true,
+    actions: [
+      { label: 'Cancel', value: null },
+      { label: 'Replace all', value: 'replace', kind: 'danger' },
+      { label: 'Merge', value: 'merge', kind: 'primary' },
+    ],
+  });
+  if (mode === 'merge') return 'merge';
+  if (mode !== 'replace') return null;
+  return (await confirm(replaceConfirm({ synced }))) === true ? 'replace' : null;
 }
 
 /** Stable small hash for picking avatar colours. */

@@ -1,36 +1,97 @@
-// Node tests for the import dialog's text (js/util.js importMessage): the Replace warning about
-// synced devices appears on its own line only when sync is set up. Run with `npm test`.
+// Node tests for the import flow's text and steps (js/util.js): the sync lines appear only when
+// sync is set up, Replace all asks for a final confirmation, and cancelling at either step
+// applies nothing. Run with `npm test`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importMessage, REPLACE_SYNC_WARNING } from '../js/util.js';
+import {
+  importMessage, replaceConfirm, chooseImportMode,
+  REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE, REPLACE_CONFIRM_TITLE, REPLACE_CONFIRM_MESSAGE, REPLACE_CONFIRM_SYNC,
+} from '../js/util.js';
 
 const summary = (over = {}) => ({ total: 12, existing: 5, added: 3, updated: 2, kept: 1, removed: 1, newerVersion: false, withSettings: true, ...over });
 const preview = (over) => ({ merge: summary({ mode: 'merge', ...over }), replace: summary({ mode: 'replace', ...over }) });
 
-test('the Replace warning names this device and every synced device', () => {
+/** A fake confirmDialog: answers with the given values in turn and records what it was shown. */
+function fakeDialog(...answers) {
+  const shown = [];
+  const confirm = async (opts) => {
+    shown.push(opts);
+    const a = answers.shift();
+    // undefined means "dismissed": like the real dialog, that picks the first action.
+    return a === undefined ? opts.actions[0].value : a;
+  };
+  return { confirm, shown };
+}
+
+/* ------------------------------------------------------------------ Strings */
+
+test('the exact strings', () => {
   assert.equal(REPLACE_SYNC_WARNING, 'Replace all deletes the current items and settings here and on every device you sync with.');
+  assert.equal(MERGE_SYNC_NOTE, 'Changes are sent to every device you sync with.');
+  assert.equal(REPLACE_CONFIRM_TITLE, 'Replace everything?');
+  assert.equal(REPLACE_CONFIRM_MESSAGE, "This deletes all current items and settings on this device. This can't be undone.");
+  assert.equal(REPLACE_CONFIRM_SYNC, 'It also deletes them on every device you sync with.');
 });
 
-test('with sync set up, the warning is added on its own line', () => {
-  const text = importMessage(preview(), { synced: true });
-  const lines = text.split('\n');
-  assert.equal(lines.length, 2);
-  assert.equal(lines[1], REPLACE_SYNC_WARNING);
+test('choice dialog with sync set up: the Replace warning and the Merge note, each on its own line', () => {
+  const lines = importMessage(preview(), { synced: true }).split('\n');
+  assert.deepEqual(lines.slice(1), [REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE]);
   assert.equal(lines[0], importMessage(preview()), 'the rest is unchanged');
 });
 
-test('without sync, there is no warning', () => {
+test('choice dialog without sync: no sync lines', () => {
   const text = importMessage(preview(), { synced: false });
-  assert.equal(text.includes(REPLACE_SYNC_WARNING), false);
+  for (const line of [REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE]) assert.equal(text.includes(line), false);
   assert.equal(text.includes('\n'), false);
   assert.equal(importMessage(preview()), text, 'off by default');
 });
 
-test('the existing wording is kept', () => {
+test('the existing choice wording is kept', () => {
   assert.equal(importMessage(preview()),
     "12 items, 3 new. Merge adds the new ones, updates 2 where the file's copy is newer and keeps 1 where yours is the same or newer. "
     + "Replace deletes your 5 items and uses the file's items and settings (1 of yours aren't in the file).");
   assert.equal(importMessage(preview({ existing: 0, total: 1, added: 1 })), '1 item, 1 new. Your list is empty, so both options give the same result.');
   assert.match(importMessage(preview({ newerVersion: true })), /comes from a newer version/);
+});
+
+test('final Replace confirmation: Cancel first and safe, destructive Replace all; sync line only when synced', () => {
+  const off = replaceConfirm({ synced: false });
+  assert.equal(off.title, 'Replace everything?');
+  assert.equal(off.message, REPLACE_CONFIRM_MESSAGE);
+  assert.deepEqual(off.actions, [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }]);
+  const on = replaceConfirm({ synced: true });
+  assert.deepEqual(on.message.split('\n'), [REPLACE_CONFIRM_MESSAGE, REPLACE_CONFIRM_SYNC]);
+  assert.deepEqual(replaceConfirm(), off, 'off by default');
+});
+
+/* ------------------------------------------------------------------ Steps */
+
+test('Replace all takes two steps and only then returns replace', async () => {
+  const d = fakeDialog('replace', true);
+  assert.equal(await chooseImportMode(preview(), { synced: true, confirm: d.confirm }), 'replace');
+  assert.deepEqual(d.shown.map((s) => s.title), ['Import this backup?', 'Replace everything?']);
+  assert.ok(d.shown[1].message.includes(REPLACE_CONFIRM_SYNC));
+});
+
+test('cancelling or dismissing the final confirmation returns null, so nothing is applied', async () => {
+  for (const answer of [false, undefined]) {
+    const d = fakeDialog('replace', answer);
+    let applied = false;
+    const mode = await chooseImportMode(preview(), { confirm: d.confirm });
+    if (mode) applied = true; // what importFile() does with the result
+    assert.equal(mode, null);
+    assert.equal(applied, false);
+    assert.equal(d.shown.length, 2);
+  }
+});
+
+test('Merge has no second step; cancelling the first dialog asks nothing more', async () => {
+  const merge = fakeDialog('merge');
+  assert.equal(await chooseImportMode(preview(), { synced: true, confirm: merge.confirm }), 'merge');
+  assert.equal(merge.shown.length, 1);
+  assert.ok(merge.shown[0].message.endsWith(MERGE_SYNC_NOTE));
+  const cancel = fakeDialog(undefined);
+  assert.equal(await chooseImportMode(preview(), { confirm: cancel.confirm }), null);
+  assert.equal(cancel.shown.length, 1);
 });

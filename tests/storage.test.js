@@ -5,6 +5,7 @@
 
 import * as storage from '../js/storage.js';
 import * as syncCore from '../js/sync-core.js';
+import { chooseImportMode } from '../js/util.js';
 
 const results = [];
 const created = [];
@@ -569,6 +570,31 @@ test('merge: an item with no updatedAt never overwrites yours', async () => {
   delete raw.updatedAt;
   await storage.importAll(backup([raw]), 'merge');
   eq((await storage.getAll())[0].price, 1, 'kept');
+});
+
+/** Run the app's import flow (js/util.js chooseImportMode) with scripted dialog answers, then apply as importFile() does. */
+async function importLikeTheApp(file, answers, synced) {
+  const confirm = async (opts) => { const a = answers.shift(); return a === undefined ? opts.actions[0].value : a; };
+  const preview = await storage.previewImport(file);
+  const mode = await chooseImportMode(preview, { synced, confirm });
+  if (mode) await storage.importAll(file, mode);
+  return mode;
+}
+
+test('cancelling the final Replace confirmation applies nothing: items, settings and outbox unchanged', async () => {
+  freshDb();
+  await storage.save(item({ id: 'mine' }));
+  await storage.saveSettings({ defaultCurrency: 'TWD', groupColors: { Entertainment: 'g3' } });
+  const file = backup([item({ id: 'other' })], { schemaVersion: 4, settings: { defaultCurrency: 'EUR', groupColors: { Other: 'g1' } } });
+  const snapshot = async () => JSON.stringify([await storage.getAll(), await storage.getSettings(), (await storage.syncState()).outbox]);
+  const before = await snapshot();
+  for (const answers of [['replace', false], ['replace', undefined], [undefined]]) {
+    const mode = await importLikeTheApp(file, answers, true);
+    eq(mode, null, `cancelled (${JSON.stringify(answers)})`);
+    eq(await snapshot(), before, `nothing changed (${JSON.stringify(answers)})`);
+  }
+  eq(await importLikeTheApp(file, ['replace', true], true), 'replace', 'confirmed');
+  eq((await storage.getAll()).map((s) => s.id), ['other'], 'and only then replaced');
 });
 
 test('replace: removes items not in the file and takes its settings', async () => {

@@ -8,7 +8,7 @@ import { initSyncScreen } from './sync-ui.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  importMessage,
+  chooseImportMode,
 } from './util.js';
 
 const APP_VERSION = '1.6.1';
@@ -1150,23 +1150,14 @@ async function importFile(file) {
     return importProblem("The file couldn't be read.");
   }
 
-  // Sync set up here (a key and sync turned on): Replace reaches every device, so say so.
+  // Sync set up here (a key and sync turned on): both choices reach every device, so say so.
   let synced = false;
   try {
     const cfg = await storage.getSyncConfig();
     synced = Boolean(cfg.enabled && cfg.householdKey);
   } catch { /* no sync on a fallback store */ }
-  const message = importMessage(preview, { synced });
-  const mode = await confirmDialog({
-    title: 'Import this backup?',
-    message,
-    stacked: true,
-    actions: [
-      { label: 'Cancel', value: null },
-      { label: 'Replace all', value: 'replace', kind: 'danger' },
-      { label: 'Merge', value: 'merge', kind: 'primary' },
-    ],
-  });
+  // Merge or Replace all; Replace asks once more. Cancelling at either step applies nothing.
+  const mode = await chooseImportMode(preview, { synced, confirm: confirmDialog });
   if (!mode) return;
 
   try {
