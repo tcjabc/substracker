@@ -949,7 +949,7 @@ function bindForm() {
     if (!sub) return;
     const ok = await confirmDialog({
       title: `Delete ${sub.name}?`,
-      message: 'This removes it from this device. Export a backup first if you might want it back.',
+      message: 'This deletes it here and on any devices you sync with. Export a backup first if you might want it back.',
       actions: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger' }],
     });
     if (!ok) return;
