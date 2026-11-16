@@ -54,10 +54,10 @@ All persistence goes through `js/storage.js`; no other file touches IndexedDB or
 - `records`: every expense and income item in a sync-ready form, keyed by `id`: `{ id, fields: { …item fields, del }, ts: { field: stamp } }`. Each field carries the hybrid-logical-clock stamp of its last change, and `del` is the deleted flag. Deleting an item sets `del` to `true` and keeps the record as a tombstone. The app only ever sees live records, in the plain item shape above.
 - `outbox`: changes not yet sent to other devices, one op `{ id, rec, f, v, t, dev }` per changed field, keyed by `[rec, f]`, so a newer change to a field replaces its unsent older op. Every save, delete and import writes its ops in the same transaction as the records.
 - `meta`: `schemaVersion` (currently 4), `deviceId` (made once per install), `hlc` (the clock), `syncCursor` (0 until sync exists) and records of the one-time migrations.
-- `settings`: `defaultCurrency` and `groupColors`, one row per key. Settings are per device: never synced, never exported.
+- `settings`: `defaultCurrency` and `groupColors`, one row per key. Settings are per device and never synced; backups carry these two so a restore brings them back.
 - `items`: the 1.3–1.4 store, kept untouched as a fallback (see below).
 
-The merge rules live in `js/sync-core.js`, a pure module with no DOM, storage or platform code, so web, Android and iOS merge identically. Each field is last-write-wins by stamp, ties go to the higher device id, and applying an op twice or in any order gives the same result. A delete only changes `del`, so an edit made elsewhere doesn't undo it; importing or saving the item again brings it back.
+The merge rules live in `js/sync-core.js`, a pure module with no DOM, storage or platform code, so web, Android and iOS merge identically. Each field is last-write-wins by stamp, ties go to the higher device id, and applying an op twice or in any order gives the same result. A delete only changes `del`, so an edit made elsewhere doesn't undo it; importing or saving the item again brings it back. A stamp from another device more than `MAX_DRIFT_MS` (24 hours) ahead of this device's clock can't pull the clock further than that, so one phone with the wrong date can't drag every device's clock into the future. The op still sorts by its own stamp, so all devices agree on the result.
 
 Migrations run once and are verified before the app switches over. Versions up to 1.2 kept items in a store called `subscriptions`: on the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present). The sync-ready step then copies `items` into `records`, stamping each item's fields with its own `updatedAt` and queueing an op per field, and checks the copy (one live record per item that reads back identical, a stamp and a matching op for every field). Until a check passes, the app keeps using the previous store and says so; an unfinished or unverified attempt is cleared and redone on the next load. The older stores are left untouched as fallbacks and will be removed in a later release. A few per-device view preferences (theme, tab, grid/list, period, donut/list) stay in localStorage.
 
@@ -70,13 +70,14 @@ Export files have this shape:
   "app": "substracker",
   "schemaVersion": 4,
   "exportedAt": "ISO timestamp",
-  "items": [ … ]
+  "items": [ … ],
+  "settings": { "defaultCurrency": "TWD", "groupColors": { "Entertainment": "g1" } }
 }
 ```
 
-`items` holds the live (not deleted) items with their ids, in the plain item shape. Settings, preferences and sync bookkeeping (device id, clock, outbox, timestamps) are never exported.
+`items` holds the live (not deleted) items with their ids, in the plain item shape. `settings` holds only `defaultCurrency` and `groupColors` (an allowlist, `BACKUP_SETTINGS` in `js/storage.js`, so a setting added later stays out of backups until it's listed). Sync bookkeeping (device id, clock, cursor, outbox, field timestamps), entitlement flags and appearance preferences are never exported, and import ignores any other settings a file contains. `groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`); files without it import fine and get colours assigned automatically, and a file with no `settings` at all leaves yours as they are.
 
-Import also reads every older backup: schemaVersion 3 files (1.3–1.4, the same envelope plus `settings`) and 1.0–1.2 files (`{ "format": "substracker", "version": 1 | 2, … }`, with records under `subscriptions` in version 1). Settings in an older file are still applied: `groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`), and a file without them leaves your settings as they are; colours for new groups are assigned automatically. It checks each item's required fields and their types: `id` (text), `name` (non-empty text), `price` (a number of 0 or more), `currency` (a 3-letter code), `cycle` (`monthly`, `annual` or `once`), `type` if present (`expense` or `income`), and `date` for one-offs. Unknown fields are ignored, so files from newer versions still import. Merge matches items by `id` and keeps whichever has the newer `updatedAt` (an item deleted here since the backup comes back); Replace deletes (tombstones) every item not in the file and takes an older file's settings. Both write in one transaction, as ops, like any other change.
+Import also reads every older backup: schemaVersion 3 files (1.3–1.4, the same envelope) and 1.0–1.2 files (`{ "format": "substracker", "version": 1 | 2, … }`, with records under `subscriptions` in version 1). It checks each item's required fields and their types: `id` (text), `name` (non-empty text), `price` (a number of 0 or more), `currency` (a 3-letter code), `cycle` (`monthly`, `annual` or `once`), `type` if present (`expense` or `income`), and `date` for one-offs. Unknown fields are ignored, so files from newer versions still import. Merge matches items by `id` and keeps whichever has the newer `updatedAt` (an item deleted here since the backup comes back); Replace deletes (tombstones) every item not in the file and takes the file's default currency and colours (Merge takes its colours only). Both write in one transaction, as ops, like any other change.
 
 Saving the export file goes through `deliverFile()` in `js/files.js`, which is the place to swap the browser download for a native share sheet.
 
@@ -123,7 +124,7 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering and skew, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration and importing old backups.
+`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, and a check that every file in `js/` is in the service worker's `SHELL` list.
 
 With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
