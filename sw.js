@@ -15,6 +15,7 @@ const SHELL = [
   './js/storage.js',
   './js/sync-core.js',
   './js/crypto.js',
+  './js/secure-key.js',
   './js/wordlist.js',
   './js/words.js',
   './js/sync.js',

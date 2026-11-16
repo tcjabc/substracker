@@ -33,7 +33,7 @@ function when(ms) {
  * `ui` provides toast, confirmDialog, openDialog, closeDialog, exportData and onConfigChanged
  * (called after this sheet changes the sync config, e.g. to refresh the developer screen).
  */
-export function initSyncSheet({ engine, storage, ui, unavailable = '' }) {
+export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) {
   const dlg = $('#sync-dialog');
   const summary = $('#sync-summary');
   const openBtn = $('#btn-sync');
@@ -57,11 +57,13 @@ export function initSyncSheet({ engine, storage, ui, unavailable = '' }) {
   }
 
   /* ---------------- helpers ---------------- */
-  const loadConfig = async () => { config = await storage.getSyncConfig(); return config; };
+  // A summary without the key (js/secure-key.js status()); the key itself is only read for Show recovery words.
+  const loadConfig = async () => { config = await vault.status(); return config; };
 
   const renderSummary = () => {
     summary.textContent = pairing.summaryText(config, status);
-    openBtn.textContent = config?.householdKey ? 'Manage' : 'Set up';
+    openBtn.textContent = config?.paired && !config.keyUnavailable ? 'Manage' : 'Set up';
+    $('#sync-needs-words').hidden = !(config?.paired && config.keyUnavailable);
   };
 
   const renderStatus = () => {
@@ -133,6 +135,7 @@ export function initSyncSheet({ engine, storage, ui, unavailable = '' }) {
     clearWords();
     status = engine.getStatus();
     renderStatus();
+    renderSummary();
     show(pairing.sheetView(config));
     ui.openDialog(dlg);
   }
@@ -265,9 +268,11 @@ export function initSyncSheet({ engine, storage, ui, unavailable = '' }) {
   /* ---------------- set up: status, words, sync now, turn off ---------------- */
   $('#sync-show-words').addEventListener('click', async () => {
     if ((await ui.confirmDialog(pairing.SHOW_WORDS_CONFIRM)) !== true) return;
-    await loadConfig();
-    if (!config.householdKey) return;
-    renderWords($('[data-sync-view="active"] [data-words-slot]'), await keyToWords(config.householdKey));
+    let key = '';
+    try { key = await vault.get(); } catch { ui.toast('The recovery words are not available on this device.'); return; }
+    if (!key) return;
+    renderWords($('[data-sync-view="active"] [data-words-slot]'), await keyToWords(key));
+    key = '';
     $('#sync-show-words').hidden = true;
     $('#sync-hide-words').hidden = false;
   });

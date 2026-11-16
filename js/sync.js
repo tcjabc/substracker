@@ -26,6 +26,12 @@ export const DEFAULT_RELAY_URL = 'https://peek-budget-relay.tcjabc.workers.dev';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
+ * Status text when this device has a household but can't read its key, e.g. app data restored from
+ * a backup to a new phone, where the Keystore/Keychain entry doesn't exist (see js/secure-key.js).
+ */
+export const KEY_NEEDED_MESSAGE = 'Sync needs the 12 words on this device. Join again with your recovery words.';
+
+/**
  * A clean relay base URL, or null. HTTPS only, except plain HTTP to this machine for development,
  * so the token is never sent in the clear over a network.
  */
@@ -204,7 +210,7 @@ export function createSyncEngine(opts) {
   /** Read the config and derive keys when the household key changed. */
   async function loadConfig() {
     config = await store.getConfig();
-    const keyText = config.householdKey || '';
+    const keyText = config.keyUnavailable ? '' : config.householdKey || '';
     if (keys?.keyText !== keyText) keys = keyText ? { keyText, ...(await crypto.deriveKeys(keyText)) } : null;
     const url = normalizeRelayUrl(config.relayUrl || DEFAULT_RELAY_URL);
     config = { ...config, relayUrl: url };
@@ -290,7 +296,13 @@ export function createSyncEngine(opts) {
   async function runOnce() {
     let ready;
     try { ready = await loadConfig(); } catch (err) { setStatus('error', describe(err)); return; }
-    if (!ready) { closeSocket(); stopInterval(); setStatus('off', ''); return; }
+    if (!ready) {
+      closeSocket();
+      stopInterval();
+      // No retry timer either way: an unreadable key waits for Join (a config change), never loops.
+      if (config?.keyUnavailable) setStatus('error', KEY_NEEDED_MESSAGE); else setStatus('off', '');
+      return;
+    }
     if (!env.isOnline()) { closeSocket(); setStatus('offline', "This device is offline. Changes are kept and sent later."); return; }
     setStatus('syncing');
     try {
@@ -364,18 +376,25 @@ export function createSyncEngine(opts) {
   function ensureSocket() {
     if (socket || socketTimer !== null || !started || !keys || !config?.relayUrl || !config.enabled || pausedUntilTrigger) return;
     if (!env.isVisible() || !env.isOnline()) return;
-    const conn = transport.live(config.relayUrl, keys.roomId, keys.token, clientId, {
+    const retryLater = () => {
+      if (!started || !env.isVisible() || !config?.enabled) return;
+      const ms = Math.round(Math.min(SOCKET_RETRY_MAX_MS, 1000 * 2 ** socketFailures++) * (0.5 + random()));
+      socketTimer = timers.setTimeout(() => { socketTimer = null; ensureSocket(); }, ms);
+    };
+    // A transport may close at once, inside live() (no WebSocket here, or offline), before `conn` exists.
+    let conn = null;
+    let closedAtOnce = false;
+    conn = transport.live(config.relayUrl, keys.roomId, keys.token, clientId, {
       onOpen: () => { socketFailures = 0; },
       onHead: (seq) => { if (seq > knownHead) request('live'); },
       onClose: () => {
+        if (conn === null) { closedAtOnce = true; return; }
         if (socket !== conn) return;
         socket = null;
-        if (!started || !env.isVisible() || !config?.enabled) return;
-        const ms = Math.round(Math.min(SOCKET_RETRY_MAX_MS, 1000 * 2 ** socketFailures++) * (0.5 + random()));
-        socketTimer = timers.setTimeout(() => { socketTimer = null; ensureSocket(); }, ms);
+        retryLater();
       },
     });
-    socket = conn;
+    if (closedAtOnce) retryLater(); else socket = conn;
   }
 
   function closeSocket() {

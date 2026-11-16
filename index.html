@@ -148,6 +148,7 @@
               <button type="button" class="btn" id="dev-key-show" aria-pressed="false">Show key</button>
               <button type="button" class="btn" id="dev-key-generate">Generate new</button>
             </div>
+            <span class="setting-hint" id="dev-key-store"></span>
             <span class="field-error" id="dev-error" role="alert"></span>
           </div>
           <label class="setting-row">
@@ -308,6 +309,7 @@
       <!-- Not set up -->
       <div class="sync-view" data-sync-view="setup" hidden>
         <div class="sheet-body">
+          <p class="sync-warning" id="sync-needs-words" role="note" hidden>Sync needs the 12 words on this device. Join again with your recovery words.</p>
           <p class="sync-text">Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them.</p>
         </div>
         <div class="sheet-foot">

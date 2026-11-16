@@ -6,6 +6,7 @@ import { logoHTML, initLogoHandling } from './logos.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
+import { createKeyVault } from './secure-key.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
@@ -173,25 +174,31 @@ async function init() {
   render();
   registerSW();
   $('#app-version').textContent = `Peek Budget ${APP_VERSION}`;
-  startSync(syncUnavailable);
+  startSync(syncUnavailable).catch((err) => console.error(err));
 }
 
 /* --------------------------------------------------------------------------
    Sync (off until set up in Settings → Sync, or on the developer screen)
    -------------------------------------------------------------------------- */
-function startSync(unavailable) {
+async function startSync(unavailable) {
   let engine = null;
+  // The household key: phone secure storage (Keystore/Keychain) where there is one, else IndexedDB.
+  const vault = createKeyVault({ store: storage });
   if (!unavailable) {
-    engine = createSyncEngine({ store: storage.syncStore });
+    // Phones: move a key still in IndexedDB into secure storage (verified; a failure changes nothing).
+    try { await vault.migrate(); } catch (err) { console.error(err); }
+    engine = createSyncEngine({
+      store: { ...storage.syncStore, getConfig: vault.readConfig, setConfig: vault.setConfig, replaceWithRemote: vault.replaceWithRemote },
+    });
     // Changes from other devices (items, the default currency, group colours): refresh the screens
     // the same way an import or edit does.
     engine.onRemoteChanges(() => reloadData({ remote: true }));
     engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
   }
   let sheet = null;
-  const dev = initSyncScreen({ engine, storage, unavailable, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
+  const dev = initSyncScreen({ engine, vault, unavailable, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
   sheet = initSyncSheet({
-    engine, storage, unavailable,
+    engine, storage, vault, unavailable,
     ui: { toast, confirmDialog, openDialog, closeDialog, exportData, onConfigChanged: () => dev.reload() },
   });
 }
@@ -1160,7 +1167,7 @@ async function importFile(file) {
   let synced = false;
   try {
     const cfg = await storage.getSyncConfig();
-    synced = Boolean(cfg.enabled && cfg.householdKey);
+    synced = Boolean(cfg.enabled && storage.householdIdentity(cfg)); // no need to read the key itself
   } catch { /* no sync on a fallback store */ }
   // Merge or Replace all; Replace asks once more. Cancelling at either step applies nothing.
   const mode = await chooseImportMode(preview, { synced, confirm: confirmDialog });

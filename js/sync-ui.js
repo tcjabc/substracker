@@ -2,6 +2,8 @@
 // Sync now and Disconnect. Opened with ?dev=1 in the URL or 7 taps on the version line; never shown
 // otherwise. People set sync up in the Sync sheet (js/sync-sheet.js); this screen is for debugging,
 // and the only place the relay URL can be changed (empty = DEFAULT_RELAY_URL).
+// The key goes through js/secure-key.js and is never put in the page unless Show key is tapped;
+// an empty key field on Save keeps the stored key.
 
 import { generateKey, parseKey } from './crypto.js';
 import { normalizeRelayUrl, DEFAULT_RELAY_URL } from './sync.js';
@@ -27,13 +29,12 @@ function when(ms) {
  * (for example while storage is on a fallback copy). `ui` provides the app's toast, confirmDialog
  * and setTab helpers.
  */
-export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
+export function initSyncScreen({ engine, vault, ui, unavailable = '' }) {
   const section = $('#dev-sync');
   const relay = $('#dev-relay');
   const key = $('#dev-key');
   const enabled = $('#dev-enabled');
   const error = $('#dev-error');
-  let savedKey = '';
 
   const reveal = () => {
     section.hidden = false;
@@ -65,13 +66,31 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
   }
   relay.placeholder = `${DEFAULT_RELAY_URL} (default)`;
 
+  const keyShow = $('#dev-key-show');
+  const keyStore = $('#dev-key-store');
+  let hasKey = false; // a key is stored on this device (it is never put in the field unless Show key)
+  let revealed = false;
+
+  const hideKey = () => {
+    if (revealed) key.value = '';
+    revealed = false;
+    key.type = 'password';
+    keyShow.textContent = 'Show key';
+    keyShow.setAttribute('aria-pressed', 'false');
+  };
+
+  const STORE_TEXT = { 'native-secure': 'Android Keystore / iOS Keychain', 'web-indexeddb': 'IndexedDB (this browser)' };
   const load = async () => {
     try {
-      const cfg = await storage.getSyncConfig();
-      relay.value = cfg.relayUrl;
-      key.value = cfg.householdKey;
-      enabled.checked = cfg.enabled;
-      savedKey = cfg.householdKey;
+      const st = await vault.status();
+      relay.value = st.relayUrl;
+      enabled.checked = st.enabled;
+      hasKey = st.paired && !st.keyUnavailable;
+      hideKey();
+      key.value = '';
+      key.placeholder = st.keyUnavailable ? 'The stored key cannot be read here' : hasKey ? 'A key is stored (hidden)' : '22 characters';
+      const where = st.keyLocation === 'secure' ? STORE_TEXT['native-secure'] : 'IndexedDB';
+      keyStore.textContent = `Key storage: ${vault.kind} (${hasKey || st.keyUnavailable ? `key in ${where}` : 'no key'}; migration: ${vault.migration})`;
     } catch (err) {
       error.textContent = err.message;
     }
@@ -80,15 +99,18 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
   showStatus(engine.getStatus());
   engine.onStatus(showStatus);
 
-  $('#dev-key-show').addEventListener('click', (e) => {
-    const show = key.type === 'password';
-    key.type = show ? 'text' : 'password';
-    e.currentTarget.textContent = show ? 'Hide key' : 'Show key';
-    e.currentTarget.setAttribute('aria-pressed', String(show));
+  keyShow.addEventListener('click', async () => {
+    if (key.type === 'text') { hideKey(); return; }
+    if (!key.value.trim() && hasKey) {
+      try { key.value = await vault.get(); revealed = true; } catch { error.textContent = 'The stored key cannot be read on this device.'; return; }
+    }
+    key.type = 'text';
+    keyShow.textContent = 'Hide key';
+    keyShow.setAttribute('aria-pressed', 'true');
   });
 
   $('#dev-key-generate').addEventListener('click', async () => {
-    if (key.value.trim()) {
+    if (key.value.trim() || hasKey) {
       const ok = await ui.confirmDialog({
         title: 'Replace the household key?',
         message: 'Devices that use the current key will stop syncing with this one. Copy the new key to each device you want in the household.',
@@ -97,8 +119,9 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
       if (!ok) return;
     }
     key.value = generateKey();
+    revealed = false;
     key.type = 'text';
-    $('#dev-key-show').textContent = 'Hide key';
+    keyShow.textContent = 'Hide key';
     error.textContent = '';
     ui.toast('New key generated. Save to use it.');
   });
@@ -106,11 +129,13 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
   $('#dev-save').addEventListener('click', async () => {
     error.textContent = '';
     const url = relay.value.trim();
-    const k = key.value.trim();
+    const k = revealed ? '' : key.value.trim(); // an unchanged revealed key is "keep the stored one"
     if (url && !normalizeRelayUrl(url)) { error.textContent = 'Use an https:// relay URL (http:// only for localhost).'; relay.focus(); return; }
     if (k) { try { parseKey(k); } catch (err) { error.textContent = err.message; key.focus(); return; } }
-    if (enabled.checked && !k) { error.textContent = 'Sync needs a household key.'; return; }
-    if (savedKey && k !== savedKey) {
+    if (enabled.checked && !k && !hasKey) { error.textContent = 'Sync needs a household key.'; return; }
+    let current = '';
+    if (k && hasKey) { try { current = await vault.get(); } catch { /* unreadable: treat as different */ } }
+    if (k && hasKey && k !== current) {
       const ok = await ui.confirmDialog({
         title: 'Switch household?',
         message: "This device will stop syncing with the old household and send all its items to the new one.",
@@ -118,10 +143,12 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
       });
       if (!ok) return;
     }
-    await engine.configure({ relayUrl: url ? normalizeRelayUrl(url) : '', householdKey: k, enabled: enabled.checked });
-    savedKey = k;
-    relay.value = url ? normalizeRelayUrl(url) : '';
+    current = '';
+    const patch = { relayUrl: url ? normalizeRelayUrl(url) : '', enabled: enabled.checked };
+    if (k) patch.householdKey = k; // an empty field keeps the stored key
+    await engine.configure(patch);
     ui.onConfigChanged?.();
+    await load();
     ui.toast(enabled.checked ? 'Sync settings saved.' : 'Sync settings saved. Sync is off.');
   });
 
@@ -135,16 +162,13 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
     });
     if (!ok) return;
     await engine.disconnect();
-    key.value = '';
-    key.type = 'password';
-    enabled.checked = false;
-    savedKey = '';
     ui.onConfigChanged?.();
+    await load();
     ui.toast('Disconnected. Your items are still on this device.');
   });
 
   return {
     /** Re-read the fields (after the Sync sheet changed the config). */
-    reload() { key.type = 'password'; $('#dev-key-show').textContent = 'Show key'; return load(); },
+    reload() { return load(); },
   };
 }

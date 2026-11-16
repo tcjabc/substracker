@@ -7,7 +7,8 @@
 import * as storage from '../js/storage.js';
 import * as syncCore from '../js/sync-core.js';
 import { chooseImportMode } from '../js/util.js';
-import { createSyncEngine, RelayHttpError, JoinError } from '../js/sync.js';
+import { createSyncEngine, RelayHttpError, JoinError, KEY_NEEDED_MESSAGE } from '../js/sync.js';
+import { createKeyVault } from '../js/secure-key.js';
 import { generateKey } from '../js/crypto.js';
 import { keyToWords, parseRecovery } from '../js/words.js';
 import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
@@ -378,10 +379,10 @@ test('sync config: a new household key resets the cursor and queues every record
   await storage.save(item({ id: 'b' }));
   await storage.removeSentOps((await storage.syncState()).outbox.map(({ rec, f, t }) => ({ rec, f, t })));
   await storage.applyRemote([], 12);
-  eq(await storage.getSyncConfig(), { relayUrl: '', householdKey: '', enabled: false, wasPaired: false }, 'default');
+  eq(await storage.getSyncConfig(), { relayUrl: '', householdKey: '', enabled: false, wasPaired: false, keyLocation: 'idb', keyTag: '' }, 'default');
 
   await storage.setSyncConfig({ relayUrl: ' http://localhost:8787 ', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true });
-  eq(await storage.getSyncConfig(), { relayUrl: 'http://localhost:8787', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true, wasPaired: true }, 'stored');
+  eq(await storage.getSyncConfig(), { relayUrl: 'http://localhost:8787', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true, wasPaired: true, keyLocation: 'idb', keyTag: '' }, 'stored');
   eq(await storage.getSyncCursor(), 0, 'cursor reset');
   eq(await storage.pendingCount(), 2 * Object.keys(item()).length, 'every field of both records queued');
 
@@ -854,6 +855,122 @@ test('the words shown for a key saved the old way (22 characters) join the same 
   await engine.joinHousehold(await parseRecovery(words.toUpperCase()), 'replace');
   engine.stop();
   eq(await ids(), ['h1'], 'joined');
+});
+
+/* ------------------------------------------------------------------ Secure key storage (real IndexedDB) */
+// js/secure-key.js over the real storage.js. The phone's secure store is a fake injected here.
+
+function fakeSecure(value = null) {
+  const s = {
+    value, badReadBack: false, failRemove: false,
+    async get() { return s.badReadBack ? 'not-the-key' : s.value; },
+    async set(v) { s.value = v; },
+    async remove() { if (s.failRemove) throw new Error('KeyStore unavailable'); s.value = null; },
+  };
+  return s;
+}
+const quiet = { warn() {}, error() {} };
+const metaText = async (name) => JSON.stringify(await inspect(name, (db) => rawAll(db, 'meta')));
+
+async function vaultEngine(relay, vault) {
+  const engine = createSyncEngine({
+    store: { ...storage.syncStore, getConfig: vault.readConfig, setConfig: vault.setConfig, replaceWithRemote: vault.replaceWithRemote },
+    transport: relay.transport, env: pageEnv, timers: quietTimers, log: quiet,
+  });
+  await engine.start();
+  return engine;
+}
+
+test('web: the key stays in IndexedDB exactly as before (web-indexeddb)', async () => {
+  const name = freshDb();
+  await storage.getAll();
+  const vault = createKeyVault({ store: storage, secure: null });
+  eq(vault.kind, 'web-indexeddb', 'kind');
+  eq(await vault.migrate(), 'not-needed', 'no migration on the web');
+  const key = generateKey();
+  await vault.setConfig({ householdKey: key, enabled: true });
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey === key, cfg.keyLocation, cfg.enabled], [true, 'idb', true], 'stored as before');
+  assert((await metaText(name)).includes(key), 'in IndexedDB');
+  eq(await vault.get(), key, 'read back');
+  await vault.setConfig({ householdKey: '', enabled: false });
+  eq((await storage.getSyncConfig()).householdKey, '', 'removed');
+});
+
+test('migration: the key moves to (fake) secure storage, leaves IndexedDB, and the cursor and outbox stay', async () => {
+  const name = freshDb();
+  await storage.save(item());
+  const key = generateKey();
+  await storage.setSyncConfig({ householdKey: key, enabled: true }); // paired the 1.7 way
+  await storage.applyRemote([], 7);
+  const pending = await storage.pendingCount();
+  const secure = fakeSecure();
+  const vault = createKeyVault({ store: storage, secure, log: quiet });
+  eq(await vault.migrate(), 'migrated', 'migrated');
+  eq(secure.value, key, 'in secure storage');
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey, cfg.keyLocation, cfg.enabled], ['', 'secure', true], 'IndexedDB keeps only the location');
+  assert(!(await metaText(name)).includes(key), 'the key is nowhere in the meta store');
+  eq([await storage.getSyncCursor(), await storage.pendingCount()], [7, pending], 'same household: nothing reset or queued');
+  eq((await vault.readConfig()).householdKey, key, 'sync reads the same key');
+  eq(await createKeyVault({ store: storage, secure, log: quiet }).migrate(), 'already', 'flag: done once');
+});
+
+test('migration with a failed read-back keeps the IndexedDB copy, and retries next launch', async () => {
+  const name = freshDb();
+  await storage.getAll();
+  const key = generateKey();
+  await storage.setSyncConfig({ householdKey: key, enabled: true });
+  const secure = fakeSecure();
+  secure.badReadBack = true;
+  eq(await createKeyVault({ store: storage, secure, log: quiet }).migrate(), 'failed', 'failed');
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey === key, cfg.keyLocation], [true, 'idb'], 'kept in IndexedDB');
+  assert((await metaText(name)).includes(key), 'still in IndexedDB');
+  secure.badReadBack = false;
+  eq(await createKeyVault({ store: storage, secure, log: quiet }).migrate(), 'migrated', 'next launch');
+  assert(!(await metaText(name)).includes(key), 'then gone from IndexedDB');
+});
+
+test('phone: join (replace) puts the key only in secure storage; turn off removes it from both', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one' })]);
+  const name = freshDb();
+  const secure = fakeSecure();
+  const vault = createKeyVault({ store: storage, secure, log: quiet });
+  const engine = await vaultEngine(relay, vault);
+  await engine.joinHousehold(key, 'replace');
+  eq(await ids(), ['h1'], 'joined');
+  eq(secure.value, key, 'key in secure storage');
+  assert(!(await metaText(name)).includes(key), 'not in IndexedDB');
+  eq(engine.getStatus().state, 'ok', 'syncing with it');
+  await engine.disconnect();
+  engine.stop();
+  eq(secure.value, null, 'removed from secure storage');
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey, cfg.keyLocation, cfg.wasPaired], ['', 'idb', true], 'removed from IndexedDB');
+  eq(await ids(), ['h1'], 'items kept');
+});
+
+test('phone: an unreadable key shows "Sync needs the 12 words", leaves the items, and Join works again', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one' })]);
+  freshDb();
+  const secure = fakeSecure();
+  let vault = createKeyVault({ store: storage, secure, log: quiet });
+  let engine = await vaultEngine(relay, vault);
+  await engine.joinHousehold(key, 'replace');
+  engine.stop();
+  secure.value = null; // as on a new phone after a backup restore: the Keystore entry is gone
+  vault = createKeyVault({ store: storage, secure, log: quiet });
+  eq(await vault.migrate(), 'already', 'no migration attempt');
+  engine = await vaultEngine(relay, vault);
+  eq([engine.getStatus().state, engine.getStatus().lastError], ['error', KEY_NEEDED_MESSAGE], 'status');
+  eq((await vault.status()).keyUnavailable, true, 'the sheet offers Join');
+  eq(await ids(), ['h1'], 'items untouched');
+  await engine.joinHousehold(key, 'merge');
+  eq([engine.getStatus().state, secure.value === key], ['ok', true], 'joined again');
+  engine.stop();
 });
 
 /* ------------------------------------------------------------------ Runner */

@@ -73,14 +73,16 @@ test('starting a new household warns only a device that was in one before', asyn
 });
 
 test('which screen the sheet opens on, and the status wording', () => {
-  assert.equal(sheetView({ householdKey: '' }), 'setup');
+  assert.equal(sheetView({ paired: false }), 'setup');
   assert.equal(sheetView(null), 'setup');
-  assert.equal(sheetView({ householdKey: 'AAAAAAAAAAAAAAAAAAAAAA' }), 'active');
+  assert.equal(sheetView({ paired: true, keyUnavailable: false }), 'active');
+  assert.equal(sheetView({ paired: true, keyUnavailable: true }), 'setup', 'join again when the key is unreadable');
   assert.equal(statusText({ state: 'ok' }), 'Up to date');
   assert.equal(statusText({ state: 'syncing' }), 'Syncing…');
   assert.equal(statusText({ state: 'offline', lastError: 'x' }), 'Offline');
   assert.equal(statusText({ state: 'error', lastError: "Can't reach the relay." }), "Error: Can't reach the relay.");
-  assert.equal(summaryText({ householdKey: '' }, { state: 'off' }), 'Off');
-  assert.equal(summaryText({ householdKey: 'k', enabled: true }, { state: 'ok' }), 'On · Up to date');
-  assert.equal(summaryText({ householdKey: 'k', enabled: false }, { state: 'off' }), 'Paused on this device');
+  assert.equal(summaryText({ paired: false }, { state: 'off' }), 'Off');
+  assert.equal(summaryText({ paired: true, enabled: true }, { state: 'ok' }), 'On · Up to date');
+  assert.equal(summaryText({ paired: true, enabled: false }, { state: 'off' }), 'Paused on this device');
+  assert.equal(summaryText({ paired: true, enabled: true, keyUnavailable: true }, { state: 'error' }), 'Needs the 12 words on this device');
 });

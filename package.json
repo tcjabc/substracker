@@ -12,6 +12,7 @@
     "assets": "capacitor-assets generate --android --iconBackgroundColor #4f46e5 --iconBackgroundColorDark #4f46e5 --splashBackgroundColor #f6f6f9 --splashBackgroundColorDark #111216"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
     "@capacitor/android": "8.6.2",
     "@capacitor/core": "8.6.2",
     "@capacitor/filesystem": "8.1.5",

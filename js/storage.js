@@ -321,9 +321,35 @@ export async function syncState() {
    Sync storage, used by js/sync.js. Config and bookkeeping live in `meta`: per device, never
    exported, never synced. All of this needs the records store (not a fallback store).
    -------------------------------------------------------------------------- */
+// The household key lives in one of two places (keyLocation):
+//   'idb'    — here, in householdKey (the web, and phones until the key has moved)
+//   'secure' — in the phone's secure storage (js/secure-key.js); householdKey is '' and keyTag, a
+//              random id with no relation to the key, says which household this config belongs to.
 // wasPaired: this device has been in a household before (kept after turning sync off, so starting
 // a new household can warn that the other devices stay on the old one). Not a secret.
-const NO_CONFIG = Object.freeze({ relayUrl: '', householdKey: '', enabled: false, wasPaired: false });
+const NO_CONFIG = Object.freeze({ relayUrl: '', householdKey: '', enabled: false, wasPaired: false, keyLocation: 'idb', keyTag: '' });
+
+/** Which household a config is in ('' for none), without reading the key from secure storage. */
+export function householdIdentity(c) {
+  if (c?.keyLocation === 'secure') return c.keyTag ? `secure:${c.keyTag}` : '';
+  return c?.householdKey || '';
+}
+
+/** The stored config after `patch` (pure). Unknown fields are ignored. */
+export function nextSyncConfig(cur, patch = {}) {
+  const c = { ...NO_CONFIG, ...cur };
+  const str = (v, d) => (typeof v === 'string' ? v.trim() : d);
+  const next = {
+    relayUrl: str(patch.relayUrl, c.relayUrl),
+    householdKey: str(patch.householdKey, c.householdKey),
+    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : c.enabled,
+    keyLocation: patch.keyLocation === 'secure' || patch.keyLocation === 'idb' ? patch.keyLocation : c.keyLocation,
+    keyTag: str(patch.keyTag, c.keyTag),
+  };
+  if (next.keyLocation === 'secure') next.householdKey = ''; // never both
+  next.wasPaired = Boolean(c.wasPaired || householdIdentity(c) || householdIdentity(next));
+  return next;
+}
 
 async function recordsDb() {
   const db = await open();
@@ -332,9 +358,9 @@ async function recordsDb() {
 }
 
 /**
- * { relayUrl, householdKey, enabled }.
- * TODO(secure-storage): the household key is kept in IndexedDB for now. In Phase 2 it moves to the
- * Android Keystore / iOS Keychain (and stays here only on the web), so it isn't readable from storage.
+ * The stored config: { relayUrl, householdKey, enabled, wasPaired, keyLocation, keyTag }. On a phone
+ * whose key has moved to secure storage, householdKey is ''. Everything else reads the config through
+ * js/secure-key.js, which fills in the key.
  */
 export async function getSyncConfig() {
   const db = await recordsDb();
@@ -343,8 +369,8 @@ export async function getSyncConfig() {
 }
 
 /**
- * Change some config fields. A different household key means a different room: the cursor goes
- * back to 0, and every record is queued again so the new room gets this device's data. One transaction.
+ * Change some config fields. A different household means a different room: the cursor goes back
+ * to 0, and every record is queued again so the new room gets this device's data. One transaction.
  */
 export async function setSyncConfig(patch) {
   const db = await recordsDb();
@@ -352,17 +378,12 @@ export async function setSyncConfig(patch) {
   const metaStore = tx.objectStore(META);
   const [row, records] = await Promise.all([result(metaStore.get('syncConfig')), result(tx.objectStore(RECORDS).getAll())]);
   const cur = { ...NO_CONFIG, ...row?.value };
-  const next = {
-    relayUrl: typeof patch.relayUrl === 'string' ? patch.relayUrl.trim() : cur.relayUrl,
-    householdKey: typeof patch.householdKey === 'string' ? patch.householdKey.trim() : cur.householdKey,
-    enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled,
-  };
-  next.wasPaired = Boolean(cur.wasPaired || cur.householdKey || next.householdKey);
+  const next = nextSyncConfig(cur, patch);
   metaStore.put({ key: 'syncConfig', value: next });
   let requeued = 0;
-  if (next.householdKey !== cur.householdKey) {
+  if (householdIdentity(next) !== householdIdentity(cur)) {
     metaStore.put({ key: 'syncCursor', value: 0 });
-    if (next.householdKey) {
+    if (householdIdentity(next)) {
       const ops = requeueOps(records);
       for (const op of ops) tx.objectStore(OUTBOX).put(op);
       requeued = ops.length;
@@ -371,6 +392,24 @@ export async function setSyncConfig(patch) {
   await done(tx);
   if (requeued) changesEnqueued(requeued);
   return next;
+}
+
+/**
+ * The key has been copied to secure storage and read back: drop it from here and record where it
+ * is, in one write, only if this config still holds exactly `expectedKey` (so a key changed in the
+ * meantime is never dropped). Same household: the cursor and outbox are untouched.
+ * Returns true if the move was recorded.
+ */
+export async function moveKeyToSecure(expectedKey, keyTag) {
+  if (!expectedKey || !keyTag) throw new Error('moveKeyToSecure needs the key and a tag');
+  const db = await recordsDb();
+  const tx = db.transaction(META, 'readwrite');
+  const metaStore = tx.objectStore(META);
+  const cur = { ...NO_CONFIG, ...(await result(metaStore.get('syncConfig')))?.value };
+  if (cur.keyLocation !== 'idb' || cur.householdKey !== expectedKey) { await done(tx); return false; }
+  metaStore.put({ key: 'syncConfig', value: { ...nextSyncConfig(cur, { keyLocation: 'secure', keyTag }), wasPaired: true } });
+  await done(tx);
+  return true;
 }
 
 /** Queue every record again and restart from cursor 0 (the relay lost its data, or the room is new). */
@@ -478,13 +517,7 @@ export async function replaceWithRemote(ops, cursor, config = {}) {
   recStore.clear();
   tx.objectStore(OUTBOX).clear();
   for (const rec of replica.records.values()) recStore.put(rec);
-  const cur = { ...NO_CONFIG, ...cfgRow?.value };
-  const next = {
-    relayUrl: typeof config.relayUrl === 'string' ? config.relayUrl.trim() : cur.relayUrl,
-    householdKey: typeof config.householdKey === 'string' ? config.householdKey.trim() : cur.householdKey,
-    enabled: typeof config.enabled === 'boolean' ? config.enabled : cur.enabled,
-  };
-  next.wasPaired = Boolean(cur.wasPaired || cur.householdKey || next.householdKey);
+  const next = nextSyncConfig(cfgRow?.value, config);
   metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
   metaStore.put({ key: 'syncCursor', value: cursor });
   metaStore.put({ key: 'syncConfig', value: next });
@@ -510,7 +543,7 @@ export async function setLastSynced(ms) {
 /** Everything js/sync.js needs from storage, as one adapter (tests pass an in-memory one instead). */
 export const syncStore = {
   getConfig: getSyncConfig, setConfig: setSyncConfig, requeueAll, pendingOps, pendingCount, removeSentOps,
-  getCursor: getSyncCursor, applyRemote, replaceWithRemote, liveItemCount, getLastSynced, setLastSynced,
+  getCursor: getSyncCursor, applyRemote, replaceWithRemote, moveKeyToSecure, liveItemCount, getLastSynced, setLastSynced,
   onChangesEnqueued: (fn) => onChangesEnqueued(fn),
 };
 

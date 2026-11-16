@@ -6,9 +6,13 @@ export const JOIN_MERGE = 'merge';
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** Which screen the Sync sheet opens on: 'active' when this device has a household key, else 'setup'. */
-export function sheetView(config) {
-  return config?.householdKey ? 'active' : 'setup';
+/**
+ * Which screen the Sync sheet opens on, from the key-free summary (js/secure-key.js status()):
+ * 'active' when this device is in a household and can read its key, else 'setup' (which offers
+ * Join again when the key can't be read on this device).
+ */
+export function sheetView(info) {
+  return info?.paired && !info.keyUnavailable ? 'active' : 'setup';
 }
 
 /**
@@ -72,8 +76,9 @@ export function statusText(status) {
 }
 
 /** The hint under "Sync between devices" in Settings. */
-export function summaryText(config, status) {
-  if (!config?.householdKey) return 'Off';
-  if (!config.enabled) return 'Paused on this device';
+export function summaryText(info, status) {
+  if (info?.paired && info.keyUnavailable) return 'Needs the 12 words on this device';
+  if (!info?.paired) return 'Off';
+  if (!info.enabled) return 'Paused on this device';
   return `On · ${STATE_TEXT[status?.state] ?? 'Off'}`;
 }

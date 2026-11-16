@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as box from '../js/crypto.js';
 import { applyRemoteOps, requeueOps, toItem, settingsOps, effectiveSettings, SETTINGS_ID } from '../js/storage.js';
-import { createSyncEngine, RelayHttpError, JoinError, normalizeRelayUrl, DEFAULT_RELAY_URL } from '../js/sync.js';
+import { createSyncEngine, RelayHttpError, JoinError, normalizeRelayUrl, DEFAULT_RELAY_URL, KEY_NEEDED_MESSAGE } from '../js/sync.js';
 import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
 
 const RELAY = 'https://relay.example';
@@ -114,6 +114,7 @@ function device(name, relay, { skewMs = 0, hooks, key = KEY } = {}) {
     async getConfig() { return { ...s.config }; },
     async setConfig(p) {
       const next = { ...s.config, ...p };
+      if (typeof p.householdKey === 'string') delete next.keyUnavailable; // a key set again is readable
       if (next.householdKey !== s.config.householdKey) {
         s.cursor = 0;
         if (next.householdKey) for (const op of requeueOps([...s.records.values()])) s.outbox.set(k(op.rec, op.f), op);
@@ -152,6 +153,7 @@ function device(name, relay, { skewMs = 0, hooks, key = KEY } = {}) {
       s.outbox.clear();
       s.cursor = cursor;
       s.config = { ...s.config, ...cfg };
+      delete s.config.keyUnavailable;
       return { records: replica.records.size, changed: out.changed, skipped: out.skipped };
     },
     async liveItemCount() { return [...s.records.values()].filter((r) => r.id !== SETTINGS_ID).map(toItem).filter(Boolean).length; },
@@ -726,4 +728,52 @@ test('turning off keeps every item; the key is gone and nothing more is sent', a
   await a.engine.syncNow();
   assert.equal(relay.calls.length, calls, 'no network while off');
   assert.deepEqual(a.items().map((i) => i.id), ['x', 'y']);
+});
+
+test('a key that cannot be read (backup restored to a new phone): a clear status, no retries, items untouched, Join works', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  a.add('x', expense('Household item', 5));
+  await a.engine.startHousehold(key);
+
+  // B: restored from A's backup onto a new phone. Its config says "in a household, key in secure
+  // storage", but the Keystore entry doesn't exist here, so the vault reports keyUnavailable.
+  const b = device('devB', relay, { key: '' });
+  for (const [id, r] of a.s.records) b.s.records.set(id, structuredClone(r));
+  b.s.config = { relayUrl: RELAY, householdKey: '', enabled: true, keyUnavailable: true };
+  const before = JSON.stringify(b.items());
+  const seen = [];
+  b.engine.onStatus((st) => seen.push(st));
+  const calls = relay.calls.length;
+  await b.engine.start();
+  assert.equal(b.engine.getStatus().state, 'error');
+  assert.equal(b.engine.getStatus().lastError, KEY_NEEDED_MESSAGE);
+  assert.equal(KEY_NEEDED_MESSAGE, 'Sync needs the 12 words on this device. Join again with your recovery words.');
+  assert.deepEqual(b.timers.delays(), [], 'no retry timer');
+  await b.timers.tickIntervals();
+  await b.engine.syncNow();
+  assert.equal(relay.calls.length, calls, 'nothing sent to the relay');
+  assert.equal(JSON.stringify(b.items()), before, 'local items untouched');
+
+  // Join again with the words.
+  await b.engine.joinHousehold(key, 'merge');
+  assert.equal(b.engine.getStatus().state, 'ok');
+  assert.deepEqual(b.items(), a.items());
+});
+
+test('a live socket that closes at once (no WebSocket here) does not turn a good sync into an error', async () => {
+  const relay = memoryRelay();
+  const a = device('devA', relay);
+  const t = relay.transport(a.net);
+  const engine = createSyncEngine({
+    store: a.store, env: a.env, timers: a.timers, random: () => 0.5, log: { warn() {}, error() {} },
+    transport: { ...t, live(base, room, token, client, { onClose }) { onClose(); return { close() {} }; } },
+  });
+  await engine.start();
+  a.add('x', expense('Example', 1));
+  await engine.syncNow();
+  assert.equal(engine.getStatus().state, 'ok');
+  assert.equal(engine.getStatus().lastError, '');
+  assert.ok(a.timers.delays().length >= 1, 'a socket retry is scheduled');
 });
