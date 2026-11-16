@@ -943,12 +943,16 @@ dialog::backdrop { background: var(--scrim); }
   border: var(--border-width) solid var(--border); background: var(--surface); color: var(--text);
   font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; cursor: pointer;
 }
-.yc-back { position: absolute; top: var(--space-3); right: var(--space-3); opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
-.yc-back.on { opacity: 1; pointer-events: auto; }
+/* Hidden (and out of the tab order) until a month is focused. */
+.yc-back { position: absolute; top: var(--space-3); right: var(--space-3); opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
+.yc-back.on { opacity: 1; visibility: visible; transition: opacity 0.3s ease; }
 .yc-now { flex: none; opacity: 0.35; transition: opacity 0.3s ease; }
 .yc-now.on { opacity: 1; }
+/* Legend and Jump to now along the card's bottom edge. The dock moves up into the empty strip under
+   the month labels (the chart's bottom 25% of its width, about 90 of 470 units) and grows the card
+   only if a long legend (many categories) needs more room, so it never covers the labels. */
 .yc-dock {
-  position: absolute; left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
+  position: relative; margin-top: -25%; padding: 0 var(--space-2) var(--space-2) var(--space-3);
   display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-2); transition: opacity 0.3s ease;
 }
 .yc-dock.hide { opacity: 0; pointer-events: none; }

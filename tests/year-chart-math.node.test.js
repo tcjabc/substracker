@@ -194,7 +194,8 @@ test('readout wording helpers: delta vs the average, names, the above-average ma
   assert.deepEqual(monthDelta(50, 0), { kind: 'above', amount: 50 });
   assert.equal(listNames(['Music', 'Phone']), 'Music, Phone');
   const long = listNames(['YouTube Premium', 'Amazon Prime', 'Loot Studios', 'NYT Games']);
-  assert.ok(long.length <= 34 && long.endsWith('…'), long);
+  assert.ok(long.length <= 34 && long.endsWith('…') && !/[,\s]…$/.test(long), long);
+  assert.equal(listNames(['Energy', 'Gym', 'Music', 'Phone', 'Rent', 'Video']), 'Energy, Gym, Music, Phone, Rent…');
   assert.equal(aboveAverage(1101, 1000), true);
   assert.equal(aboveAverage(1100, 1000), false);
   assert.equal(aboveAverage(5, 0), false);

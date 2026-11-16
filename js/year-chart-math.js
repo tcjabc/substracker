@@ -201,7 +201,7 @@ export function monthDelta(total, average) {
 /** Names as one line, cut at `max` characters with an ellipsis. */
 export function listNames(names, max = 34) {
   const s = names.join(', ');
-  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+  return s.length > max ? `${s.slice(0, max - 1).replace(/[\s,]+$/, '')}…` : s;
 }
 
 /** Above-average marker: more than 10% over the average of these months. */

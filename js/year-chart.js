@@ -132,7 +132,10 @@ export function createYearChart(host, opts) {
   const monthTitle = (d) => `${monthFull(d.y, d.m)} ${d.y}`;
 
   function segments(d) {
-    const T = d.byType.map((t) => ({ key: t.key, name: TYPE_NAMES[t.key], amount: t.amount, colour: TYPE_COLOUR[t.key], sub: listNames(t.names) }));
+    const T = d.byType.map((t) => ({
+      key: t.key, name: TYPE_NAMES[t.key], amount: t.amount, colour: TYPE_COLOUR[t.key],
+      sub: listNames(t.names), names: t.names.join(', '), // `sub` on screen, every name for screen readers
+    }));
     const C = d.byCategory.map((c) => ({ key: c.group, name: c.group, amount: c.amount, colour: opts.categoryColour(c.group) }));
     for (const segs of [T, C]) {
       let cum = 0;
@@ -375,7 +378,7 @@ export function createYearChart(host, opts) {
   function detailText(b) {
     const d = b.d;
     const segs = stack === 'category' ? b.segs.C : b.segs.T;
-    const rows = segs.slice().reverse().map((s) => `${s.name} ${money(s.amount)}${s.sub ? ` (${s.sub})` : ''}`);
+    const rows = segs.slice().reverse().map((s) => `${s.name} ${money(s.amount)}${s.names ? ` (${s.names})` : ''}`);
     return `${monthTitle(d)}, ${money(d.total)}, ${deltaText(d.total).text.toLowerCase()}. ${rows.join('. ')}${rows.length ? '.' : 'Nothing due.'}`;
   }
 
