@@ -49,13 +49,17 @@ Each item (expense or income) is stored as:
 
 ## Storage and backups
 
-All persistence goes through `js/storage.js`; no other file touches IndexedDB or localStorage. The IndexedDB database `substracker` (version 2) has three stores:
+All persistence goes through `js/storage.js`; no other file touches IndexedDB or localStorage. The IndexedDB database `substracker` (version 3) has these stores:
 
-- `items`: every expense and income record, keyed by `id`.
-- `settings`: `defaultCurrency` and `groupColors`, one row per key.
-- `meta`: `schemaVersion` (currently 3) and a record of the one-time migration.
+- `records`: every expense and income item in a sync-ready form, keyed by `id`: `{ id, fields: { …item fields, del }, ts: { field: stamp } }`. Each field carries the hybrid-logical-clock stamp of its last change, and `del` is the deleted flag. Deleting an item sets `del` to `true` and keeps the record as a tombstone. The app only ever sees live records, in the plain item shape above.
+- `outbox`: changes not yet sent to other devices, one op `{ id, rec, f, v, t, dev }` per changed field, keyed by `[rec, f]`, so a newer change to a field replaces its unsent older op. Every save, delete and import writes its ops in the same transaction as the records.
+- `meta`: `schemaVersion` (currently 4), `deviceId` (made once per install), `hlc` (the clock), `syncCursor` (0 until sync exists) and records of the one-time migrations.
+- `settings`: `defaultCurrency` and `groupColors`, one row per key. Settings are per device: never synced, never exported.
+- `items`: the 1.3–1.4 store, kept untouched as a fallback (see below).
 
-Versions up to 1.2 kept items in a store called `subscriptions`. On the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present) before it's marked done. If the check fails, the app keeps using the old store and says so. The old store is left untouched as a fallback and will be removed in a later release. A few per-device view preferences (theme, tab, grid/list, period, donut/list) stay in localStorage.
+The merge rules live in `js/sync-core.js`, a pure module with no DOM, storage or platform code, so web, Android and iOS merge identically. Each field is last-write-wins by stamp, ties go to the higher device id, and applying an op twice or in any order gives the same result. A delete only changes `del`, so an edit made elsewhere doesn't undo it; importing or saving the item again brings it back.
+
+Migrations run once and are verified before the app switches over. Versions up to 1.2 kept items in a store called `subscriptions`: on the first load of 1.3.0 they're copied into `items`, and the copy is checked (same count, every id present). The sync-ready step then copies `items` into `records`, stamping each item's fields with its own `updatedAt` and queueing an op per field, and checks the copy (one live record per item that reads back identical, a stamp and a matching op for every field). Until a check passes, the app keeps using the previous store and says so; an unfinished or unverified attempt is cleared and redone on the next load. The older stores are left untouched as fallbacks and will be removed in a later release. A few per-device view preferences (theme, tab, grid/list, period, donut/list) stay in localStorage.
 
 The app asks the browser for persistent storage (`navigator.storage.persist()`), so the data isn't cleared under storage pressure where the browser supports that.
 
@@ -64,16 +68,15 @@ Export files have this shape:
 ```json
 {
   "app": "substracker",
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "exportedAt": "ISO timestamp",
-  "items": [ … ],
-  "settings": { "defaultCurrency": "TWD", "groupColors": { "Entertainment": "g1" } }
+  "items": [ … ]
 }
 ```
 
-`groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`); files without it import fine and get colours assigned automatically.
+`items` holds the live (not deleted) items with their ids, in the plain item shape. Settings, preferences and sync bookkeeping (device id, clock, outbox, timestamps) are never exported.
 
-Import also reads backups from 1.0–1.2 (`{ "format": "substracker", "version": 1 | 2, … }`, with records under `subscriptions` in version 1). It checks each item's required fields and their types: `id` (text), `name` (non-empty text), `price` (a number of 0 or more), `currency` (a 3-letter code), `cycle` (`monthly`, `annual` or `once`), `type` if present (`expense` or `income`), and `date` for one-offs. Unknown fields are ignored, so files from newer versions still import. Merge matches items by `id` and keeps whichever has the newer `updatedAt`; Replace deletes everything first and takes the file's settings. Both write in one transaction.
+Import also reads every older backup: schemaVersion 3 files (1.3–1.4, the same envelope plus `settings`) and 1.0–1.2 files (`{ "format": "substracker", "version": 1 | 2, … }`, with records under `subscriptions` in version 1). Settings in an older file are still applied: `groupColors` maps a category name to a swatch key `g1`–`g10` (the `--group-1` … `--group-10` tokens in `css/app.css`), and a file without them leaves your settings as they are; colours for new groups are assigned automatically. It checks each item's required fields and their types: `id` (text), `name` (non-empty text), `price` (a number of 0 or more), `currency` (a 3-letter code), `cycle` (`monthly`, `annual` or `once`), `type` if present (`expense` or `income`), and `date` for one-offs. Unknown fields are ignored, so files from newer versions still import. Merge matches items by `id` and keeps whichever has the newer `updatedAt` (an item deleted here since the backup comes back); Replace deletes (tombstones) every item not in the file and takes an older file's settings. Both write in one transaction, as ops, like any other change.
 
 Saving the export file goes through `deliverFile()` in `js/files.js`, which is the place to swap the browser download for a native share sheet.
 
@@ -85,14 +88,16 @@ manifest.json         PWA manifest (relative paths)
 sw.js                 Service worker: precaches the shell, caches logos
 css/app.css           All styles; design tokens live at the top in :root
 js/app.js             UI, rendering, summary strip, form, insights, import/export screens
-js/storage.js         The only persistence layer: IndexedDB, migration, export/import checks, preferences
+js/storage.js         The only persistence layer: IndexedDB, migrations, outbox, export/import checks, preferences
+js/sync-core.js       Pure sync rules: hybrid logical clock, field ops, last-write-wins merge, tombstones
 js/files.js           Hands a file to the person: share sheet in the native app, download on the web
 js/platform.js        isNative() and plugin(): the only place that touches Capacitor
 js/services.js        Known services → domain + category
 js/logos.js           Favicon logos with initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
-tests/storage.html    In-browser tests for js/storage.js
+tests/storage.html    In-browser tests for js/storage.js (IndexedDB)
+tests/*.node.test.js  Node tests for js/sync-core.js and the pure parts of js/storage.js
 
 Native app only (the web version ignores these):
 package.json          Capacitor 8 and plugins; npm scripts
@@ -118,7 +123,11 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-With the server running, open <http://localhost:8080/tests/storage.html>. It runs the storage tests (migration, export/import round trip, merge rules and bad-file rejection) against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering and skew, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration and importing old backups.
+
+With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
+
+Neither is part of the app: `tests/` isn't in the service worker's shell or in the native copy.
 
 ## Native builds
 
