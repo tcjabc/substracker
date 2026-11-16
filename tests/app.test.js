@@ -1,5 +1,6 @@
-// In-browser tests for the app screens (js/app.js): the Insights month view on a cash basis and
-// the "needs a renewal date" notice. Open tests/app.html from a local server. The app runs with
+// In-browser tests for the app screens (js/app.js): the Insights month view on a cash basis, the
+// "needs a renewal date" notice, and the add/edit form requiring a renewal date (with field-level
+// saves and rollover still working). Open tests/app.html from a local server. The app runs with
 // index.html's markup against a throwaway database, seeded with made-up items dated relative to
 // today, so the tests work in any month. The tests run in order, as one session in the app.
 
@@ -90,6 +91,115 @@ test('tapping the notice opens the first undated plan for editing', async () => 
   eq(dialog().querySelector('[name="nextRenewal"]').value, '', 'date not filled in');
   $('#sub-dialog [data-close]').click();
   await until(() => !isOpen(), 'sheet closes');
+});
+
+/* ------------------------------------------------------- Renewal date form */
+
+const field = (name) => dialog().querySelector(`[name="${name}"]`);
+const errorFor = (name) => text(dialog().querySelector(`[data-error-for="${name}"]`));
+const save = () => dialog().querySelector('button[type="submit"]').click();
+const setValue = (name, value) => {
+  field(name).value = value;
+  field(name).dispatchEvent(new Event('input', { bubbles: true }));
+};
+const stored = async (id) => (await storage.getAll()).find((s) => s.id === id);
+// The outbox holds one pending op per record field, replaced when the field is written again.
+const opStamps = async (id) => Object.fromEntries((await storage.syncState()).outbox
+  .filter((op) => op.rec === id).map((op) => [op.f, op.t]));
+const written = (before, after) => Object.keys(after).filter((f) => after[f] !== before[f]).sort();
+
+test('editing any field of an undated plan asks for a renewal date and keeps the sheet open', async () => {
+  notice().click();
+  await until(isOpen, 'edit sheet opens');
+  setValue('notes', 'Changed note');
+  save();
+  await tick(50);
+  assert(isOpen(), 'sheet stays open');
+  eq(errorFor('nextRenewal'), 'Pick a renewal date.', 'error message');
+  eq(field('nextRenewal').getAttribute('aria-invalid'), 'true', 'field marked invalid');
+  assert(document.activeElement === field('nextRenewal'), 'renewal field focused');
+  eq(field('notes').value, 'Changed note', 'what was typed is kept');
+  eq((await stored('test-gym')).notes, '', 'nothing saved');
+});
+
+test('picking the date clears the error and saves only the fields that changed', async () => {
+  const before = await opStamps('test-gym');
+  setValue('nextRenewal', day(Y, M, 20));
+  eq(errorFor('nextRenewal'), '', 'error cleared on input');
+  save();
+  await until(() => !isOpen(), 'sheet closes');
+  await tick(50);
+  eq(written(before, await opStamps('test-gym')), ['nextRenewal', 'notes', 'updatedAt'], 'fields written');
+  const gym = await stored('test-gym');
+  eq([gym.nextRenewal, gym.notes, gym.price, gym.name], [day(Y, M, 20), 'Changed note', 900, 'Gym'], 'stored item');
+});
+
+test('a plan that has its date leaves the notice, and its amount moves into the month', async () => {
+  eq(text(notice()), `1 plan needs a renewal date, ${T(1200)} not shown`, 'one left');
+  eq(text($('#insights .stat-primary .stat-value')), T(1699 + 900), 'month now includes Gym');
+});
+
+test('a plan with a past stored date still saves as it is, and rolls forward for display', async () => {
+  $('#insights .rank-row[data-id="test-cloud"]').click();
+  await until(isOpen, 'edit sheet opens');
+  eq(field('nextRenewal').value, day(Y - 2, M, 15), 'stored date shown as entered');
+  const before = await opStamps('test-cloud');
+  setValue('price', '1300');
+  save();
+  await until(() => !isOpen(), 'sheet closes (a past date is valid)');
+  await tick(50);
+  eq(written(before, await opStamps('test-cloud')), ['price', 'updatedAt'], 'date not rewritten');
+  eq((await stored('test-cloud')).nextRenewal, day(Y - 2, M, 15), 'stored date unchanged');
+  eq(text($('#insights .stat-primary .stat-value')), T(499 + 900 + 1300), 'still due this month');
+  // The Money tab shows the rolled-forward date: this year's or next year's 15th of this month.
+  const tag = text($('#subs-list [data-id="test-cloud"] .tag'));
+  assert(/^Renews/.test(tag), `renewal tag shown (${tag})`);
+});
+
+test('a new monthly or annual expense needs a renewal date; a one-off needs its date', async () => {
+  $('[data-action="add"]').click();
+  await until(isOpen, 'add sheet opens');
+  setValue('name', 'Test service');
+  setValue('price', '10');
+  eq(field('nextRenewal').value, '', 'no date filled in');
+  save();
+  await tick(50);
+  assert(isOpen(), 'monthly without a date is not saved');
+  eq(errorFor('nextRenewal'), 'Pick a renewal date.', 'monthly message');
+  dialog().querySelector('input[name="cycle"][value="annual"]').click();
+  save();
+  await tick(50);
+  assert(isOpen(), 'annual without a date is not saved');
+  eq(errorFor('nextRenewal'), 'Pick a renewal date.', 'annual message');
+  dialog().querySelector('input[name="cycle"][value="once"]').click();
+  eq(errorFor('nextRenewal'), '', 'renewal error cleared for a one-off');
+  setValue('date', '');
+  save();
+  await tick(50);
+  assert(isOpen(), 'one-off without a date is not saved');
+  eq(errorFor('date'), 'Pick the date it happens.', 'one-off message');
+  setValue('date', day(Y, M, 3));
+  save();
+  await until(() => !isOpen(), 'one-off with a date saves');
+  $('[data-action="add"]').click();
+  await until(isOpen, 'add sheet opens again');
+  setValue('name', 'Dated service');
+  setValue('price', '20');
+  setValue('nextRenewal', day(Y, M, 9));
+  save();
+  await until(() => !isOpen(), 'monthly with a date saves');
+  eq((await storage.getAll()).find((s) => s.name === 'Dated service')?.nextRenewal, day(Y, M, 9), 'stored');
+});
+
+test('income needs no renewal date', async () => {
+  $('[data-action="add-income"]').click();
+  await until(isOpen, 'income sheet opens');
+  assert($('#field-renewal').hidden, 'no renewal field for income');
+  setValue('name', 'Test salary');
+  setValue('price', '100');
+  save();
+  await until(() => !isOpen(), 'income saves');
+  eq((await storage.getAll()).find((s) => s.name === 'Test salary').nextRenewal, '', 'no date stored');
 });
 
 /* ------------------------------------------------------------------ Runner */

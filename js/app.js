@@ -876,6 +876,7 @@ function syncFormMode() {
   $('#field-row-dates').hidden = $$('#field-row-dates > .field', form).every((el) => el.hidden);
   if (once && !f.date.value) f.date.value = todayStamp();
   if (!once) clearErrors('date');
+  if (income || once) clearErrors('nextRenewal');
 
   f.name.placeholder = income ? 'e.g. My salary' : 'e.g. Netflix';
   // Service suggestions only make sense for expenses.
@@ -925,6 +926,7 @@ function bindForm() {
   f.emoji.addEventListener('focus', () => f.emoji.select());
   f.price.addEventListener('input', () => clearErrors('price'));
   f.date.addEventListener('input', () => clearErrors('date'));
+  f.nextRenewal.addEventListener('input', () => clearErrors('nextRenewal'));
   $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
   // Expense | Income toggle: swaps the type-specific fields and keeps everything typed so far.
   // Saving an existing item with the other type selected converts it (readForm uses formType).
@@ -996,6 +998,11 @@ function readForm() {
     setError('price', `Enter ${income ? 'an amount' : 'a price'} of 0 or more.`); valid = false;
   }
   if (cycle === 'once' && !isDay(f.date.value)) { setError('date', 'Pick the date it happens.'); valid = false; }
+  // Recurring expenses need a renewal date to show in a month. A plan saved before this was
+  // required keeps working without one until it's edited; then the date has to be picked.
+  if (!income && cycle !== 'once' && !isDay(f.nextRenewal.value)) {
+    setError('nextRenewal', 'Pick a renewal date.'); valid = false;
+  }
   if (!valid) { form.querySelector('[aria-invalid="true"]')?.focus(); return null; }
 
   const existing = state.subs.find((s) => s.id === state.editingId);
@@ -1025,7 +1032,7 @@ function setError(field, msg) {
   $(`[data-error-for="${field}"]`, form).textContent = msg;
 }
 function clearErrors(field) {
-  const fields = field ? [field] : ['name', 'price', 'date'];
+  const fields = field ? [field] : ['name', 'price', 'date', 'nextRenewal'];
   for (const k of fields) {
     form.elements[k].removeAttribute('aria-invalid');
     $(`[data-error-for="${k}"]`, form).textContent = '';
