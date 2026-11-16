@@ -113,6 +113,52 @@
         <p class="footnote" id="storage-note" data-native-text="Your data is stored locally on this device. Nothing is sent to a server. Logos are loaded from Google's favicon service using only the domain you enter.">Your data is stored locally in this browser (IndexedDB). Nothing is sent to a server. Logos are loaded from Google's favicon service using only the domain you enter.</p>
       </div>
 
+      <!-- Developer sync screen: hidden unless opened with ?dev=1 or 7 taps on the version line. -->
+      <div class="settings-group" id="dev-sync" hidden>
+        <h2 class="group-title">Sync (developer)</h2>
+        <div class="panel">
+          <p class="dev-warning" role="note">
+            <strong>The household key is a secret.</strong> Anyone who has it can read and change this household's items.
+            Only enter it on your own devices, and never share it in a chat or screenshot.
+            Items already on this device are merged into the household.
+          </p>
+          <div class="dev-fields">
+            <label class="field">
+              <span class="field-label">Relay URL</span>
+              <input class="input" id="dev-relay" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://peek-budget-relay.example.workers.dev">
+            </label>
+            <label class="field">
+              <span class="field-label">Household key</span>
+              <input class="input dev-key" id="dev-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="22 characters">
+            </label>
+            <div class="dev-actions">
+              <button type="button" class="btn" id="dev-key-show" aria-pressed="false">Show key</button>
+              <button type="button" class="btn" id="dev-key-generate">Generate new</button>
+            </div>
+            <span class="field-error" id="dev-error" role="alert"></span>
+          </div>
+          <label class="setting-row">
+            <span class="setting-label">Enable sync</span>
+            <input type="checkbox" class="dev-check" id="dev-enabled">
+          </label>
+          <div class="setting-row">
+            <span class="setting-label">
+              Status
+              <span class="setting-hint" id="dev-status" role="status" aria-live="polite">Off</span>
+            </span>
+            <button type="button" class="btn" id="dev-sync-now">Sync now</button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Pending changes <span class="setting-hint" id="dev-pending">0</span></span>
+            <span class="setting-label dev-right">Last sync <span class="setting-hint" id="dev-last">Never</span></span>
+          </div>
+          <div class="dev-actions dev-actions-end">
+            <button type="button" class="btn btn-danger-text" id="dev-disconnect">Disconnect</button>
+            <button type="button" class="btn btn-primary" id="dev-save">Save</button>
+          </div>
+        </div>
+      </div>
+
       <div class="settings-group">
         <h2 class="group-title" data-web-only>Install</h2>
         <div class="panel panel-text" data-web-only>

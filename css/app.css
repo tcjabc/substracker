@@ -642,6 +642,21 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .setting-hint { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
 .footnote { font-size: var(--text-xs); color: var(--text-faint); margin: var(--space-2) var(--space-1) 0; }
 
+/* Developer sync screen (hidden in normal use) */
+.dev-warning {
+  margin: 0; padding: var(--space-3) var(--space-4);
+  background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm);
+  border-bottom: var(--border-width) solid var(--border);
+}
+.dev-warning strong { color: inherit; }
+.dev-fields { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--border); }
+.dev-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.dev-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.dev-actions-end { justify-content: space-between; padding: var(--space-3) var(--space-4); }
+.dev-check { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); }
+.dev-right { text-align: right; }
+#dev-error:empty { display: none; }
+
 /* ==========================================================================
    Tab bar & FAB
    ========================================================================== */

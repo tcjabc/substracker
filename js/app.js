@@ -3,6 +3,8 @@ import { deliverFile } from './files.js';
 import { isNative, setStatusBarStyle } from './platform.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
+import { createSyncEngine } from './sync.js';
+import { initSyncScreen } from './sync-ui.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
@@ -128,9 +130,12 @@ async function init() {
   storage.setBlockedHandler(() => toast('Close other Peek Budget tabs or windows to finish updating.', {
     label: 'Dismiss', sticky: true, run: () => {},
   }));
+  let syncUnavailable = 'Local storage could not be opened.';
   try {
     const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
-    if ((await storage.status()).usingLegacy) {
+    const usingLegacy = (await storage.status()).usingLegacy;
+    syncUnavailable = usingLegacy ? 'Sync needs the storage update to finish first.' : '';
+    if (usingLegacy) {
       toast('Storage update could not be verified, so the previous copy of your data is in use.', {
         label: 'Dismiss', sticky: true, run: () => {},
       });
@@ -165,6 +170,24 @@ async function init() {
   render();
   registerSW();
   $('#app-version').textContent = `Peek Budget ${APP_VERSION}`;
+  startSync(syncUnavailable);
+}
+
+/* --------------------------------------------------------------------------
+   Sync (off unless set up on the developer screen)
+   -------------------------------------------------------------------------- */
+function startSync(unavailable) {
+  let engine = null;
+  if (!unavailable) {
+    engine = createSyncEngine({ store: storage.syncStore });
+    // Changes from other devices: refresh the lists the same way an import or edit does.
+    engine.onRemoteChanges(async () => {
+      state.subs = await storage.getAll();
+      render();
+    });
+    engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
+  }
+  initSyncScreen({ engine, storage, unavailable, ui: { toast, confirmDialog, setTab } });
 }
 
 /* --------------------------------------------------------------------------
@@ -739,6 +762,21 @@ const dialog = $('#sub-dialog');
 const form = $('#sub-form');
 // Tracks whether domain/category still hold auto-suggested values (safe to overwrite).
 const auto = { domain: false, category: false };
+// The item as it was when the edit sheet opened. Saving writes only the fields changed since then,
+// so an edit synced from another device in the meantime isn't overwritten by the stale form value.
+let formBase = null;
+
+/** The item to save: the latest stored copy plus only the fields edited in the form. */
+function mergeFormEdit(fromForm) {
+  const latest = state.subs.find((s) => s.id === fromForm.id);
+  if (!formBase || !latest) return fromForm;
+  const out = { ...latest };
+  for (const [k, v] of Object.entries(fromForm)) {
+    if (k === 'id' || k === 'createdAt') continue;
+    if (k === 'updatedAt' || v !== (formBase[k] ?? (k === 'type' ? 'expense' : ''))) out[k] = v;
+  }
+  return out;
+}
 
 function fillStaticLists() {
   $('#service-names').innerHTML = SERVICES.map((s) => `<option value="${esc(s.name)}">`).join('');
@@ -761,6 +799,7 @@ function fillCategoryList() {
 function openForm(sub = null, type = 'expense') {
   try {
     state.editingId = sub?.id ?? null;
+    formBase = sub ? { ...sub } : null;
     state.formType = sub ? (isIncome(sub) ? 'income' : 'expense') : type;
     form.reset();
     clearErrors();
@@ -871,8 +910,9 @@ function bindForm() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const sub = readForm();
-    if (!sub) return;
+    const fromForm = readForm();
+    if (!fromForm) return;
+    const sub = mergeFormEdit(fromForm);
     try {
       await storage.save(sub);
       const i = state.subs.findIndex((s) => s.id === sub.id);

@@ -1,6 +1,6 @@
 // Service worker: precaches the app shell so SubsTracker works fully offline.
 // Bump VERSION whenever any shell file changes so clients pick up the update.
-const VERSION = 'v1.5.0';
+const VERSION = 'v1.6.0';
 const SHELL_CACHE = `substracker-shell-${VERSION}`;
 const LOGO_CACHE = 'substracker-logos';
 const LOGO_LIMIT = 200;
@@ -16,6 +16,7 @@ const SHELL = [
   './js/sync-core.js',
   './js/crypto.js',
   './js/sync.js',
+  './js/sync-ui.js',
   './js/files.js',
   './js/platform.js',
   './js/services.js',
