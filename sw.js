@@ -27,6 +27,7 @@ const SHELL = [
   './js/jsqr.js',
   './js/files.js',
   './js/platform.js',
+  './js/overlays.js',
   './js/services.js',
   './js/logos.js',
   './js/util.js',

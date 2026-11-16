@@ -73,9 +73,25 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     $('#sync-pending').textContent = String(status.pendingCount ?? 0);
   };
 
+  // The steps inside the sheet are overlays too (js/overlays.js): Android Back on one presses its
+  // own Cancel / Back button, which is disabled (so Back does nothing) while the sheet is busy.
+  const overlays = ui.overlays;
+  const STEP_BACK = {
+    recovery: '[data-sync-view="recovery"] [data-sync-back]',
+    join: '[data-sync-view="join"] [data-sync-back]',
+    choice: '#sync-choice-cancel',
+  };
+  let view = '';
   const show = (name) => {
     if (name !== 'join') stopScan();
+    view = name;
     for (const v of $$('[data-sync-view]', dlg)) v.hidden = v.dataset.syncView !== name;
+    if (STEP_BACK[name]) {
+      overlays?.open('sync-step', {
+        close: () => { if (!busy) $(STEP_BACK[name], dlg)?.click(); },
+        isOpen: () => dlg.open && view === name,
+      });
+    } else overlays?.remove('sync-step');
   };
 
   /* ---------------- scanning the QR code (Join) ---------------- */
@@ -87,12 +103,15 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   const supportP = scanSupport().catch(() => null);
   const scanMessage = (text, isError = false) => { scanMsg.textContent = text; scanMsg.classList.toggle('is-error', isError); };
   function stopScan() {
+    ui.overlays?.remove('sync-scan');
     webScanner?.stop();
     scanView.hidden = true;
     scanBtn.hidden = false;
   }
   async function useScanned(text) {
     const words = await recoveryFromQr(text);
+    // Left the Join step (Back, or the sheet closed) while the scanner was getting ready.
+    if (!dlg.open || view !== 'join') return;
     if (!words) { scanMessage(NOT_RECOVERY_CODE, true); return; } // nothing is filled in
     joinInput.value = words;
     joinTried = true;
@@ -111,6 +130,8 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
       webScanner ??= createWebScanner({ video: $('#sync-scan-video') });
       scanView.hidden = false;
       scanBtn.hidden = true;
+      // Back stops the camera, as Stop scanning does.
+      ui.overlays?.open('sync-scan', { close: stopScan, isOpen: () => dlg.open && !scanView.hidden });
       const text = await webScanner.start();
       stopScan();
       await useScanned(text);
@@ -184,7 +205,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     renderStatus();
     renderSummary();
     show(pairing.sheetView(config));
-    ui.openDialog(dlg);
+    ui.openDialog(dlg, { back: close });
   }
 
   const close = () => { if (!busy) ui.closeDialog(dlg); };
@@ -193,6 +214,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   $$('[data-sync-close]', dlg).forEach((b) => b.addEventListener('click', close));
   dlg.addEventListener('cancel', (e) => { if (busy) e.preventDefault(); });
   dlg.addEventListener('close', () => {
+    overlays?.remove('sync-step');
     stopScan();
     scanMessage('');
     document.body.classList.remove('sheet-open');
@@ -263,7 +285,8 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     });
   }
   $('#sync-choice-go').addEventListener('click', () => choiceResolve?.($('input[name="join-mode"]:checked', dlg)?.value ?? null));
-  $('#sync-choice-cancel').addEventListener('click', () => choiceResolve?.(null));
+  // Back to Join at once (the join flow shows it too), so a second Back lands on the Join step.
+  $('#sync-choice-cancel').addEventListener('click', () => { if (choiceResolve) { choiceResolve(null); show('join'); } });
   $('#sync-choice-export').addEventListener('click', () => choiceResolve?.('export'));
 
   $('#sync-join').addEventListener('click', async () => {

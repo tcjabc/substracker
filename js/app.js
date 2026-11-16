@@ -1,6 +1,7 @@
 import * as storage from './storage.js';
 import { deliverFile } from './files.js';
-import { isNative, setStatusBarStyle } from './platform.js';
+import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js';
+import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling } from './logos.js';
 import { createSyncEngine } from './sync.js';
@@ -78,15 +79,31 @@ window.addEventListener('unhandledrejection', (e) => reportError('Unhandled', e.
 const HAS_MODAL = typeof HTMLDialogElement === 'function'
   && typeof HTMLDialogElement.prototype.showModal === 'function';
 
-function openDialog(dlg) {
+const dialogOpen = (dlg) => dlg.open || dlg.hasAttribute('open');
+const trackedDialogs = new WeakSet();
+
+/**
+ * Show a dialog and put it on the overlay stack (js/overlays.js). `back` is what Android Back does
+ * with it: by default the same as its Cancel / X (closeDialog, which for the confirm dialog means
+ * its first, least destructive action). The Sync sheet passes its own close, which waits while busy.
+ */
+function openDialog(dlg, { back } = {}) {
+  if (!trackedDialogs.has(dlg)) {
+    trackedDialogs.add(dlg);
+    // However it closes (a button, Escape, a form submit), it leaves the stack.
+    dlg.addEventListener('close', () => { if (!dialogOpen(dlg)) overlays.remove(dlg.id); });
+  }
   // The add/edit sheet hides the floating buttons; see .sheet-open in app.css.
   if (dlg.classList.contains('sheet')) document.body.classList.add('sheet-open');
-  if (HAS_MODAL) { dlg.showModal(); return; }
-  dlg.setAttribute('open', '');
-  dlg.classList.add('dialog-fallback');
+  if (HAS_MODAL) { if (!dlg.open) dlg.showModal(); } else {
+    dlg.setAttribute('open', '');
+    dlg.classList.add('dialog-fallback');
+  }
+  overlays.open(dlg.id, { close: back ?? (() => closeDialog(dlg)), isOpen: () => dialogOpen(dlg) });
 }
 
 function closeDialog(dlg, returnValue) {
+  overlays.remove(dlg.id);
   if (HAS_MODAL) { if (returnValue === undefined) dlg.close(); else dlg.close(returnValue); return; }
   if (!dlg.hasAttribute('open')) return;
   if (returnValue !== undefined) dlg.returnValue = returnValue;
@@ -120,6 +137,27 @@ function bindDialogFormFallback() {
 }
 
 /* --------------------------------------------------------------------------
+   Android Back button: the topmost overlay closes (as its Cancel / X would); with none open,
+   Back goes to the Money tab, and from there it sends the app to the background. Web and PWA
+   are unchanged: there's no listener there, so the browser's own Back behaves as before.
+   -------------------------------------------------------------------------- */
+function bindBackButton() {
+  const app = plugin('App');
+  setBackHandler(createBackHandler({
+    stack: overlays,
+    getTab: () => state.tab,
+    goRoot: () => setTab('subs'),
+    // Minimise rather than exit: the app stays as it was (a sync or import in progress carries on)
+    // and opens again where it was left, like Android's own Back on a home screen.
+    minimize: () => { Promise.resolve(app?.minimizeApp?.()).catch((err) => console.error(err)); },
+  }));
+  if (!app || platformName() !== 'android') return;
+  Promise.resolve(app.addListener('backButton', () => {
+    try { pressBack(); } catch (err) { console.error(err); }
+  })).catch((err) => console.error(err));
+}
+
+/* --------------------------------------------------------------------------
    Boot
    -------------------------------------------------------------------------- */
 async function init() {
@@ -131,6 +169,7 @@ async function init() {
   bindEditTaps();
   bindGroupColors();
   bindDialogFormFallback();
+  bindBackButton();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
   $$('[data-action="add-income"]').forEach((b) => b.addEventListener('click', () => openForm(null, 'income')));
   $('#money-summary').addEventListener('click', (e) => {
@@ -210,7 +249,7 @@ async function startSync(unavailable) {
   const dev = initSyncScreen({ engine, vault, unavailable, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
   sheet = initSyncSheet({
     engine, storage, vault, unavailable,
-    ui: { toast, confirmDialog, openDialog, closeDialog, exportData, onConfigChanged: () => dev.reload() },
+    ui: { toast, confirmDialog, openDialog, closeDialog, exportData, overlays, onConfigChanged: () => dev.reload() },
   });
 }
 
@@ -331,6 +370,7 @@ function bindGroupColors() {
   let opener = null;
 
   const close = (refocus) => {
+    overlays.remove('swatch-pop');
     if (pop.hidden) return;
     pop.hidden = true;
     opener?.setAttribute('aria-expanded', 'false');
@@ -347,6 +387,7 @@ function bindGroupColors() {
       <button type="button" class="swatch" data-swatch="${s.key}" style="--swatch: ${swatchVar(s.key)}"
         aria-label="${esc(s.name)}" title="${esc(s.name)}" aria-pressed="${s.key === current}"></button>`).join('');
     pop.hidden = false;
+    overlays.open('swatch-pop', { close: () => close(true), isOpen: () => !pop.hidden });
     dot.setAttribute('aria-expanded', 'true');
     // Below the dot, kept inside the viewport's side gutters.
     const r = dot.getBoundingClientRect();
@@ -786,7 +827,7 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
     months: data.months, average: data.average, nowIndex: nowIndex(months, now),
     rolling: state.yearRange === 'roll', stack: state.yearStack, showIncome: state.yearIncome,
     money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)),
-    pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn,
+    pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn, overlays,
   });
 
   $$('[data-year-range]', root).forEach((b) => b.addEventListener('click', () => {

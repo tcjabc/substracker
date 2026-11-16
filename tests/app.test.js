@@ -7,6 +7,9 @@
 
 import * as storage from '../js/storage.js';
 import { money } from '../js/util.js';
+import { overlays, pressBack } from '../js/overlays.js';
+import { keyToWords } from '../js/words.js';
+import { generateKey } from '../js/crypto.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
@@ -693,6 +696,256 @@ test('no bar covers the axis labels; the dock can scroll clear of the floating b
   assert(!overlap(now, fab) && now.bottom < fab.top, `Jump to now is above the floating buttons (${Math.round(now.bottom)} < ${Math.round(fab.top)})`);
   scrollTo(0, 0);
   mode('month');
+});
+
+/* ------------------------------------------------------------ Android Back */
+// pressBack() is what the native backButton listener calls (js/app.js bindBackButton). It returns
+// 'closed' (the topmost overlay closed), 'kept' (its close path refused, e.g. busy), 'root' (went
+// to the Money tab) or 'minimize' (would leave the app). Anything but 'minimize' stays in the app.
+
+const appTab = () => $('.tab[aria-selected="true"]')?.dataset.tab;
+const goTab = (t) => $(`.tab[data-tab="${t}"]`).click();
+const confirmOpen = () => $('#confirm-dialog').open;
+const confirmTitle = () => text($('#confirm-title'));
+const confirmButton = (label) => $$('#confirm-actions button').find((b) => text(b) === label);
+const syncDlg = () => $('#sync-dialog');
+const syncView = () => $$('#sync-dialog [data-sync-view]').find((v) => !v.hidden)?.dataset.syncView;
+const backIs = (expected, msg) => { const got = pressBack(); eq(got, expected, msg); return got; };
+
+test('Back: the add sheet closes as Cancel would, the tab stays, the app stays', async () => {
+  goTab('subs');
+  $('#fab').click();
+  assert(isOpen(), 'sheet open');
+  eq(overlays.top(), 'sub-dialog', 'registered on open');
+  backIs('closed', 'closed the sheet');
+  assert(!isOpen(), 'sheet closed');
+  await tick(20); // the dialog's close event, where Cancel's clean-up runs
+  assert(!document.body.classList.contains('sheet-open'), 'floating buttons back (same clean-up as Cancel)');
+  eq(appTab(), 'subs', 'still on Money');
+  eq(overlays.ids(), [], 'nothing left on the stack');
+});
+
+test('Back: on the edit sheet, the Delete confirmation closes as Cancel first, then the sheet', async () => {
+  const before = (await storage.getAll()).length;
+  $('#subs-list [data-id="test-phone"]').click();
+  assert(isOpen(), 'edit sheet open');
+  $('#btn-delete').click();
+  await until(confirmOpen, 'delete confirmation');
+  eq(overlays.ids(), ['sub-dialog', 'confirm-dialog'], 'confirmation on top of the sheet');
+  backIs('closed', 'closed the confirmation');
+  await tick(20);
+  assert(!confirmOpen() && isOpen(), 'confirmation gone, sheet still open');
+  eq((await storage.getAll()).length, before, 'nothing deleted');
+  backIs('closed', 'closed the sheet');
+  assert(!isOpen(), 'sheet closed');
+  eq((await storage.getAll()).length, before, 'still nothing deleted');
+});
+
+test('Back: rapid double Back during the sheet\'s opening animation closes it once, then goes on', async () => {
+  goTab('insights');
+  $('#fab').click();
+  const got = [pressBack(), pressBack()];
+  eq(got, ['closed', 'root'], 'one press per level: the sheet, then the Money tab');
+  assert(!isOpen(), 'sheet closed');
+  eq(appTab(), 'subs', 'on Money');
+  eq(overlays.ids(), [], 'stack empty');
+});
+
+test('Back: the group colour picker closes', async () => {
+  goTab('subs');
+  const dot = $('#subs-list .group-dot');
+  dot.click();
+  assert(!$('#swatch-pop').hidden, 'picker open');
+  eq(overlays.top(), 'swatch-pop', 'registered');
+  backIs('closed', 'closed the picker');
+  assert($('#swatch-pop').hidden, 'picker closed');
+  eq(dot.getAttribute('aria-expanded'), 'false', 'same clean-up as Escape');
+});
+
+test('Back: the year chart\'s focus mode returns to all months, also mid-animation', async () => {
+  goTab('insights');
+  mode('year');
+  await settle();
+  await tapBar(4);
+  eq(chart().state().focus, true, 'focused');
+  eq(overlays.top(), 'year-focus', 'registered');
+  backIs('closed', 'closed focus mode before it finished opening');
+  await settle();
+  eq(chart().state().focus, false, 'all months');
+  eq(appTab(), 'insights', 'still on Insights');
+  // Focus left open on another tab is out of sight, so Back there doesn't close it unseen.
+  await tapBar(4);
+  await settle();
+  goTab('settings');
+  eq(overlays.top(), null, 'hidden focus mode is skipped');
+  backIs('root', 'Settings goes to Money');
+  goTab('insights'); // Insights redraws the chart, in all months
+  await settle();
+  eq(chart().state().focus, false, 'redrawn in all months');
+  eq(overlays.ids(), [], 'the old chart took its focus mode off the stack');
+  await tapBar(4);
+  await settle();
+  backIs('closed', 'focus mode on the new chart closes');
+  await settle();
+  eq(chart().state().focus, false, 'all months');
+  mode('month');
+  eq(overlays.ids(), [], 'the redrawn chart left nothing behind');
+});
+
+test('Back: Sync sheet, recovery words step goes back to the start, then the sheet closes', async () => {
+  goTab('settings');
+  $('#btn-sync').click();
+  await until(() => syncDlg().open, 'sync sheet');
+  eq(syncView(), 'setup', 'set-up view');
+  $('#sync-start').click();
+  await until(() => syncView() === 'recovery', 'recovery step');
+  assert($$('[data-sync-view="recovery"] .word-grid li').length === 12, 'words shown');
+  eq(overlays.ids(), ['sync-dialog', 'sync-step'], 'the step is on top of the sheet');
+  backIs('closed', 'step closed');
+  eq(syncView(), 'setup', 'back at the start, like Cancel');
+  eq($$('#sync-dialog .word-grid li').length, 0, 'words removed from the page');
+  assert(syncDlg().open, 'sheet still open');
+  backIs('closed', 'sheet closed');
+  assert(!syncDlg().open, 'closed');
+  eq(appTab(), 'settings', 'still on Settings');
+});
+
+test('Back: Sync join step and the web QR scanner view', async () => {
+  const md = navigator.mediaDevices;
+  const realGUM = md?.getUserMedia;
+  let asked = 0;
+  if (md) md.getUserMedia = () => { asked++; return new Promise(() => {}); }; // the camera prompt stays up
+  try {
+    $('#btn-sync').click();
+    await until(() => syncDlg().open, 'sync sheet');
+    $('#sync-join-open').click();
+    await until(() => syncView() === 'join', 'join step');
+    await tick(50);
+    if (!$('#sync-scan').hidden) {
+      $('#sync-scan-start').click();
+      await until(() => !$('#sync-scan-view').hidden, 'scanner view');
+      eq(overlays.top(), 'sync-scan', 'scanner on top');
+      backIs('closed', 'scanner stopped');
+      assert($('#sync-scan-view').hidden && !$('#sync-scan-start').hidden, 'as Stop scanning');
+      eq(syncView(), 'join', 'still on Join');
+      assert(asked === 1, 'the camera was asked for once');
+      await tick(30);
+      assert(!text($('#toast-text')).startsWith('Unhandled'), 'stopping during the camera prompt is not reported as an error');
+    }
+    $('#sync-join-words').value = 'some typed words';
+    backIs('closed', 'join step closed');
+    eq(syncView(), 'setup', 'back at the start');
+    backIs('closed', 'sheet closed');
+    await tick(20);
+    eq($('#sync-join-words').value, '', 'closing cleared the typed words');
+  } finally {
+    if (md) { if (realGUM) md.getUserMedia = realGUM; else delete md.getUserMedia; }
+  }
+});
+
+test('Back: busy while looking for the household does nothing; then the choice and Replace steps cancel', async () => {
+  const realFetch = window.fetch;
+  const calls = [];
+  let release;
+  window.fetch = (url, init) => {
+    calls.push(String(url));
+    // The check reads one entry: hold it, then answer "the household exists".
+    return new Promise((r) => { release = () => r(new Response(JSON.stringify({ entries: [], head: 0 }), { status: 200 })); });
+  };
+  try {
+    $('#btn-sync').click();
+    await until(() => syncDlg().open, 'sync sheet');
+    $('#sync-join-open').click();
+    await until(() => syncView() === 'join', 'join step');
+    $('#sync-join-words').value = (await keyToWords(generateKey())).join(' ');
+    $('#sync-join').click();
+    await until(() => !$('#sync-busy').hidden && calls.length === 1, 'busy, checking');
+    for (let i = 0; i < 3; i++) backIs('kept', `Back ${i + 1} while busy`);
+    assert(syncDlg().open && syncView() === 'join', 'sheet and step unchanged');
+    eq(appTab(), 'settings', 'no tab change');
+    release();
+    await until(() => syncView() === 'choice', 'choice step');
+    assert($('#sync-busy').hidden, 'not busy');
+    assert(!$('#sync-choice-go').disabled, 'buttons enabled again (screen not locked)');
+    backIs('closed', 'choice cancelled');
+    eq(syncView(), 'join', 'back on Join, as Cancel');
+    await tick(20);
+    eq(syncView(), 'join', 'and stays there');
+
+    $('#sync-join').click();
+    await until(() => calls.length === 2, 'checking again');
+    release();
+    await until(() => syncView() === 'choice', 'choice step again');
+    $('#sync-dialog input[name="join-mode"][value="replace"]').checked = true;
+    $('#sync-choice-go').click();
+    await until(confirmOpen, 'replace confirmation');
+    eq(overlays.top(), 'confirm-dialog', 'confirmation on top');
+    backIs('closed', 'confirmation closed');
+    await until(() => syncView() === 'join', 'cancelled back to Join');
+    assert(calls.every((u) => u.includes('/pull')), 'only the household check reached the relay: nothing joined or replaced');
+    assert(!(await storage.getSyncConfig()).enabled, 'sync not set up');
+    backIs('closed', 'join step closed');
+    backIs('closed', 'sheet closed');
+    assert(!syncDlg().open, 'closed');
+  } finally {
+    window.fetch = realFetch;
+  }
+});
+
+async function chooseBackup(json) {
+  const input = $('#import-file');
+  const dt = new DataTransfer();
+  dt.items.add(new File([json], 'backup.json', { type: 'application/json' }));
+  input.files = dt.files;
+  input.dispatchEvent(new Event('change'));
+  await until(confirmOpen, 'import dialog');
+}
+
+test('Back: import dialogs cancel; Back on the Replace all confirmation cancels and replaces nothing', async () => {
+  goTab('settings');
+  const before = await storage.getAll();
+  const backup = await storage.exportAll();
+  backup.items = backup.items.slice(0, 1); // replacing would leave one item
+  const json = JSON.stringify(backup);
+
+  await chooseBackup(json);
+  eq(confirmTitle(), 'Import this backup?', 'first dialog');
+  backIs('closed', 'first dialog closed');
+  await tick(30);
+  assert(!confirmOpen(), 'no second dialog: cancelled');
+
+  await chooseBackup(json);
+  confirmButton('Replace all').click();
+  await until(() => confirmOpen() && confirmTitle() !== 'Import this backup?', 'Replace all confirmation');
+  eq(overlays.top(), 'confirm-dialog', 'on the stack');
+  backIs('closed', 'Back on the second confirmation');
+  await tick(50);
+  assert(!confirmOpen(), 'closed');
+  eq((await storage.getAll()).length, before.length, 'nothing replaced');
+  eq(appTab(), 'settings', 'still on Settings');
+});
+
+test('Back: during a running import goes to Money and the import still finishes', async () => {
+  const backup = await storage.exportAll();
+  await chooseBackup(JSON.stringify(backup));
+  confirmButton('Merge').click();
+  backIs('root', 'no overlay open while it imports: Money tab');
+  await until(() => text($('#toast-text')).startsWith('Merged'), 'import finished');
+  eq(appTab(), 'subs', 'on Money');
+  eq(overlays.ids(), [], 'nothing stuck on the stack');
+  $('#fab').click();
+  assert(isOpen(), 'the app still responds');
+  backIs('closed', 'and Back still works');
+});
+
+test('Back: with nothing open, Insights and Settings go to Money; Money leaves the app (minimise)', async () => {
+  goTab('insights');
+  backIs('root', 'Insights → Money');
+  eq(appTab(), 'subs', 'on Money');
+  goTab('settings');
+  backIs('root', 'Settings → Money');
+  backIs('minimize', 'Money with nothing open');
+  eq(typeof globalThis.Capacitor, 'undefined', 'web: no native bridge, so no listener and the browser\'s Back is unchanged');
 });
 
 /* ------------------------------------------------------------------ Runner */

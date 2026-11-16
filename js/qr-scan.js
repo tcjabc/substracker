@@ -161,6 +161,10 @@ export function createWebScanner({ video, media = globalThis.navigator?.mediaDev
       if (pending) throw new Error('Already scanning.');
       if (typeof media?.getUserMedia !== 'function') throw new ScanError('unavailable');
       const result = new Promise((resolve, reject) => { pending = { resolve, reject }; });
+      // Stopped (Stop scanning, Back, the sheet closing) while the camera prompt is still up: the
+      // caller only gets `result` once the prompt answers, so mark the rejection as expected here
+      // rather than have it reported as an unhandled error. The caller still sees it.
+      result.catch(() => {});
       try {
         const s = await media.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
         if (!pending) { for (const t of s.getTracks()) t.stop(); return result; } // stopped while asking

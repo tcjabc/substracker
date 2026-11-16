@@ -58,7 +58,8 @@ const monthFull = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { mo
 /**
  * Draw the chart into `host`. opts: { months, average, nowIndex, rolling, stack: 'type' |
  * 'category', showIncome, money(n), categoryColour(group), pos (optional start position),
- * onSettle(pos), fadeIn }. Returns { setStack, destroy, state, stats }.
+ * onSettle(pos), fadeIn, overlays (optional, js/overlays.js: focus mode registers there) }.
+ * Returns { setStack, destroy, state, stats }.
  */
 export function createYearChart(host, opts) {
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -463,8 +464,18 @@ export function createYearChart(host, opts) {
   }
 
   /* Focus ------------------------------------------------------------------- */
+  // Focus mode is an overlay for Android Back (js/overlays.js): Back does what All months does.
+  // Out of sight on another tab it's skipped, and destroy() takes it off the stack.
+  const overlays = opts.overlays;
+  let destroyed = false;
+  const leaveFocus = () => { close(); svg.focus({ preventScroll: true }); };
   function open(i) {
     sel = i; focus = true;
+    overlays?.open('year-focus', {
+      close: leaveFocus,
+      isOpen: () => focus && !destroyed,
+      isShown: () => host.isConnected && !host.closest('[hidden]'),
+    });
     for (const b of bars) {
       b.g.w = W(staggerOmega(wrapRel(b.i, i, n))); b.g.t = 1;
       b.s.w = W(FOCUS_OMEGA); b.s.t = b.i === i ? 1 : 0;
@@ -484,6 +495,7 @@ export function createYearChart(host, opts) {
     kick();
   }
   function close() {
+    overlays?.remove('year-focus');
     if (!focus) return;
     focus = false;
     for (const b of bars) { b.g.w = W(staggerOmega(wrapRel(b.i, sel, n), 16, 8)); b.g.t = 0; }
@@ -568,7 +580,7 @@ export function createYearChart(host, opts) {
   svg.addEventListener('pointerup', onUp);
   svg.addEventListener('pointercancel', onCancel);
   svg.addEventListener('keydown', onKey);
-  back.addEventListener('click', () => { close(); svg.focus({ preventScroll: true }); });
+  back.addEventListener('click', leaveFocus);
   nowBtn.addEventListener('click', () => { snapTo(nearestPos(pos, nowIdx, n)); kick(); });
 
   fillLegend(stack);
@@ -588,6 +600,8 @@ export function createYearChart(host, opts) {
       kick();
     },
     destroy() {
+      destroyed = true;
+      overlays?.remove('year-focus');
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       host.yearChart = null;
