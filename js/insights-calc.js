@@ -125,6 +125,26 @@ export function yearIncome(items, year) {
   return t;
 }
 
+/**
+ * Calendar `year` from its twelve cash months: { income, outgoings, leftOver, monthsOver }.
+ * income is yearIncome(), outgoings the sum of the months' cash due (equal to yearTotal() when
+ * every plan has a date), leftOver income − outgoings, and monthsOver the number of months whose
+ * cash due is more than that month's income. Undated items are in none of these.
+ */
+export function yearSummary(items, year) {
+  let income = 0;
+  let outgoings = 0;
+  let monthsOver = 0;
+  for (let m = 0; m < 12; m++) {
+    const i = incomeDue(items, year, m);
+    const o = cashDue(items, year, m);
+    income += i;
+    outgoings += o;
+    if (o > i) monthsOver++;
+  }
+  return { income, outgoings, leftOver: income - outgoings, monthsOver };
+}
+
 /** The yearly card's figure: monthly × 12 + annual + one-offs dated in `year` (outgoings only). */
 export function yearTotal(items, year) {
   return items.filter(isOutgoing).reduce((t, s) => t + amountInYear(s, year), 0);

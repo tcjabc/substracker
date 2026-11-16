@@ -38,7 +38,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cashDue, breakdown, monthSeries, monthlyAverage, seriesAverage, yearTotal, undatedRecurring, dueInMonth,
-  incomeDue, incomeInMonth, undatedIncome, yearIncome,
+  incomeDue, incomeInMonth, undatedIncome, yearIncome, yearSummary,
 } from '../js/insights-calc.js';
 import { nextRenewal, amountInMonth, amountInYear } from '../js/util.js';
 
@@ -248,4 +248,59 @@ test('undated income is listed separately from undated plans', () => {
   assert.deepEqual(undatedIncome(extra).map((s) => s.name), ['Annual gift', 'Lodger']);
   assert.deepEqual(undatedRecurring(extra).map((s) => s.name), ['Gym']);
   assert.deepEqual(undatedIncome(INCOME.filter((s) => s.name !== 'Lodger')), []);
+});
+
+/* ------------------------------------------------------------- Year summary */
+// yearSummary(items, year) from the twelve cash months. Worked numbers:
+//
+// 1. Both hand-worked examples together, year 2026: the plans above (ITEMS) and the income items
+//    of INCOME. ITEMS' own Salary has no payment date, so it isn't income here.
+//      outgoings  Jan 649 + Feb 649 + Mar 1,849 + Apr–Nov 8 × 649 + Dec 3,409       =  11,748
+//                 (the undated Gym is left out; the old yearly figure with it was 22,548)
+//      income     Salary 52,000 × 12 + Bonus 30,000 (Feb) + Tax refund 6,000 (Dec)  = 660,000
+//      left over  660,000 − 11,748                                                  = 648,252
+//      months over: none (every month's income is above its cash due)
+//
+// 2. ITEMS alone, 2026: no dated income. income 0, outgoings 11,748, left over −11,748, and all
+//    12 months are over (each has something due and no income). The app shows "No income dated
+//    in 2026" instead of the negative figure.
+//
+// 3. Annual and one-off items, 2027:
+//      Pay      income   monthly  1,000  from 2027-01-01
+//      Gift     income   once       500  on 2027-12-24
+//      Rent              monthly    600  from 2027-01-01
+//      Cover             annual   3,000  renews 2025-04-10  (paid every April)
+//      Laptop            once     1,500  on 2027-09-03
+//      Holiday           once     2,000  on 2028-06-01      (next year: not in 2027)
+//    income 1,000 × 12 + 500 = 12,500; outgoings 600 × 12 + 3,000 + 1,500 = 11,700;
+//    left over 800. Months over: April (3,600 due, 1,000 in) and September (2,100 due,
+//    1,000 in) = 2. December has 600 due and 1,500 in.
+
+test('year summary of both hand-worked examples', () => {
+  const both = [...ITEMS, ...INCOME.filter((s) => s.type === 'income')];
+  assert.deepEqual(yearSummary(both, 2026), { income: 660000, outgoings: 11748, leftOver: 648252, monthsOver: 0 });
+  assert.equal(yearSummary(both, 2026).income, yearIncome(both, 2026));
+  assert.equal(yearTotal(both, 2026), 22548, 'the old yearly outgoings, with the undated Gym');
+  assert.equal(yearTotal(both.filter((s) => s.name !== 'Gym'), 2026), 11748, 'equal for dated plans');
+});
+
+test('year summary with no dated income', () => {
+  assert.deepEqual(yearSummary(ITEMS, 2026), { income: 0, outgoings: 11748, leftOver: -11748, monthsOver: 12 });
+  assert.deepEqual(yearSummary([], 2026), { income: 0, outgoings: 0, leftOver: 0, monthsOver: 0 });
+});
+
+test('year summary with annual and one-off items, and the months that go over', () => {
+  const year = [
+    item({ name: 'Pay', type: 'income', price: 1000, nextRenewal: '2027-01-01' }),
+    item({ name: 'Gift', type: 'income', price: 500, cycle: 'once', date: '2027-12-24' }),
+    item({ name: 'Rent', price: 600, nextRenewal: '2027-01-01' }),
+    item({ name: 'Cover', price: 3000, cycle: 'annual', nextRenewal: '2025-04-10' }),
+    item({ name: 'Laptop', price: 1500, cycle: 'once', date: '2027-09-03' }),
+    item({ name: 'Holiday', price: 2000, cycle: 'once', date: '2028-06-01' }),
+  ];
+  assert.deepEqual(yearSummary(year, 2027), { income: 12500, outgoings: 11700, leftOver: 800, monthsOver: 2 });
+  assert.equal(yearSummary(year, 2027).outgoings, yearTotal(year, 2027));
+  const months = monthSeries(year, 2027, 0, 12, { income: true });
+  assert.deepEqual(months.filter((x) => x.total > x.income).map((x) => x.month), [3, 8], 'April and September');
+  assert.deepEqual(yearSummary(year, 2028), { income: 12500 - 500, outgoings: 7200 + 3000 + 2000, leftOver: 12000 - 12200, monthsOver: 2 });
 });
