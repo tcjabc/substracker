@@ -641,6 +641,30 @@ test('centre highlight: outline, spotlight and label pill on the centre month; n
   mode('month');
 });
 
+test('no bar covers the axis labels; the dock can scroll clear of the floating buttons', async () => {
+  mode('year');
+  await settle();
+  const overlap = (a, b) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+  const axis = $$('#year-chart .yc-axis').map((e) => e.getBoundingClientRect());
+  assert(axis.length >= 3, 'axis labels drawn');
+  for (const k of [0, 3, 5]) { // the centre month, then others as they pass the gutter side
+    if (k) { for (let j = 0; j < k; j++) key('ArrowLeft'); await settle(); }
+    const bars = $$('#year-chart .yc-svg rect[style]').map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height);
+    assert(!axis.some((a) => bars.some((b) => overlap(a, b))), `no bar over a label (${k} months back)`);
+  }
+  const avg = $('#year-chart .yc-avg').getBoundingClientRect();
+  assert(axis.every((a) => a.right < avg.left), 'the average line starts after the labels');
+  $('#year-chart .yc-now').click();
+  await settle();
+  scrollTo(0, document.documentElement.scrollHeight);
+  await tick(50);
+  const now = $('#year-chart .yc-now').getBoundingClientRect();
+  const fab = $('#fab-stack').getBoundingClientRect();
+  assert(!overlap(now, fab) && now.bottom < fab.top, `Jump to now is above the floating buttons (${Math.round(now.bottom)} < ${Math.round(fab.top)})`);
+  scrollTo(0, 0);
+  mode('month');
+});
+
 /* ------------------------------------------------------------------ Runner */
 
 async function run() {

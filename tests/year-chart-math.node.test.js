@@ -42,7 +42,7 @@ test('snapping: the centre is round(pos) wrapped, and moves go the short way rou
   assert.equal(Math.round(2.5), 3, 'half rounds up');
 });
 
-test('taper: thickest at the centre, WMIN at the edge, the loop spans ±158', () => {
+test('taper: thickest at the centre, WMIN at the edge, the loop spans ±EXT', () => {
   for (const n of [12, 13]) {
     const t = taper(n);
     assert.equal(t.R, n / 2);
@@ -63,7 +63,20 @@ test('taper: thickest at the centre, WMIN at the edge, the loop spans ±158', ()
     const step = t.x(1) - t.x(0);
     assert.ok(step < t.spacing(0) && step > t.spacing(1), `step ${step}`);
   }
-  assert.ok(near(taper(12).scale, 158 / 138), 'n = 12: unscaled half-extent 138');
+  assert.ok(near(taper(12).scale, GEOM.EXT / 138), 'n = 12: unscaled half-extent 138');
+});
+
+test('plot: every bar stays inside the plot, clear of the y-axis gutter', () => {
+  assert.ok(GEOM.AXIS_X < GEOM.PLOT_L, 'labels end before the plot starts');
+  assert.equal(GEOM.CX, (GEOM.PLOT_L + GEOM.PLOT_R) / 2, 'centred in the plot');
+  for (const n of [12, 13]) {
+    const t = taper(n);
+    for (let r = -t.R; r < t.R; r += 0.05) {
+      const half = t.width(Math.abs(r)) / 2;
+      const x = GEOM.CX + t.x(r);
+      assert.ok(x - half >= GEOM.PLOT_L - 1e-9 && x + half <= GEOM.PLOT_R + 1e-9, `n=${n} r=${r}: ${x - half} … ${x + half}`);
+    }
+  }
 });
 
 test('edges fade to 0.55; the centre month is prominent; labels shrink and shorten', () => {

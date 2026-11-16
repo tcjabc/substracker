@@ -992,7 +992,10 @@ dialog::backdrop { background: var(--scrim); }
 .yc-row-amount { fill: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .yc-row-sub { fill: var(--text-muted); font-size: 10px; }
 .yc-undated { width: 100%; max-width: 32rem; margin: 0 auto var(--space-3); }
-.yc-year-stats { max-width: 32rem; margin: 0 auto var(--space-6); grid-template-columns: 1fr; }
+/* The Year view ends with extra room the height of the FAB stack (on top of the page's own bottom
+   padding), so the chart card's dock (legend, Jump to now) can always scroll well clear of the
+   floating + and − buttons, however little follows the chart. */
+.yc-year-stats { max-width: 32rem; margin: 0 auto calc(var(--space-6) + var(--fab-stack)); grid-template-columns: 1fr; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

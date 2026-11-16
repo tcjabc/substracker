@@ -117,14 +117,16 @@ export function createYearChart(host, opts) {
     for (let k = 1; k <= scaleInfo.ticks; k++) {
       const v = scaleInfo.step * k;
       const y = G.BASE - v * SCALE;
-      el('line', { x1: 16, x2: 344, y1: y, y2: y, class: 'yc-grid' }, gridL);
-      el('text', { x: 16, y: y - 3, class: 'yc-axis' }, gridL).textContent = compact.format(v);
+      el('line', { x1: G.PLOT_L, x2: G.PLOT_R, y1: y, y2: y, class: 'yc-grid' }, gridL);
+      // Axis labels in the gutter left of the plot, centred on their line: no bar reaches them.
+      el('text', { x: G.AXIS_X, y: y + 3, 'text-anchor': 'end', class: 'yc-axis' }, gridL).textContent = compact.format(v);
     }
   }
-  el('line', { x1: 16, x2: 344, y1: G.BASE, y2: G.BASE, class: 'yc-baseline' }, gridL);
+  el('line', { x1: G.PLOT_L, x2: G.PLOT_R, y1: G.BASE, y2: G.BASE, class: 'yc-baseline' }, gridL);
   const avgY = G.BASE - avgVal * SCALE;
-  // The dashed average line; its label is in the legend, where no bar can cover it.
-  if (avgVal > 0) el('line', { x1: 16, x2: 344, y1: avgY, y2: avgY, class: 'yc-avg' }, gridL);
+  // The dashed average line spans the plot only (never the gutter's labels); its label is in the
+  // legend, where no bar can cover it.
+  if (avgVal > 0) el('line', { x1: G.PLOT_L, x2: G.PLOT_R, y1: avgY, y2: avgY, class: 'yc-avg' }, gridL);
   const incomePath = el('path', { class: 'yc-income', d: '' }, incomeL);
   incomeL.setAttribute('display', opts.showIncome ? 'inline' : 'none');
 

@@ -8,8 +8,11 @@
 import { breakdown, monthSeries, seriesAverage, overIncome } from './insights-calc.js';
 
 export const GEOM = Object.freeze({
-  W: 360, H: 470, CX: 180,
-  EXT: 158, WMAX: 32, WMIN: 8, GAP: 3, // the taper: half-extent, widest and narrowest bar, gap
+  W: 360, H: 470,
+  // The plot runs from PLOT_L to PLOT_R; the y-axis labels sit in the gutter to its left (right-
+  // aligned at AXIS_X), so no bar can cover them. CX is the plot's centre.
+  AXIS_X: 30, PLOT_L: 34, PLOT_R: 352, CX: 193,
+  EXT: 154, WMAX: 32, WMIN: 8, GAP: 3, // the taper: half-extent, widest and narrowest bar, gap
   DRAG: 30,                              // drag distance (units) per month
   BASE: 340, BAR_H: 250,                 // carousel baseline and the height of the scale's top
   LABEL_Y: 358, YEAR_Y: 369,             // month and 'YY labels under the bars
