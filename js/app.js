@@ -11,7 +11,7 @@ import {
   importMessage,
 } from './util.js';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
