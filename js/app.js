@@ -142,10 +142,11 @@ async function init() {
     }
     state.subs = subs;
     // Before 1.2.1 the default was always TWD and only stored once changed. Existing data keeps TWD so the
-    // summary strip doesn't switch currency; a fresh install takes the device's locale. Stored either way.
+    // summary strip doesn't switch currency; a fresh install takes the device's locale. Either way it's
+    // kept as this device's own pick: it isn't synced, and a currency the household chose replaces it.
     if (!settings.defaultCurrency) {
       settings.defaultCurrency = subs.length ? 'TWD' : localeCurrency('TWD');
-      storage.saveSettings({ defaultCurrency: settings.defaultCurrency }).catch(console.error);
+      storage.saveLocalDefaults({ defaultCurrency: settings.defaultCurrency }).catch(console.error);
     }
     Object.assign(state.settings, settings);
     state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
@@ -180,14 +181,29 @@ function startSync(unavailable) {
   let engine = null;
   if (!unavailable) {
     engine = createSyncEngine({ store: storage.syncStore });
-    // Changes from other devices: refresh the lists the same way an import or edit does.
-    engine.onRemoteChanges(async () => {
-      state.subs = await storage.getAll();
-      render();
-    });
+    // Changes from other devices (items, the default currency, group colours): refresh the screens
+    // the same way an import or edit does.
+    engine.onRemoteChanges(() => reloadData({ remote: true }));
     engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
   }
   initSyncScreen({ engine, storage, unavailable, ui: { toast, confirmDialog, setTab } });
+}
+
+/**
+ * Read items and settings again and redraw (after an import or changes from another device).
+ * A remote change leaves the open add/edit form alone; only the Settings currency menu follows.
+ */
+async function reloadData({ remote = false } = {}) {
+  const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
+  const before = state.settings.defaultCurrency;
+  state.subs = subs;
+  Object.assign(state.settings, settings);
+  if (!state.settings.defaultCurrency) state.settings.defaultCurrency = before;
+  state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
+  if (remote) fillCurrencySelect($('#set-currency'), state.settings.defaultCurrency);
+  else fillStaticLists();
+  if (!remote || state.settings.defaultCurrency !== before) state.insightsCurrency = null;
+  render();
 }
 
 /* --------------------------------------------------------------------------
@@ -264,15 +280,16 @@ const byGroupName = (a, b) =>
 function ensureGroupColors() {
   const map = state.settings.groupColors;
   const names = [...new Set(state.subs.filter((s) => !isIncome(s)).map(groupOf))].sort(byGroupName);
-  let changed = false;
+  const assigned = {};
   for (const name of names) {
     if (SWATCH_KEYS.has(map[name])) continue;
     const uses = new Map(SWATCHES.map((s) => [s.key, 0]));
     for (const n of names) if (SWATCH_KEYS.has(map[n])) uses.set(map[n], uses.get(map[n]) + 1);
     map[name] = SWATCHES.reduce((best, s) => (uses.get(s.key) < uses.get(best) ? s.key : best), SWATCHES[0].key);
-    changed = true;
+    assigned[name] = map[name];
   }
-  if (changed) storage.saveSettings({ groupColors: map }).catch((err) => console.error(err));
+  // An automatic pick stays on this device; only a colour someone chooses is shared.
+  if (Object.keys(assigned).length) storage.saveLocalDefaults({ groupColors: assigned }).catch((err) => console.error(err));
 }
 
 const groupSwatch = (name) => (SWATCH_KEYS.has(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'g1');
@@ -333,7 +350,7 @@ function bindGroupColors() {
     close(false);
     renderSubs();
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
-    try { await storage.saveSettings({ groupColors: state.settings.groupColors }); } catch (err) {
+    try { await storage.saveSettings({ groupColors: { [name]: b.dataset.swatch } }); } catch (err) {
       console.error(err);
       toast('Could not save the colour.');
     }
@@ -1155,13 +1172,7 @@ async function importFile(file) {
 
   try {
     const done = await storage.importAll(text, mode);
-    const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
-    state.subs = subs;
-    Object.assign(state.settings, settings);
-    state.settings.groupColors = sanitizeGroupColors(state.settings.groupColors);
-    fillStaticLists();
-    state.insightsCurrency = null;
-    render();
+    await reloadData();
     toast(mode === 'replace'
       ? `Replaced with ${plural(done.total, 'item')}`
       : `Merged: ${done.added} new, ${done.updated} updated`);
