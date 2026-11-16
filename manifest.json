@@ -1,7 +1,7 @@
 {
   "name": "Peek Budget",
   "short_name": "Peek Budget",
-  "description": "Private, offline household income and expense tracker. Your data never leaves this device.",
+  "description": "Private, offline household income and expense tracker. Your data stays on your devices, and optional sync is end-to-end encrypted.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

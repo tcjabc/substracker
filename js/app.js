@@ -12,7 +12,7 @@ import {
 
 const APP_VERSION = '1.4.2';
 
-// Group colour swatches: keys map to --group-1 â€¦ --group-10 in app.css. The order is the
+// Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
 const SWATCHES = [
   { key: 'g1', name: 'Gold' }, { key: 'g2', name: 'Steel blue' }, { key: 'g3', name: 'Terracotta' },
@@ -28,7 +28,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const state = {
   subs: [],
-  settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name â†’ swatch key
+  settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
   view: storage.getPref('view') === 'list' ? 'list' : 'grid',
   catView: storage.getPref('catView') === 'list' ? 'list' : 'donut', // Insights "By category"
   donutActive: null, // highlighted donut slice key, or null
@@ -43,13 +43,13 @@ const state = {
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 
 /* --------------------------------------------------------------------------
-   On-screen error reporter â€” an installed PWA has no console to look at.
+   On-screen error reporter — an installed PWA has no console to look at.
    -------------------------------------------------------------------------- */
 function reportError(prefix, err) {
   const msg = (err && (err.message || String(err))) || 'Unknown error';
   try {
     toast(`${prefix}: ${msg}`, { label: 'Dismiss', sticky: true, run: () => {} });
-  } catch { /* toast markup missing â€” nothing more we can do */ }
+  } catch { /* toast markup missing — nothing more we can do */ }
 }
 window.addEventListener('error', (e) => {
   const where = e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '';
@@ -58,7 +58,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => reportError('Unhandled', e.reason));
 
 /* --------------------------------------------------------------------------
-   Dialog helpers â€” fall back to a positioned [open] element where
+   Dialog helpers — fall back to a positioned [open] element where
    HTMLDialogElement.showModal is missing (older iOS Safari).
    -------------------------------------------------------------------------- */
 const HAS_MODAL = typeof HTMLDialogElement === 'function'
@@ -222,7 +222,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#subs-actions').hidden = tab !== 'subs';
   $('#fab-stack').hidden = tab === 'settings';
   $('#page-title').textContent = TAB_TITLES[tab];
-  document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} Â· Peek Budget`;
+  document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') renderInsights();
 }
@@ -251,7 +251,7 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 
 
 const UNCATEGORISED = 'Uncategorised';
 const groupOf = (s) => s.category?.trim() || UNCATEGORISED;
-// Group display order: Aâ€“Z, with Uncategorised last.
+// Group display order: A–Z, with Uncategorised last.
 const byGroupName = (a, b) =>
   (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' });
 
@@ -278,7 +278,7 @@ function ensureGroupColors() {
 const groupSwatch = (name) => (SWATCH_KEYS.has(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'g1');
 const swatchName = (key) => SWATCHES.find((s) => s.key === key)?.name ?? '';
 
-/** Keep only valid `name â†’ swatch key` pairs from an imported settings.groupColors. */
+/** Keep only valid `name → swatch key` pairs from an imported settings.groupColors. */
 function sanitizeGroupColors(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   return Object.fromEntries(Object.entries(raw)
@@ -461,7 +461,7 @@ function cardHTML(s) {
 function rowHTML(s) {
   const d = nextRenewal(s);
   const parts = [isIncome(s) ? '' : s.plan, isOnce(s) ? onceDate(s) : d ? renewalText(d) : ''];
-  const sub = parts.filter(Boolean).map(esc).join(' Â· ');
+  const sub = parts.filter(Boolean).map(esc).join(' · ');
   return `
     <button type="button" class="sub-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
       ${logoHTML(s, 'sm')}
@@ -562,7 +562,7 @@ function renderInsights() {
   const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
   const headline = incomeMonth
     ? `Outgoings <strong>${esc(money(monthly, cur))}</strong> of <strong>${esc(money(incomeMonth, cur))}</strong> income <span class="pct">(${pct}%)</span>`
-    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">Â· no ${esc(cur)} income recorded</span>`;
+    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">· no ${esc(cur)} income recorded</span>`;
 
   root.innerHTML = `
     <div class="month-nav">
@@ -580,22 +580,22 @@ function renderInsights() {
       ${incomeMonth ? `<div class="bar" role="img" aria-label="Outgoings are ${pct}% of income"><div class="bar-fill${pct > 100 ? ' bar-fill-over' : ''}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div>` : ''}
     </div>
 
-    ${currencies.length > 1 ? `<p class="notice">Totals are per currency â€” amounts in other currencies aren't converted.</p>` : ''}
+    ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
     <div class="stats">
       <div class="stat stat-primary">
         <div class="stat-label">${esc(monthName)}</div>
         <div class="stat-value">${esc(money(monthly, cur))}</div>
-        <div class="stat-sub">Annual plans counted as Ã· 12, plus one-offs this month</div>
+        <div class="stat-sub">Annual plans counted as ÷ 12, plus one-offs this month</div>
       </div>
       <div class="stat">
         <div class="stat-label">${y}</div>
         <div class="stat-value">${esc(money(annual, cur))}</div>
-        <div class="stat-sub">Monthly Ã— 12, annual, and one-offs dated ${y}</div>
+        <div class="stat-sub">Monthly × 12, annual, and one-offs dated ${y}</div>
       </div>
       <div class="stat">
         <div class="stat-label">Outgoings</div>
         <div class="stat-value">${inMonth.length}</div>
-        <div class="stat-sub">${nMonthly} monthly Â· ${nAnnual} annual Â· ${nOnce} one-off</div>
+        <div class="stat-sub">${nMonthly} monthly · ${nAnnual} annual · ${nOnce} one-off</div>
       </div>
     </div>
 
@@ -639,7 +639,7 @@ function renderInsights() {
             ${logoHTML(s, 'sm')}
             <span class="sub-text">
               <span class="sub-name">${esc(s.name)}</span>
-              <span class="sub-plan">${isOnce(s) ? `One-off Â· ${esc(onceDate(s))}` : `${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}`}${s.plan ? ' Â· ' + esc(s.plan) : ''}</span>
+              <span class="sub-plan">${isOnce(s) ? `One-off · ${esc(onceDate(s))}` : `${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}`}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
             </span>
             <span class="sub-row-price">
               <span class="amount">${esc(money(amountInMonth(s, y, m), cur))}</span>
@@ -668,7 +668,7 @@ function renderInsights() {
 }
 
 /* Donut ------------------------------------------------------------------- */
-const DONUT = { r: 80, gap: 2 }; // SVG user units in a 200 Ã— 200 viewBox; stroke width lives in app.css
+const DONUT = { r: 80, gap: 2 }; // SVG user units in a 200 × 200 viewBox; stroke width lives in app.css
 const SMALL_SLICE = 0.03; // categories under 3% of the month are pooled into "Other"
 
 /** Slices for the month, largest first. Two or more categories under 3% become one neutral "Other". */
@@ -849,7 +849,7 @@ function syncFormMode() {
   f.name.placeholder = income ? 'e.g. My salary' : 'e.g. Netflix';
   // Service suggestions only make sense for expenses.
   if (income) f.name.removeAttribute('list'); else f.name.setAttribute('list', 'service-names');
-  f.notes.placeholder = income ? 'e.g. Paid on the 5th, after tax' : 'Shared with family, billed to card ending 1234â€¦';
+  f.notes.placeholder = income ? 'e.g. Paid on the 5th, after tax' : 'Shared with family, billed to card ending 1234…';
   $('#label-price').textContent = income ? 'Amount' : 'Price';
   $('#label-cycle').textContent = income ? 'How often' : 'Billing cycle';
 }
