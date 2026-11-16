@@ -1,5 +1,6 @@
 // Node tests for js/insights-calc.js: cash due per month, the breakdown by type and category, the
-// month series, the Avg figure and undated plans. Run with `npm test`.
+// month series, the Avg figure and undated plans; income paid per month and undated income. Run
+// with `npm test`.
 //
 // Hand-worked example (TWD; months are calendar months, everything is a projection from dates):
 //
@@ -37,8 +38,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cashDue, breakdown, monthSeries, monthlyAverage, seriesAverage, yearTotal, undatedRecurring, dueInMonth,
+  incomeDue, incomeInMonth, undatedIncome, yearIncome,
 } from '../js/insights-calc.js';
-import { nextRenewal, amountInMonth } from '../js/util.js';
+import { nextRenewal, amountInMonth, amountInYear } from '../js/util.js';
 
 const item = (over) => ({
   id: over.name, type: 'expense', name: '', domain: '', emoji: '', plan: '', price: 0, currency: 'TWD',
@@ -161,4 +163,89 @@ test('the old month figure for the same data, for comparison', () => {
   const old = ITEMS.filter((s) => s.type !== 'income' && !s.del).reduce((t, s) => t + amountInMonth(s, 2026, 10), 0);
   assert.equal(old, 1679);
   assert.equal(cashDue(ITEMS, 2026, 10), 649);
+});
+
+/* ---------------------------------------------------------------- Income */
+// Hand-worked income example (TWD). Income uses the same dates as plans: monthly and annual in
+// nextRenewal ("Next payment"), one-offs in `date`.
+//
+//   Salary       monthly  52,000   next payment 2026-01-25
+//   Bonus        annual   30,000   next payment 2025-02-28   (stored date in the past; paid each February)
+//   Tax refund   once      6,000   on 2026-12-10
+//   Lodger       monthly   8,000   no payment date            → not in any month, listed as undated
+//   Old gig      monthly   1,000   deleted                    → ignored
+//   Phone        monthly     499   an expense                 → never income
+//
+//   Month       income paid                         income    cash due (outgoings)
+//   Nov 2026    Salary 52,000                       52,000    499
+//   Dec 2026    52,000 + Tax refund 6,000           58,000    499
+//   Jan 2027    52,000                              52,000    499
+//   Feb 2027    52,000 + Bonus 30,000               82,000    499
+//
+//   Year 2026 income, the sum of its twelve cash months: 52,000 × 12 + 30,000 + 6,000 = 660,000.
+//   The old monthly equivalent for Nov 2026 was 52,000 + 30,000 / 12 + 8,000 = 62,500 (and the same
+//   62,500 in February); the old yearly equivalent, monthly × 12 + annual + one-offs, was 756,000,
+//   which is 660,000 plus the undated Lodger's 96,000.
+
+const INCOME = [
+  item({ name: 'Salary', type: 'income', price: 52000, nextRenewal: '2026-01-25' }),
+  item({ name: 'Bonus', type: 'income', price: 30000, cycle: 'annual', nextRenewal: '2025-02-28' }),
+  item({ name: 'Tax refund', type: 'income', price: 6000, cycle: 'once', date: '2026-12-10' }),
+  item({ name: 'Lodger', type: 'income', price: 8000 }),
+  item({ name: 'Old gig', type: 'income', price: 1000, nextRenewal: '2026-01-01', del: true }),
+  item({ name: 'Phone', price: 499, nextRenewal: '2026-11-05' }),
+];
+
+test('income paid per month matches the hand-worked example, kept apart from cash due', () => {
+  assert.deepEqual(monthSeries(INCOME, 2026, 10, 4, { income: true }), [
+    { year: 2026, month: 10, total: 499, income: 52000 },
+    { year: 2026, month: 11, total: 499, income: 58000 },
+    { year: 2027, month: 0, total: 499, income: 52000 },
+    { year: 2027, month: 1, total: 499, income: 82000 },
+  ]);
+  assert.equal(incomeDue(INCOME, 2027, 1), 82000);
+  // Without the option the series is unchanged from stage 1.
+  assert.deepEqual(monthSeries(INCOME, 2026, 10, 1), [{ year: 2026, month: 10, total: 499 }]);
+});
+
+test('annual income falls in the month of its date every year; one-off income only in its month', () => {
+  const bonus = INCOME.find((s) => s.name === 'Bonus');
+  for (const year of [2024, 2025, 2026, 2031]) {
+    for (let m = 0; m < 12; m++) assert.equal(incomeInMonth(bonus, year, m), m === 1 ? 30000 : 0, `${year}-${m + 1}`);
+  }
+  assert.equal(nextRenewal(bonus).getMonth(), 1, 'rolled forward, still February');
+  const refund = INCOME.find((s) => s.name === 'Tax refund');
+  assert.equal(incomeInMonth(refund, 2026, 11), 6000);
+  assert.equal(incomeInMonth(refund, 2027, 11), 0);
+});
+
+test('deleted and undated income, and expenses, are not income; income is never cash due', () => {
+  for (const name of ['Lodger', 'Old gig', 'Phone']) {
+    const s = INCOME.find((i) => i.name === name);
+    for (let m = 0; m < 12; m++) assert.equal(incomeInMonth(s, 2026, m), 0, name);
+  }
+  for (const s of INCOME.filter((i) => i.type === 'income')) {
+    for (let m = 0; m < 12; m++) assert.equal(dueInMonth(s, 2026, m), 0, s.name);
+  }
+  assert.equal(incomeDue([], 2026, 0), 0);
+});
+
+test('year income is the sum of the twelve cash months; dated items match the old yearly figure', () => {
+  assert.equal(yearIncome(INCOME, 2026), 660000);
+  const old = (items) => items.filter((s) => s.type === 'income' && !s.del).reduce((t, s) => t + amountInYear(s, 2026), 0);
+  assert.equal(old(INCOME), 756000, 'old figure includes the undated Lodger');
+  assert.equal(old(INCOME.filter((s) => s.name !== 'Lodger')), 660000, 'same as before when every item is dated');
+  const oldMonth = INCOME.filter((s) => s.type === 'income' && !s.del).reduce((t, s) => t + amountInMonth(s, 2026, 10), 0);
+  assert.equal(oldMonth, 62500);
+});
+
+test('undated income is listed separately from undated plans', () => {
+  const extra = [...INCOME,
+    item({ name: 'Annual gift', type: 'income', price: 2000, cycle: 'annual' }),
+    item({ name: 'Gone', type: 'income', price: 5, del: true }),
+    item({ name: 'Gym', price: 900 }),
+  ];
+  assert.deepEqual(undatedIncome(extra).map((s) => s.name), ['Annual gift', 'Lodger']);
+  assert.deepEqual(undatedRecurring(extra).map((s) => s.name), ['Gym']);
+  assert.deepEqual(undatedIncome(INCOME.filter((s) => s.name !== 'Lodger')), []);
 });

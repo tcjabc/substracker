@@ -1,5 +1,5 @@
-// Insights figures on a cash basis: what falls due in a given month. Pure functions (no DOM, no
-// storage), shared by the app and the Node tests.
+// Insights figures on a cash basis: what falls due (outgoings) or is paid in (income) in a given
+// month. Pure functions (no DOM, no storage), shared by the app and the Node tests.
 //
 // The app doesn't record what was actually paid, so every month, past or future, is a projection
 // from the plan dates:
@@ -11,8 +11,12 @@
 // Recurring plans without a renewal date can't be placed in a month: they're left out of these
 // totals and listed by undatedRecurring() instead.
 //
-// Only outgoings count (income is left out), and only live items. Callers pass the items of one
-// currency, as the Insights screen does: amounts are never converted between currencies.
+// Income follows the same rules, with its date in the same stored field (nextRenewal, shown as
+// "Next payment"; a one-off's in `date`): incomeDue() and undatedIncome(). Income and outgoings
+// are always kept apart; nothing here adds one to the other.
+//
+// Only live items count. Callers pass the items of one currency, as the Insights screen does:
+// amounts are never converted between currencies.
 
 import { isIncome, isOnce, parseDate, amountInYear } from './util.js';
 
@@ -30,23 +34,39 @@ export const byGroupName = (a, b) =>
 // skips any copy that still carries the deleted flag.
 const isLive = (s) => s && s.del !== true && s.deleted !== true;
 const isOutgoing = (s) => isLive(s) && !isIncome(s);
+const isIncoming = (s) => isLive(s) && isIncome(s);
 const typeOf = (s) => (isOnce(s) ? 'once' : s.cycle === 'annual' ? 'annual' : 'monthly');
 const price = (s) => (Number.isFinite(s.price) ? s.price : 0);
 
-/** A recurring outgoing with no usable renewal date (not counted in month totals). */
-const isUndated = (s) => isOutgoing(s) && !isOnce(s) && !parseDate(s.nextRenewal);
+/** A recurring item with no usable date (not counted in month totals). */
+const noDate = (s) => !isOnce(s) && !parseDate(s.nextRenewal);
+const isUndated = (s) => isOutgoing(s) && noDate(s);
 
-/** What `s` costs in `month` (0-based) of `year` on a cash basis; 0 when nothing is due. */
-export function dueInMonth(s, year, month) {
-  if (!isOutgoing(s)) return 0;
+/** The cash an item moves in `month` (0-based) of `year`, whatever its type; 0 when none. */
+function cashInMonth(s, year, month) {
   if (isOnce(s)) {
     const d = parseDate(s.date);
     return d && d.getFullYear() === year && d.getMonth() === month ? price(s) : 0;
   }
   const d = parseDate(s.nextRenewal);
-  if (!d) return 0; // undated: see undatedRecurring()
+  if (!d) return 0; // undated: see undatedRecurring() / undatedIncome()
   if (s.cycle === 'annual') return d.getMonth() === month ? price(s) : 0;
   return price(s);
+}
+
+/** What `s` costs in `month` (0-based) of `year` on a cash basis; 0 when nothing is due or it's income. */
+export function dueInMonth(s, year, month) {
+  return isOutgoing(s) ? cashInMonth(s, year, month) : 0;
+}
+
+/** What income item `s` pays in `month` (0-based) of `year`; 0 when nothing or it's an outgoing. */
+export function incomeInMonth(s, year, month) {
+  return isIncoming(s) ? cashInMonth(s, year, month) : 0;
+}
+
+/** Total income paid in `month` (0-based) of `year`, same rules as cashDue. */
+export function incomeDue(items, year, month) {
+  return items.reduce((t, s) => t + incomeInMonth(s, year, month), 0);
 }
 
 /** Total cash due in `month` (0-based) of `year`. */
@@ -83,14 +103,26 @@ export function breakdown(items, year, month) {
   return { total: due.reduce((t, d) => t + d.amount, 0), byType, byCategory };
 }
 
-/** `count` consecutive months from startMonth (0-based) of startYear: [{ year, month, total }]. */
-export function monthSeries(items, startYear, startMonth, count) {
+/**
+ * `count` consecutive months from startMonth (0-based) of startYear: [{ year, month, total }],
+ * `total` being the cash due. With `{ income: true }` each month also has `income` (incomeDue).
+ */
+export function monthSeries(items, startYear, startMonth, count, { income = false } = {}) {
   const out = [];
   for (let i = 0; i < count; i++) {
     const d = new Date(startYear, startMonth + i, 1);
-    out.push({ year: d.getFullYear(), month: d.getMonth(), total: cashDue(items, d.getFullYear(), d.getMonth()) });
+    const [y, m] = [d.getFullYear(), d.getMonth()];
+    out.push(income ? { year: y, month: m, total: cashDue(items, y, m), income: incomeDue(items, y, m) }
+      : { year: y, month: m, total: cashDue(items, y, m) });
   }
   return out;
+}
+
+/** Income for calendar `year`: the sum of its twelve cash months (undated income isn't in it). */
+export function yearIncome(items, year) {
+  let t = 0;
+  for (let m = 0; m < 12; m++) t += incomeDue(items, year, m);
+  return t;
 }
 
 /** The yearly card's figure: monthly × 12 + annual + one-offs dated in `year` (outgoings only). */
@@ -112,7 +144,14 @@ export function seriesAverage(series) {
   return series.length ? series.reduce((t, m) => t + m.total, 0) / series.length : 0;
 }
 
+const byItemName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
 /** Recurring outgoings with no renewal date: not in any month total. Sorted A–Z by name. */
 export function undatedRecurring(items) {
-  return items.filter(isUndated).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return items.filter(isUndated).sort(byItemName);
+}
+
+/** Recurring income with no payment date: not in any month's income. Sorted A–Z by name. */
+export function undatedIncome(items) {
+  return items.filter((s) => isIncoming(s) && noDate(s)).sort(byItemName);
 }
