@@ -53,7 +53,7 @@ All persistence goes through `js/storage.js`; no other file touches IndexedDB or
 
 - `records`: every expense and income item in a sync-ready form, keyed by `id`: `{ id, fields: { …item fields, del }, ts: { field: stamp } }`. Each field carries the hybrid-logical-clock stamp of its last change, and `del` is the deleted flag. Deleting an item sets `del` to `true` and keeps the record as a tombstone. The app only ever sees live records, in the plain item shape above.
 - `outbox`: changes not yet sent to other devices, one op `{ id, rec, f, v, t, dev }` per changed field, keyed by `[rec, f]`, so a newer change to a field replaces its unsent older op. Every save, delete and import writes its ops in the same transaction as the records.
-- `meta`: `schemaVersion` (currently 4), `deviceId` (made once per install), `hlc` (the clock), `syncCursor` (0 until sync exists) and records of the one-time migrations.
+- `meta`: `schemaVersion` (currently 4), `deviceId` (made once per install), `hlc` (the clock), `syncCursor` (the last relay entry applied), `syncConfig` (relay URL, household key, enabled), `lastSyncedAt` and records of the one-time migrations. None of it is exported or synced.
 - `settings`: `defaultCurrency` and `groupColors`, one row per key. Settings are per device and never synced; backups carry these two so a restore brings them back.
 - `items`: the 1.3–1.4 store, kept untouched as a fallback (see below).
 
@@ -81,6 +81,23 @@ Import also reads every older backup: schemaVersion 3 files (1.3–1.4, the same
 
 Saving the export file goes through `deliverFile()` in `js/files.js`, which is the place to swap the browser download for a native share sheet.
 
+## Sync between devices (developer preview)
+
+Devices in one household can sync through a small relay (`relay/`, a Cloudflare Worker; see `relay/README.md`). It's end-to-end encrypted, and there are no accounts: a **household key** (16 random bytes, 22 characters) is the only secret. There's no pairing screen yet. The key is set on a hidden developer screen: add `?dev=1` to the URL, or tap the version line at the bottom of Settings 7 times.
+
+How it works:
+
+1. **Keys** (`js/crypto.js`, Web Crypto only). HKDF-SHA256 derives three values from the household key: a room id (128 bits) and a token (256 bits) for the relay, and an AES-GCM-256 key. The relay never sees the household key or the AES key, and can't work back to them.
+2. **Envelopes.** Each op (one field change, from the outbox) is sealed as `{ id, wall, c }`. `c` is base64 of a random 12-byte IV plus the ciphertext of the op padded to 64-byte steps. The op id and the wall-clock part of its stamp are bound as additional authenticated data. A device opening an envelope also checks that the op inside has the same id and the same wall time. Anything that fails is dropped and counted, never applied.
+3. **Push.** `js/sync.js` seals the outbox oldest first (at most 200 ops or about 512 KB per request) and POSTs it to the room. The relay stores envelopes in an append-only log with a sequence number. It ignores ids it already has and refuses envelopes stamped more than 24 hours ahead. An op leaves the outbox only if it's still the pending op for its field, because a newer edit made during the push must still go out.
+4. **Pull.** The device fetches entries after its `syncCursor`, 500 at a time, until it reaches the head. Each page is applied in one transaction: stamps are folded into the clock, ops are merged field by field (last write wins), and the cursor moves. That transaction doesn't include the outbox, so pulled changes are never sent back. Applying is idempotent and order-independent.
+5. **When.** Sync runs about 1 s after a local change, on start, when the app becomes visible, when the device comes back online, and every 60 s while visible. While visible, a WebSocket also stays open; the relay only uses it to say "there's something new", and the device then pulls. Only one sync runs at a time, and requests are coalesced. Failures retry with exponential backoff and jitter (2 s up to 5 min). A 401 waits for **Sync now** or a config change. Local saves never wait for sync.
+6. **Joining, switching, losing data.** Setting a different key resets the cursor and queues every record again, so the new household receives this device's items. A relay that has fewer entries than a device has already seen (or has no room at all) gets everything again too.
+
+To try it locally: run the relay (`cd relay`, `npm install`, `npx wrangler dev`), open the app on two different localhost ports (each port has its own storage), and on each, open the developer screen. Set the relay URL to `http://localhost:8787`, generate a key on one, paste the same key on the other, tick **Enable sync** and **Save**.
+
+The relay URL must be `https://`, except `http://localhost` / `127.0.0.1` for development. In this preview the household key is stored in IndexedDB. It will move to the Android Keystore / iOS Keychain later.
+
 ## Project structure
 
 ```
@@ -91,6 +108,10 @@ css/app.css           All styles; design tokens live at the top in :root
 js/app.js             UI, rendering, summary strip, form, insights, import/export screens
 js/storage.js         The only persistence layer: IndexedDB, migrations, outbox, export/import checks, preferences
 js/sync-core.js       Pure sync rules: hybrid logical clock, field ops, last-write-wins merge, tombstones
+js/crypto.js          Household key, HKDF derivation, sealing and opening op envelopes (Web Crypto)
+js/sync.js            Sync engine: push/pull with the relay, triggers, backoff, status
+js/sync-ui.js         The hidden developer sync screen in Settings
+relay/                The sync relay (Cloudflare Worker + Durable Object); not part of the web app
 js/files.js           Hands a file to the person: share sheet in the native app, download on the web
 js/platform.js        isNative() and plugin(): the only place that touches Capacitor
 js/services.js        Known services → domain + category
@@ -98,7 +119,7 @@ js/logos.js           Favicon logos with initial-letter fallback
 js/util.js            Formatting, cost maths (incl. one-offs by month/year), renewal dates
 icons/                App icons (SVG favicon, PNG 192/512, maskable, Apple touch)
 tests/storage.html    In-browser tests for js/storage.js (IndexedDB)
-tests/*.node.test.js  Node tests for js/sync-core.js and the pure parts of js/storage.js
+tests/*.node.test.js  Node tests: sync core, crypto, the sync engine (with an in-memory relay), the pure parts of js/storage.js
 
 Native app only (the web version ignores these):
 package.json          Capacitor 8 and plugins; npm scripts
@@ -124,7 +145,7 @@ Then open <http://localhost:8080>.
 
 ### Tests
 
-`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, and a check that every file in `js/` is in the service worker's `SHELL` list.
+`npm test` runs the Node tests (Node 22 or later, no install needed): clock ordering, skew and the drift cap, convergence of replicas that see the same ops in different orders, per-field merging, tombstones, idempotency, the items → records migration, importing old backups, a check that every file in `js/` is in the service worker's `SHELL` list, encryption (round trip, tampering, wrong key, mismatched authenticated data), the relay's room logic, and the sync engine. The engine tests run three simulated devices through an in-memory relay built on the relay's own logic, with offline periods, failures and retries.
 
 With the server running, open <http://localhost:8080/tests/storage.html> for the IndexedDB tests (migrations, the outbox and tombstones, an interrupted migration, export/import round trip, merge rules and bad-file rejection). They run against throwaway `substracker-test-*` databases, so the app's own data isn't touched.
 
@@ -193,7 +214,7 @@ Your data exists only in the browser on that device. Clearing site data, or unin
 
 ## Privacy note
 
-The only network requests the app makes are for its own files and for favicon images from Google. A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
+Unless you turn on sync, the only network requests the app makes are for its own files and for favicon images from Google. With sync on, it also talks to the relay you set, which only receives encrypted changes (see `relay/README.md` for what it can and can't see). A favicon request includes the domain you entered (for example `example.com`), but never your prices, plans or notes. Leave the domain blank if you'd rather not send it.
 
 ## License
 
