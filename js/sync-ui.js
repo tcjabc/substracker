@@ -1,9 +1,10 @@
-// The hidden developer sync screen in Settings: relay URL, household key, enable, status, Sync now
-// and Disconnect. Opened with ?dev=1 in the URL or 7 taps on the version line; never shown otherwise.
-// There's no pairing UI yet; the key is pasted or generated here.
+// The hidden developer sync screen in Settings: relay URL override, household key, enable, status,
+// Sync now and Disconnect. Opened with ?dev=1 in the URL or 7 taps on the version line; never shown
+// otherwise. People set sync up in the Sync sheet (js/sync-sheet.js); this screen is for debugging,
+// and the only place the relay URL can be changed (empty = DEFAULT_RELAY_URL).
 
 import { generateKey, parseKey } from './crypto.js';
-import { normalizeRelayUrl } from './sync.js';
+import { normalizeRelayUrl, DEFAULT_RELAY_URL } from './sync.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -60,8 +61,9 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
   if (!engine) {
     $('#dev-status').textContent = unavailable || 'Sync is not available on this device.';
     for (const id of ['#dev-save', '#dev-sync-now', '#dev-disconnect', '#dev-key-generate', '#dev-enabled']) $(id).disabled = true;
-    return;
+    return { reload() {} };
   }
+  relay.placeholder = `${DEFAULT_RELAY_URL} (default)`;
 
   const load = async () => {
     try {
@@ -107,7 +109,7 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
     const k = key.value.trim();
     if (url && !normalizeRelayUrl(url)) { error.textContent = 'Use an https:// relay URL (http:// only for localhost).'; relay.focus(); return; }
     if (k) { try { parseKey(k); } catch (err) { error.textContent = err.message; key.focus(); return; } }
-    if (enabled.checked && (!url || !k)) { error.textContent = 'Sync needs a relay URL and a household key.'; return; }
+    if (enabled.checked && !k) { error.textContent = 'Sync needs a household key.'; return; }
     if (savedKey && k !== savedKey) {
       const ok = await ui.confirmDialog({
         title: 'Switch household?',
@@ -119,6 +121,7 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
     await engine.configure({ relayUrl: url ? normalizeRelayUrl(url) : '', householdKey: k, enabled: enabled.checked });
     savedKey = k;
     relay.value = url ? normalizeRelayUrl(url) : '';
+    ui.onConfigChanged?.();
     ui.toast(enabled.checked ? 'Sync settings saved.' : 'Sync settings saved. Sync is off.');
   });
 
@@ -136,6 +139,12 @@ export function initSyncScreen({ engine, storage, ui, unavailable = '' }) {
     key.type = 'password';
     enabled.checked = false;
     savedKey = '';
+    ui.onConfigChanged?.();
     ui.toast('Disconnected. Your items are still on this device.');
   });
+
+  return {
+    /** Re-read the fields (after the Sync sheet changed the config). */
+    reload() { key.type = 'password'; $('#dev-key-show').textContent = 'Show key'; return load(); },
+  };
 }

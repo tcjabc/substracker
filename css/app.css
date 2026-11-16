@@ -41,6 +41,9 @@
   --scrim: rgb(14 15 20 / 0.45);
   --toast-bg: #1e1f26;
   --toast-text: #f4f4f7;
+  /* QR codes stay dark on light in both themes: many camera apps can't read an inverted code. */
+  --qr-fg: #000000;
+  --qr-bg: #ffffff;
 
   /* Avatar fallbacks (initial-letter logos) */
   --avatar-1: #e5484d;
@@ -55,6 +58,7 @@
 
   /* Type */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
@@ -121,12 +125,17 @@
   --field-narrow: 7.5rem;
   --empty-mark: 72px;
   --alert-max: 380px;
+  --qr-size: 12rem;     /* the recovery-words QR code */
+  --check: 1.25rem;     /* checkboxes and radio buttons */
   --hairline-gap: 2px;
 
   /* Elevation */
   --shadow-sm: 0 1px 2px rgb(16 17 26 / 0.06);
   --shadow-md: 0 4px 16px rgb(16 17 26 / 0.08);
   --shadow-lg: 0 12px 40px rgb(16 17 26 / 0.18);
+
+  /* State */
+  --disabled-opacity: 0.45;
 
   /* Motion */
   --dur-fast: 120ms;
@@ -305,6 +314,7 @@ button { cursor: pointer; }
 .btn-danger:hover { filter: brightness(1.05); background: var(--danger); }
 .btn-danger-text { border-color: transparent; background: transparent; color: var(--danger); padding-inline: var(--space-2); }
 .btn-danger-text:hover { background: var(--danger-soft); }
+.btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; filter: none; }
 
 .icon-btn {
   display: inline-grid; place-items: center;
@@ -650,12 +660,66 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .dev-warning strong { color: inherit; }
 .dev-fields { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: var(--border-width) solid var(--border); }
-.dev-key { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.dev-key { font-family: var(--font-mono); }
 .dev-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .dev-actions-end { justify-content: space-between; padding: var(--space-3) var(--space-4); }
-.dev-check { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); }
 .dev-right { text-align: right; }
 #dev-error:empty { display: none; }
+
+/* Checkbox / radio in the app's accent */
+.check { width: var(--check); height: var(--check); margin: 0; flex: none; accent-color: var(--accent); }
+
+/* Sync sheet (js/sync-sheet.js). Each view holds its own body and foot; display: contents keeps
+   them direct flex children of the sheet's form, so the body scrolls and the foot stays put. */
+.sync-view { display: contents; }
+.sync-text { color: var(--text-muted); font-size: var(--text-sm); }
+.sync-heading { margin: 0; font-size: var(--text-base); font-weight: var(--weight-semibold); }
+.sync-warning {
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--warn-soft); color: var(--warn); font-size: var(--text-sm); font-weight: var(--weight-medium);
+}
+.sync-value { text-align: right; overflow-wrap: anywhere; }
+.sync-busy { padding: 0 var(--space-4) var(--space-3); color: var(--text-muted); font-size: var(--text-sm); }
+.sync-reveal, .sync-devices, .sync-words-block { display: grid; gap: var(--space-3); justify-items: start; }
+.sync-words-block { justify-items: stretch; }
+.sync-word-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sync-check-row { display: flex; align-items: center; gap: var(--space-3); min-height: var(--tap); font-weight: var(--weight-medium); cursor: pointer; }
+.sync-words-input { font-family: var(--font-mono); }
+.sync-problems { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--danger); }
+.sync-problems:empty { display: none; }
+
+.word-grid {
+  margin: 0; padding: var(--space-3); list-style: none;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4);
+  background: var(--surface-2); border-radius: var(--radius-md);
+  counter-reset: word;
+}
+@media (min-width: 640px) { .word-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.word-grid li {
+  counter-increment: word; display: flex; align-items: baseline; gap: var(--space-2);
+  font-family: var(--font-mono); font-size: var(--text-md); font-weight: var(--weight-semibold);
+}
+.word-grid li::before {
+  content: counter(word) "."; min-width: var(--space-6); text-align: right;
+  font-size: var(--text-sm); font-weight: 400; color: var(--text-faint);
+}
+
+.qr-figure { margin: 0; display: grid; gap: var(--space-2); justify-items: center; text-align: center; }
+.qr { width: var(--qr-size); height: var(--qr-size); border-radius: var(--radius-sm); background: var(--qr-bg); color: var(--qr-fg); }
+.qr svg { display: block; width: 100%; height: 100%; }
+
+/* A radio choice with a title and an explanation */
+.sync-choices { gap: var(--space-2); }
+.choice {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); cursor: pointer;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+}
+.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { width: var(--check); height: var(--check); margin: var(--hairline-gap) 0 0; flex: none; accent-color: var(--accent); }
+.choice-body { display: grid; gap: var(--space-1); }
+.choice-title { font-weight: var(--weight-semibold); }
+.choice-hint { font-size: var(--text-sm); color: var(--text-muted); }
 
 /* ==========================================================================
    Tab bar & FAB

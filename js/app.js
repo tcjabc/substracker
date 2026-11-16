@@ -5,6 +5,7 @@ import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './servi
 import { logoHTML, initLogoHandling } from './logos.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
+import { initSyncSheet } from './sync-sheet.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   amountInMonth, amountInYear, nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
@@ -176,7 +177,7 @@ async function init() {
 }
 
 /* --------------------------------------------------------------------------
-   Sync (off unless set up on the developer screen)
+   Sync (off until set up in Settings → Sync, or on the developer screen)
    -------------------------------------------------------------------------- */
 function startSync(unavailable) {
   let engine = null;
@@ -187,7 +188,12 @@ function startSync(unavailable) {
     engine.onRemoteChanges(() => reloadData({ remote: true }));
     engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
   }
-  initSyncScreen({ engine, storage, unavailable, ui: { toast, confirmDialog, setTab } });
+  let sheet = null;
+  const dev = initSyncScreen({ engine, storage, unavailable, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
+  sheet = initSyncSheet({
+    engine, storage, unavailable,
+    ui: { toast, confirmDialog, openDialog, closeDialog, exportData, onConfigChanged: () => dev.reload() },
+  });
 }
 
 /**

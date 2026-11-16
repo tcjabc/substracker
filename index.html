@@ -92,6 +92,19 @@
       </div>
 
       <div class="settings-group">
+        <h2 class="group-title">Sync</h2>
+        <div class="panel">
+          <div class="setting-row">
+            <span class="setting-label">
+              Sync between devices
+              <span class="setting-hint" id="sync-summary">Off</span>
+            </span>
+            <button type="button" class="btn" id="btn-sync">Set up</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-group">
         <h2 class="group-title">Data</h2>
         <div class="panel">
           <div class="setting-row">
@@ -125,7 +138,7 @@
           <div class="dev-fields">
             <label class="field">
               <span class="field-label">Relay URL</span>
-              <input class="input" id="dev-relay" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://peek-budget-relay.example.workers.dev">
+              <input class="input" id="dev-relay" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Default relay">
             </label>
             <label class="field">
               <span class="field-label">Household key</span>
@@ -139,7 +152,7 @@
           </div>
           <label class="setting-row">
             <span class="setting-label">Enable sync</span>
-            <input type="checkbox" class="dev-check" id="dev-enabled">
+            <input type="checkbox" class="check" id="dev-enabled">
           </label>
           <div class="setting-row">
             <span class="setting-label">
@@ -281,6 +294,145 @@
       </div>
     </form>
   </dialog>
+
+  <!-- Sync: start a household, join one with the 12 recovery words, or manage it (js/sync-sheet.js) -->
+  <dialog class="sheet" id="sync-dialog" aria-labelledby="sync-title">
+    <form id="sync-form" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h2 id="sync-title">Sync</h2>
+        <button type="button" class="icon-btn" data-sync-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Not set up -->
+      <div class="sync-view" data-sync-view="setup" hidden>
+        <div class="sheet-body">
+          <p class="sync-text">Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them.</p>
+        </div>
+        <div class="sheet-foot">
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="sync-join-open">Join with 12 words</button>
+          <button type="button" class="btn btn-primary" id="sync-start">Start sync</button>
+        </div>
+      </div>
+
+      <!-- Start: the required recovery step -->
+      <div class="sync-view" data-sync-view="recovery" hidden>
+        <div class="sheet-body">
+          <h3 class="sync-heading">Your 12 recovery words</h3>
+          <p class="sync-warning" role="note">Write these down. Anyone with them can read your data; if you lose every device and the words, the synced copy can't be recovered.</p>
+          <div class="sync-words-block" data-words-slot></div>
+          <label class="sync-check-row">
+            <input type="checkbox" class="check" id="sync-saved">
+            <span>I've saved these words</span>
+          </label>
+          <span class="field-error" id="sync-start-error" role="alert"></span>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" data-sync-back>Cancel</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="sync-start-done" disabled>Start sync</button>
+        </div>
+      </div>
+
+      <!-- Join with the 12 words -->
+      <div class="sync-view" data-sync-view="join" hidden>
+        <div class="sheet-body">
+          <label class="field">
+            <span class="field-label">Recovery words</span>
+            <textarea class="input sync-words-input" id="sync-join-words" rows="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12 words, separated by spaces"></textarea>
+            <span class="setting-hint">On a device that already syncs, open Settings → Sync → Show recovery words.</span>
+          </label>
+          <ul class="sync-problems" id="sync-join-problems" role="alert"></ul>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" data-sync-back>Back</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="sync-join">Join</button>
+        </div>
+      </div>
+
+      <!-- Join on a device that already has items -->
+      <div class="sync-view" data-sync-view="choice" hidden>
+        <div class="sheet-body">
+          <p class="sync-text" id="sync-choice-lead"></p>
+          <fieldset class="field sync-choices">
+            <legend class="sr-only">How to join</legend>
+            <label class="choice">
+              <input type="radio" name="join-mode" value="replace" checked>
+              <span class="choice-body">
+                <span class="choice-title">Use the household's data</span>
+                <span class="choice-hint">This device's items are replaced by the household's. Items that are only on this device will be lost, so export a backup first if you might want them.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="join-mode" value="merge">
+              <span class="choice-body">
+                <span class="choice-title">Merge this device's data into the household</span>
+                <span class="choice-hint">This device's items are sent to every device in the household. Where an item was edited in both places, the later edit wins, so changes from this device can overwrite newer ones made on other devices.</span>
+              </span>
+            </label>
+          </fieldset>
+          <div><button type="button" class="btn" id="sync-choice-export">Export a backup first</button></div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="sync-choice-cancel">Cancel</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="sync-choice-go">Continue</button>
+        </div>
+      </div>
+
+      <!-- Sync is set up on this device -->
+      <div class="sync-view" data-sync-view="active" hidden>
+        <div class="sheet-body">
+          <div class="panel">
+            <div class="setting-row">
+              <span class="setting-label">Status</span>
+              <span class="setting-hint sync-value" id="sync-status" role="status" aria-live="polite">Off</span>
+            </div>
+            <div class="setting-row">
+              <span class="setting-label">Last sync</span>
+              <span class="setting-hint sync-value" id="sync-last">Never</span>
+            </div>
+            <div class="setting-row">
+              <span class="setting-label">Changes waiting to send</span>
+              <span class="setting-hint sync-value" id="sync-pending">0</span>
+            </div>
+          </div>
+          <div class="sync-reveal">
+            <button type="button" class="btn" id="sync-show-words">Show recovery words</button>
+            <div class="sync-words-block" data-words-slot hidden></div>
+            <button type="button" class="btn" id="sync-hide-words" hidden>Hide recovery words</button>
+          </div>
+          <div class="sync-devices">
+            <h3 class="sync-heading">Devices</h3>
+            <!-- TODO(sync-devices): a list of this household's devices needs relay support (see README roadmap). -->
+            <p class="sync-text">Use the 12 words to add a device: on it, open Settings → Sync → Join with 12 words.</p>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn btn-danger-text" id="sync-turn-off">Turn off sync on this device</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="sync-now">Sync now</button>
+        </div>
+      </div>
+
+      <p class="sync-busy" id="sync-busy" role="status" aria-live="polite" hidden></p>
+    </form>
+  </dialog>
+
+  <!-- The 12 words as shown in the recovery step and under "Show recovery words" -->
+  <template id="sync-words-template">
+    <ol class="word-grid" aria-label="Recovery words"></ol>
+    <div class="sync-word-actions">
+      <button type="button" class="btn" data-copy-words>Copy words</button>
+    </div>
+    <figure class="qr-figure">
+      <div class="qr" role="img" aria-label="QR code of the 12 recovery words"></div>
+      <figcaption class="setting-hint">The same 12 words as a QR code, to photograph or read with another device's camera app.</figcaption>
+    </figure>
+  </template>
 
   <!-- Generic confirm / choice dialog -->
   <dialog class="alert" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
