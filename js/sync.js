@@ -17,6 +17,12 @@ const PING_MS = 30_000;
 /* --------------------------------------------------------------------------
    Relay URL and transport
    -------------------------------------------------------------------------- */
+/**
+ * The relay every device uses unless the developer screen overrides it (the stored relayUrl). The
+ * only place this URL is written; there's no user-facing field for it.
+ */
+export const DEFAULT_RELAY_URL = 'https://peek-budget-relay.tcjabc.workers.dev';
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
@@ -128,6 +134,26 @@ function describe(err) {
 }
 
 /**
+ * Starting or joining a household failed. `code` is 'no_household' (nobody has started a household
+ * with this key), 'offline' or 'relay'. The message is for people and never includes the key.
+ */
+export class JoinError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const NO_HOUSEHOLD = 'No household found for these words. Check them and try again.';
+
+function joinError(err) {
+  if (err instanceof JoinError) return err;
+  if (err instanceof RelayHttpError && err.status === 404) return new JoinError('no_household', NO_HOUSEHOLD);
+  if (err instanceof TypeError) return new JoinError('offline', "Can't reach the sync service. Check your connection and try again.");
+  return new JoinError('relay', describe(err));
+}
+
+/**
  * Create the engine. Options (all optional except `store`):
  *   store      storage adapter (storage.syncStore in the app)
  *   transport  relay client (fetchTransport())       crypto  { deriveKeys, seal, open } (js/crypto.js)
@@ -180,7 +206,7 @@ export function createSyncEngine(opts) {
     config = await store.getConfig();
     const keyText = config.householdKey || '';
     if (keys?.keyText !== keyText) keys = keyText ? { keyText, ...(await crypto.deriveKeys(keyText)) } : null;
-    const url = normalizeRelayUrl(config.relayUrl);
+    const url = normalizeRelayUrl(config.relayUrl || DEFAULT_RELAY_URL);
     config = { ...config, relayUrl: url };
     return Boolean(config.enabled && url && keys);
   }
@@ -359,6 +385,16 @@ export function createSyncEngine(opts) {
     s?.close();
   }
 
+  /** The relay base URL (the stored override, or the default) and the derived keys for keyText. */
+  async function target(keyText) {
+    const cfg = await store.getConfig();
+    const base = normalizeRelayUrl(cfg.relayUrl || DEFAULT_RELAY_URL);
+    if (!base) throw new JoinError('relay', 'The relay address on this device is not valid.');
+    let k;
+    try { k = await crypto.deriveKeys(keyText); } catch (err) { throw new JoinError('key', err.message); }
+    return { base, k };
+  }
+
   const onLocalChange = () => {
     refreshPending().then(emitStatus);
     debounceTimer = clear(debounceTimer);
@@ -411,6 +447,78 @@ export function createSyncEngine(opts) {
       keys = null;
       return request('config');
     },
+    /**
+     * Does a household exist for this key? Reads one entry; never creates a room.
+     * Resolves { exists, head }; rejects with JoinError for anything but "yes" or "no".
+     */
+    async checkHousehold(keyText) {
+      const { base, k } = await target(keyText);
+      try {
+        const res = await transport.pull(base, k.roomId, k.token, 0, 1);
+        return { exists: true, head: Number.isSafeInteger(res?.head) ? res.head : 0 };
+      } catch (err) {
+        if (err instanceof RelayHttpError && err.status === 404) return { exists: false, head: 0 };
+        throw joinError(err);
+      }
+    },
+
+    /**
+     * Start a new household with a freshly generated key: claim its room on the relay (an empty
+     * push, so other devices can join before anything is added), then save the key, turn sync on
+     * and send this device's items. Rejects with JoinError (nothing saved) if the relay can't be reached.
+     */
+    async startHousehold(keyText) {
+      const { base, k } = await target(keyText);
+      try {
+        const res = await transport.push(base, k.roomId, k.token, [], clientId);
+        if (Number.isSafeInteger(res?.head) && res.head > 0) throw new JoinError('relay', 'That key is already in use. Start again.');
+      } catch (err) { throw joinError(err); }
+      await this.configure({ householdKey: keyText, enabled: true });
+    },
+
+    /**
+     * Join an existing household. mode 'replace': this device's items and settings are replaced
+     * by the household's. Everything is pulled first and then written in one transaction, so if
+     * anything fails, this device is left exactly as it was. mode 'merge': this device's items are
+     * sent to the household too (the later change to a field wins). Never creates a room: a key
+     * with no household rejects with JoinError('no_household') and nothing is saved.
+     */
+    async joinHousehold(keyText, mode) {
+      if (mode !== 'replace' && mode !== 'merge') throw new Error('Join mode must be replace or merge.');
+      const { exists } = await this.checkHousehold(keyText);
+      if (!exists) throw new JoinError('no_household', NO_HOUSEHOLD);
+      if (mode === 'merge') { await this.configure({ householdKey: keyText, enabled: true }); return { mode }; }
+
+      const { base, k } = await target(keyText);
+      const ops = [];
+      let cursor = 0;
+      let bad = 0;
+      try {
+        for (let page = 0; page < 10_000; page++) {
+          const res = await transport.pull(base, k.roomId, k.token, cursor, PULL_LIMIT);
+          const entries = Array.isArray(res?.entries) ? res.entries : [];
+          const head = Number.isSafeInteger(res?.head) ? res.head : 0;
+          for (const e of entries) {
+            if (!Number.isSafeInteger(e?.seq) || e.seq <= cursor) throw new Error('The relay sent entries out of order.');
+            cursor = e.seq;
+            try { ops.push(await crypto.open(k.aesKey, e)); } catch { bad++; }
+          }
+          if (cursor >= head) break;
+          if (!entries.length) throw new Error('The relay stopped before sending everything. Try again.');
+        }
+      } catch (err) { throw joinError(err); }
+      if (bad) log.warn(`Sync: ignored ${bad} change(s) that could not be verified.`);
+      await this.idle(); // no sync of the old config may run into the write below
+      const out = await store.replaceWithRemote(ops, cursor, { householdKey: keyText, enabled: true });
+      knownHead = cursor;
+      pausedUntilTrigger = false;
+      failures = 0;
+      closeSocket();
+      await request('config');
+      for (const fn of remoteListeners) { try { await fn(); } catch (err) { log.error(err); } }
+      return { mode, ...out };
+    },
+
     getStatus: () => ({ ...status }),
     /** Called with a status copy on every change. Returns an unsubscribe function. */
     onStatus(fn) { statusListeners.add(fn); return () => statusListeners.delete(fn); },

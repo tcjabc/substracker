@@ -1,11 +1,16 @@
 // In-browser tests for js/storage.js: migrations (including to sync-ready records), the outbox,
-// tombstones, export/import round trip, merge rules and bad-file rejection. Open tests/storage.html from a local server. Each test uses its own
+// tombstones, export/import round trip, merge rules, bad-file rejection, and joining a household
+// (empty, replace, merge, failed pulls, turning off) with the sync engine. Open tests/storage.html from a local server. Each test uses its own
 // throwaway database; the fixtures below are made up. This file talks to IndexedDB directly
 // only to seed old-format databases; the code under test goes through storage.js.
 
 import * as storage from '../js/storage.js';
 import * as syncCore from '../js/sync-core.js';
 import { chooseImportMode } from '../js/util.js';
+import { createSyncEngine, RelayHttpError, JoinError } from '../js/sync.js';
+import { generateKey } from '../js/crypto.js';
+import { keyToWords, parseRecovery } from '../js/words.js';
+import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
 
 const results = [];
 const created = [];
@@ -373,10 +378,10 @@ test('sync config: a new household key resets the cursor and queues every record
   await storage.save(item({ id: 'b' }));
   await storage.removeSentOps((await storage.syncState()).outbox.map(({ rec, f, t }) => ({ rec, f, t })));
   await storage.applyRemote([], 12);
-  eq(await storage.getSyncConfig(), { relayUrl: '', householdKey: '', enabled: false }, 'default');
+  eq(await storage.getSyncConfig(), { relayUrl: '', householdKey: '', enabled: false, wasPaired: false }, 'default');
 
   await storage.setSyncConfig({ relayUrl: ' http://localhost:8787 ', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true });
-  eq(await storage.getSyncConfig(), { relayUrl: 'http://localhost:8787', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true }, 'stored');
+  eq(await storage.getSyncConfig(), { relayUrl: 'http://localhost:8787', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true, wasPaired: true }, 'stored');
   eq(await storage.getSyncCursor(), 0, 'cursor reset');
   eq(await storage.pendingCount(), 2 * Object.keys(item()).length, 'every field of both records queued');
 
@@ -663,6 +668,193 @@ for (const [label, file, msg] of bad) {
     eq(JSON.stringify([await storage.getAll(), await storage.getSettings()]), before, 'data unchanged');
   });
 }
+
+/* ------------------------------------------------------------------ Joining a household (real IndexedDB) */
+// The sync engine over storage.syncStore, talking to an in-page relay built on the relay's own
+// room logic (relay/src/room-logic.js). Each "device" is its own throwaway database; only one is
+// open at a time, so each device's engine is stopped before the next one starts.
+
+/** An in-page relay. `failPull(after, n)` may throw to make the n-th pull fail. */
+function pageRelay() {
+  const rooms = new Map();
+  const relay = { rooms, pulls: 0, failPull: null };
+  const unwrap = (r) => {
+    if (r.status !== 200) throw new RelayHttpError(r.status, r.body.error, r.body.message);
+    return JSON.parse(JSON.stringify(r.body));
+  };
+  const roomOf = (id) => {
+    if (!rooms.has(id)) { const store = memoryStore(); rooms.set(id, { store, core: new RoomCore(store, { limits: { rateCapacity: 1e9 } }) }); }
+    return rooms.get(id);
+  };
+  relay.transport = {
+    async push(base, room, token, envelopes) { return unwrap(await roomOf(room).core.push({ token, bodyText: JSON.stringify({ envelopes }) })); },
+    async pull(base, room, token, after, limit) {
+      relay.pulls++;
+      relay.failPull?.(after, relay.pulls);
+      if (!rooms.has(room)) return unwrap({ status: 404, body: { error: 'no_room', message: 'none' } });
+      return unwrap(await roomOf(room).core.pull({ token, after: String(after), limit: String(limit) }));
+    },
+    live(base, room, token, client, { onClose }) { onClose(); return { close() {} }; },
+  };
+  return relay;
+}
+
+const quietTimers = { setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {} };
+const pageEnv = { isVisible: () => true, isOnline: () => true, onVisibility() {}, onOnline() {}, onOffline() {} };
+
+async function pageEngine(relay) {
+  const engine = createSyncEngine({ store: storage.syncStore, transport: relay.transport, env: pageEnv, timers: quietTimers, log: { warn() {}, error() {} } });
+  await engine.start();
+  return engine;
+}
+
+/** Device A: a fresh database with `items`, starting a household. Returns { name, key }. */
+async function household(relay, items) {
+  const name = freshDb();
+  if (items.length) await storage.importAll(JSON.stringify(backup(items)), 'replace');
+  const engine = await pageEngine(relay);
+  const key = generateKey();
+  await engine.startHousehold(key);
+  await engine.syncNow();
+  engine.stop();
+  return { name, key };
+}
+
+const ids = async () => (await storage.getAll()).map((s) => s.id).sort();
+const deviceSnapshot = async () => JSON.stringify({
+  items: (await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id)),
+  settings: await storage.getSettings(),
+  state: await storage.syncState(),
+  config: await storage.getSyncConfig(),
+});
+
+test('join: an empty device gets the household items and settings and queues nothing', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one' }), item({ id: 'h2', name: 'Household two' })]);
+  freshDb();
+  const engine = await pageEngine(relay);
+  eq(await storage.liveItemCount(), 0, 'empty before');
+  await engine.joinHousehold(key, 'replace');
+  engine.stop();
+  eq(await ids(), ['h1', 'h2'], 'household items');
+  eq(await storage.pendingCount(), 0, 'nothing to send back');
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey === key, cfg.enabled, cfg.wasPaired], [true, true, true], 'config saved');
+  assert((await storage.getSyncCursor()) > 0, 'cursor at the household head');
+});
+
+test('join with data → replace: this device\'s items are replaced by the household\'s', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one', price: 10 })]);
+  freshDb();
+  await storage.save(item({ id: 'mine', name: 'Only here' }));
+  await storage.save(item({ id: 'h1', name: 'Local version of h1', price: 999, updatedAt: '2099-01-01T00:00:00.000Z' }));
+  await storage.saveSettings({ defaultCurrency: 'JPY' });
+  const engine = await pageEngine(relay);
+  await engine.joinHousehold(key, 'replace');
+  engine.stop();
+  eq(await ids(), ['h1'], 'only the household items');
+  eq((await storage.getAll())[0].price, 10, "the household's version of h1");
+  eq(await storage.pendingCount(), 0, 'the local changes are not sent');
+  const raw = (await storage.syncState()).outbox;
+  eq(raw.length, 0, 'outbox empty');
+});
+
+test('join with data → merge: this device\'s items reach the household, and the household\'s arrive', async () => {
+  const relay = pageRelay();
+  const a = await household(relay, [item({ id: 'h1', name: 'Household one' })]);
+  const bName = freshDb();
+  await storage.save(item({ id: 'mine', name: 'Only on B' }));
+  const engine = await pageEngine(relay);
+  await engine.joinHousehold(a.key, 'merge');
+  await engine.syncNow();
+  engine.stop();
+  eq(await ids(), ['h1', 'mine'], 'B has both');
+  storage.useDatabase(a.name);
+  const engineA = await pageEngine(relay);
+  await engineA.syncNow();
+  engineA.stop();
+  eq(await ids(), ['h1', 'mine'], 'A received B\'s item');
+  storage.useDatabase(bName);
+});
+
+test('replace: a failed pull, or a failed write, leaves this device\'s data untouched', async () => {
+  const relay = pageRelay();
+  const many = Array.from({ length: 120 }, (_, i) => item({ id: `h${i}`, name: `Household ${i}` }));
+  const { key } = await household(relay, many); // 120 items × 14 fields: more than one 500-entry page
+  const bName = freshDb();
+  await storage.save(item({ id: 'mine', name: 'Only on B' }));
+  await storage.saveSettings({ defaultCurrency: 'JPY' });
+  const engine = await pageEngine(relay);
+  const before = await deviceSnapshot();
+
+  // The relay fails on the second page.
+  relay.failPull = (after) => { if (after > 0) throw new RelayHttpError(503, 'down', 'down'); };
+  let err = null;
+  try { await engine.joinHousehold(key, 'replace'); } catch (e) { err = e; }
+  assert(err instanceof JoinError, `a JoinError (${err})`);
+  eq(await deviceSnapshot(), before, 'untouched after a failed page');
+
+  // The network goes on the first page.
+  relay.failPull = () => { throw new TypeError('Failed to fetch'); };
+  err = null;
+  try { await engine.joinHousehold(key, 'replace'); } catch (e) { err = e; }
+  assert(err instanceof JoinError && err.code === 'offline', `offline (${err?.code})`);
+  eq(await deviceSnapshot(), before, 'untouched when offline');
+
+  // The pull succeeds but the write fails (broken device id makes the transaction abort).
+  relay.failPull = null;
+  const devId = (await storage.syncState()).deviceId;
+  await inspect(bName, (db) => rawPut(db, 'meta', [{ key: 'deviceId', value: '' }]));
+  err = null;
+  try { await engine.joinHousehold(key, 'replace'); } catch (e) { err = e; }
+  assert(err, 'the write failed');
+  await inspect(bName, (db) => rawPut(db, 'meta', [{ key: 'deviceId', value: devId }]));
+  eq(await deviceSnapshot(), before, 'untouched after a failed write');
+
+  await engine.joinHousehold(key, 'replace');
+  engine.stop();
+  eq((await storage.getAll()).length, 120, 'a clean retry works');
+});
+
+test('turn off keeps every item and the settings; the key is removed', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one' })]);
+  freshDb();
+  await storage.save(item({ id: 'mine', name: 'Only on B' }));
+  const engine = await pageEngine(relay);
+  await engine.joinHousehold(key, 'merge');
+  await engine.syncNow();
+  const items = JSON.stringify((await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id)));
+  const settings = JSON.stringify(await storage.getSettings());
+  await engine.disconnect();
+  engine.stop();
+  eq(JSON.stringify((await storage.getAll()).sort((x, y) => x.id.localeCompare(y.id))), items, 'items kept');
+  eq(JSON.stringify(await storage.getSettings()), settings, 'settings kept');
+  const cfg = await storage.getSyncConfig();
+  eq([cfg.householdKey, cfg.enabled, cfg.wasPaired], ['', false, true], 'key gone, remembers it was paired');
+});
+
+test('a device paired before 1.7 (no wasPaired stored) still remembers it was paired after turning off', async () => {
+  const name = freshDb();
+  await storage.getAll(); // create and migrate the database
+  await inspect(name, (db) => rawPut(db, 'meta', [{ key: 'syncConfig', value: { relayUrl: '', householdKey: 'AAAAAAAAAAAAAAAAAAAAAA', enabled: true } }]));
+  eq((await storage.getSyncConfig()).wasPaired, false, 'not stored yet');
+  await storage.setSyncConfig({ enabled: false, householdKey: '' });
+  eq((await storage.getSyncConfig()).wasPaired, true, 'remembered');
+});
+
+test('the words shown for a key saved the old way (22 characters) join the same household', async () => {
+  const relay = pageRelay();
+  const { key } = await household(relay, [item({ id: 'h1', name: 'Household one' })]);
+  const words = (await keyToWords(key)).join(' ');
+  eq(await parseRecovery(words), key, 'same key');
+  freshDb();
+  const engine = await pageEngine(relay);
+  await engine.joinHousehold(await parseRecovery(words.toUpperCase()), 'replace');
+  engine.stop();
+  eq(await ids(), ['h1'], 'joined');
+});
 
 /* ------------------------------------------------------------------ Runner */
 

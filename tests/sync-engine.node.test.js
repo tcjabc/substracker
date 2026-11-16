@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as box from '../js/crypto.js';
 import { applyRemoteOps, requeueOps, toItem, settingsOps, effectiveSettings, SETTINGS_ID } from '../js/storage.js';
-import { createSyncEngine, RelayHttpError, normalizeRelayUrl } from '../js/sync.js';
+import { createSyncEngine, RelayHttpError, JoinError, normalizeRelayUrl, DEFAULT_RELAY_URL } from '../js/sync.js';
 import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
 
 const RELAY = 'https://relay.example';
@@ -54,6 +54,7 @@ function memoryRelay() {
         },
         async pull(base, room, token, after, limit) {
           check('pull');
+          await hooks.beforePull?.(after);
           if (!rooms.has(room)) return unwrap({ status: 404, body: { error: 'no_room', message: 'none' } });
           return unwrap(await roomOf(room).core.pull({ token, after: String(after), limit: String(limit) }));
         },
@@ -140,6 +141,20 @@ function device(name, relay, { skewMs = 0, hooks, key = KEY } = {}) {
       s.cursor = cursor;
       return out;
     },
+    async replaceWithRemote(ops, cursor, cfg) {
+      s.replaceCalls = (s.replaceCalls ?? 0) + 1;
+      // All or nothing, like the IndexedDB transaction.
+      const replica = { clock: { ...s.clock }, records: new Map() };
+      const out = applyRemoteOps(replica, ops, now());
+      if (s.failReplace) throw new Error('disk full');
+      s.clock = replica.clock;
+      s.records = replica.records;
+      s.outbox.clear();
+      s.cursor = cursor;
+      s.config = { ...s.config, ...cfg };
+      return { records: replica.records.size, changed: out.changed, skipped: out.skipped };
+    },
+    async liveItemCount() { return [...s.records.values()].filter((r) => r.id !== SETTINGS_ID).map(toItem).filter(Boolean).length; },
     async getLastSynced() { return s.last; },
     async setLastSynced(ms) { s.last = ms; },
     onChangesEnqueued(fn) { s.listener = fn; },
@@ -520,4 +535,195 @@ test('a fresh device joins empty, sends no settings, and adopts the household cu
   assert.deepEqual(b.settings(auto).groupColors, { Uncategorised: 'g2' });
   await sync(a);
   assert.equal(a.settings().defaultCurrency, 'TWD', 'the household value is untouched');
+});
+
+/* ------------------------------------------------------------------ Starting and joining a household */
+
+/** A device with no household yet (sync off), already started. */
+async function unpaired(name, relay, opts) {
+  const d = device(name, relay, { ...opts, key: '' });
+  d.s.config.enabled = false;
+  await d.engine.start();
+  return d;
+}
+
+const roomSize = (relay) => [...relay.rooms.values()][0].store.size;
+
+test('the relay URL has one default, used when no override is stored', async () => {
+  assert.equal(DEFAULT_RELAY_URL, 'https://peek-budget-relay.tcjabc.workers.dev');
+  const relay = memoryRelay();
+  const seen = [];
+  const a = await unpaired('devA', relay, { hooks: { beforePull: () => {} } });
+  a.s.config.relayUrl = '';
+  const t = relay.transport(a.net);
+  const engine = createSyncEngine({
+    store: a.store, env: a.env, timers: a.timers, log: { warn() {}, error() {} },
+    transport: { ...t, async pull(base, ...rest) { seen.push(base); return t.pull(base, ...rest); } },
+  });
+  await engine.checkHousehold(box.generateKey());
+  assert.deepEqual(seen, [DEFAULT_RELAY_URL]);
+});
+
+test('start: claims the room before anything is added, so another device can join at once', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  await a.engine.startHousehold(key);
+  assert.equal(a.s.config.householdKey, key);
+  assert.equal(a.s.config.enabled, true);
+  assert.equal(a.engine.getStatus().state, 'ok');
+  const b = await unpaired('devB', relay);
+  assert.deepEqual(await b.engine.checkHousehold(key), { exists: true, head: 0 });
+  await b.engine.joinHousehold(key, 'replace');
+  assert.equal(b.engine.getStatus().state, 'ok');
+  a.add('x', expense('Added after B joined', 1));
+  await sync(a, b);
+  assert.deepEqual(b.items(), a.items());
+});
+
+test('start: offline, nothing is saved and the error says so', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  a.net.up = false;
+  await assert.rejects(a.engine.startHousehold(box.generateKey()), (err) => err instanceof JoinError && err.code === 'offline');
+  assert.equal(a.s.config.householdKey, '');
+  assert.equal(relay.rooms.size, 0);
+});
+
+test('join: unknown words find no household, create no room and save nothing', async () => {
+  const relay = memoryRelay();
+  const b = await unpaired('devB', relay);
+  b.add('y', expense('Mine', 2));
+  const before = JSON.stringify([...b.s.records]);
+  const stranger = box.generateKey();
+  assert.deepEqual(await b.engine.checkHousehold(stranger), { exists: false, head: 0 });
+  for (const mode of ['replace', 'merge']) {
+    await assert.rejects(b.engine.joinHousehold(stranger, mode), (err) => {
+      assert.ok(err instanceof JoinError);
+      assert.equal(err.code, 'no_household');
+      assert.equal(err.message, 'No household found for these words. Check them and try again.');
+      return true;
+    });
+  }
+  assert.equal(relay.rooms.size, 0, 'no room created');
+  assert.equal(relay.calls.includes('push'), false, 'nothing pushed');
+  assert.equal(b.s.config.householdKey, '');
+  assert.equal(JSON.stringify([...b.s.records]), before);
+});
+
+test('join an empty device: it gets the household data and sends nothing back', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  a.add('x', expense('Household item', 5));
+  a.choose({ defaultCurrency: 'TWD' });
+  await a.engine.startHousehold(key);
+  const b = await unpaired('devB', relay);
+  const out = await b.engine.joinHousehold(key, 'replace');
+  assert.equal(out.mode, 'replace');
+  assert.deepEqual(b.items(), a.items());
+  assert.equal(b.settings({ autoCurrency: 'GBP' }).defaultCurrency, 'TWD');
+  assert.equal(b.s.outbox.size, 0);
+  const head = roomSize(relay);
+  await sync(b);
+  assert.equal(roomSize(relay), head, 'B pushed nothing');
+});
+
+test('join with data → replace: this device ends up with exactly the household data', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  a.add('x', expense('Household item', 5));
+  a.add('gone', expense('Deleted in the household', 6));
+  await a.engine.startHousehold(key);
+  a.remove('gone');
+  await sync(a);
+  const c = await unpaired('devC', relay, { skewMs: 3600_000 }); // its edits are "newer"
+  c.add('mine', expense('Only on C', 7));
+  c.add('x', expense('C version of x', 99)); // same id: would win a merge
+  c.choose({ defaultCurrency: 'JPY' });
+  const reloads = [];
+  c.engine.onRemoteChanges(() => reloads.push(1));
+  await c.engine.joinHousehold(key, 'replace');
+  assert.deepEqual(c.items(), a.items(), 'only the household items');
+  assert.equal(c.items()[0].price, 5, "the household's version of x");
+  assert.equal(c.s.records.has('mine'), false);
+  assert.equal(c.s.records.get('gone')?.fields.del, true, 'the household tombstone arrived');
+  assert.equal(c.settings().defaultCurrency, undefined, "C's currency choice is replaced too");
+  assert.equal(c.s.outbox.size, 0);
+  assert.equal(c.s.config.householdKey, key);
+  assert.ok(reloads.length >= 1, 'screens refresh');
+  await sync(c, a);
+  assert.deepEqual(a.items().map((i) => i.id), ['x'], 'nothing of C reached the household');
+  assert.equal(a.items()[0].price, 5);
+});
+
+test('join with data → merge: both sides end up with everything', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  a.add('x', expense('Household item', 5));
+  await a.engine.startHousehold(key);
+  const c = await unpaired('devC', relay);
+  c.add('mine', expense('Only on C', 7));
+  await c.engine.joinHousehold(key, 'merge');
+  await sync(a);
+  assert.deepEqual(a.items().map((i) => i.id), ['mine', 'x']);
+  assert.deepEqual(c.items(), a.items());
+});
+
+test('replace is atomic: a failed pull or write leaves this device exactly as it was', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  for (let i = 0; i < 700; i++) a.add(`r${i}`, expense(`Item ${i}`, i)); // more than one pull page (500)
+  await a.engine.startHousehold(key);
+  await sync(a);
+  assert.equal(roomSize(relay) > 500, true);
+
+  let failure = null; // what the next pull after the first page does
+  const c = await unpaired('devC', relay, { hooks: { beforePull: (after) => { if (after > 0 && failure) failure(); } } });
+  c.add('mine', expense('Only on C', 7));
+  c.choose({ defaultCurrency: 'JPY' });
+  const snapshot = () => JSON.stringify({ r: [...c.s.records], o: [...c.s.outbox], cur: c.s.cursor, cfg: c.s.config, clock: c.s.clock });
+  const before = snapshot();
+
+  failure = () => { throw new RelayHttpError(503, 'unavailable', 'down'); };
+  await assert.rejects(c.engine.joinHousehold(key, 'replace'), (err) => err instanceof JoinError && err.code === 'relay');
+  assert.equal(snapshot(), before, 'untouched after the relay failed on page 2');
+
+  failure = () => { throw new TypeError('fetch failed'); };
+  await assert.rejects(c.engine.joinHousehold(key, 'replace'), (err) => err instanceof JoinError && err.code === 'offline');
+  assert.equal(snapshot(), before, 'untouched after going offline on page 2');
+  assert.equal(c.s.replaceCalls ?? 0, 0, 'nothing was written');
+
+  failure = null;
+  c.s.failReplace = true;
+  await assert.rejects(c.engine.joinHousehold(key, 'replace'), /disk full/);
+  c.s.failReplace = false;
+  assert.equal(snapshot(), before, 'untouched after the write failed');
+
+  await c.engine.joinHousehold(key, 'replace');
+  assert.equal(c.items().length, 700);
+  assert.equal(c.s.records.has('mine'), false);
+  assert.deepEqual(c.items(), a.items());
+});
+
+test('turning off keeps every item; the key is gone and nothing more is sent', async () => {
+  const relay = memoryRelay();
+  const a = await unpaired('devA', relay);
+  const key = box.generateKey();
+  a.add('x', expense('Household item', 5));
+  await a.engine.startHousehold(key);
+  const items = a.items();
+  await a.engine.disconnect();
+  assert.deepEqual(a.items(), items);
+  assert.equal(a.s.config.householdKey, '');
+  assert.equal(a.s.config.enabled, false);
+  assert.equal(a.engine.getStatus().state, 'off');
+  a.add('y', expense('After turning off', 1));
+  const calls = relay.calls.length;
+  await a.engine.syncNow();
+  assert.equal(relay.calls.length, calls, 'no network while off');
+  assert.deepEqual(a.items().map((i) => i.id), ['x', 'y']);
 });

@@ -19,6 +19,7 @@ const SHELL = [
   './js/words.js',
   './js/sync.js',
   './js/sync-ui.js',
+  './js/pairing.js',
   './js/files.js',
   './js/platform.js',
   './js/services.js',

@@ -321,7 +321,9 @@ export async function syncState() {
    Sync storage, used by js/sync.js. Config and bookkeeping live in `meta`: per device, never
    exported, never synced. All of this needs the records store (not a fallback store).
    -------------------------------------------------------------------------- */
-const NO_CONFIG = Object.freeze({ relayUrl: '', householdKey: '', enabled: false });
+// wasPaired: this device has been in a household before (kept after turning sync off, so starting
+// a new household can warn that the other devices stay on the old one). Not a secret.
+const NO_CONFIG = Object.freeze({ relayUrl: '', householdKey: '', enabled: false, wasPaired: false });
 
 async function recordsDb() {
   const db = await open();
@@ -355,6 +357,7 @@ export async function setSyncConfig(patch) {
     householdKey: typeof patch.householdKey === 'string' ? patch.householdKey.trim() : cur.householdKey,
     enabled: typeof patch.enabled === 'boolean' ? patch.enabled : cur.enabled,
   };
+  next.wasPaired = Boolean(cur.wasPaired || cur.householdKey || next.householdKey);
   metaStore.put({ key: 'syncConfig', value: next });
   let requeued = 0;
   if (next.householdKey !== cur.householdKey) {
@@ -445,6 +448,55 @@ export async function applyRemote(ops, cursor) {
   return out;
 }
 
+/**
+ * Joining a household with "Use the household's data": in ONE transaction over records, outbox and
+ * meta, this device's records and pending changes are replaced by the household's (`ops`, everything
+ * pulled up to `cursor`), and the sync config is saved (`config`, e.g. the key and enabled). The
+ * caller pulls everything first, so a failed pull never gets here; any failure in here aborts the
+ * transaction and leaves this device exactly as it was. The device id and clock are kept (the clock
+ * moves past every stamp received). Nothing is queued: the household already has all of it.
+ * Returns { records, changed, skipped }.
+ */
+export async function replaceWithRemote(ops, cursor, config = {}) {
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new Error('Invalid sync cursor');
+  const db = await recordsDb();
+  const tx = db.transaction([RECORDS, OUTBOX, META], 'readwrite');
+  const recStore = tx.objectStore(RECORDS);
+  const metaStore = tx.objectStore(META);
+  const [devRow, hlcRow, cfgRow] = await Promise.all([
+    result(metaStore.get('deviceId')), result(metaStore.get('hlc')), result(metaStore.get('syncConfig')),
+  ]);
+  let replica;
+  let out;
+  try {
+    replica = { clock: loadClock(hlcRow?.value, devRow?.value), records: new Map() };
+    out = applyRemoteOps(replica, ops);
+  } catch (err) {
+    tx.abort();
+    throw err;
+  }
+  recStore.clear();
+  tx.objectStore(OUTBOX).clear();
+  for (const rec of replica.records.values()) recStore.put(rec);
+  const cur = { ...NO_CONFIG, ...cfgRow?.value };
+  const next = {
+    relayUrl: typeof config.relayUrl === 'string' ? config.relayUrl.trim() : cur.relayUrl,
+    householdKey: typeof config.householdKey === 'string' ? config.householdKey.trim() : cur.householdKey,
+    enabled: typeof config.enabled === 'boolean' ? config.enabled : cur.enabled,
+  };
+  next.wasPaired = Boolean(cur.wasPaired || cur.householdKey || next.householdKey);
+  metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+  metaStore.put({ key: 'syncCursor', value: cursor });
+  metaStore.put({ key: 'syncConfig', value: next });
+  await done(tx);
+  return { records: replica.records.size, changed: out.changed, skipped: out.skipped };
+}
+
+/** How many live items (not deleted, not the settings record) this device has. */
+export async function liveItemCount() {
+  return (await getAll()).length;
+}
+
 export async function getLastSynced() {
   const db = await recordsDb();
   const row = await result(db.transaction(META).objectStore(META).get('lastSyncedAt'));
@@ -458,7 +510,7 @@ export async function setLastSynced(ms) {
 /** Everything js/sync.js needs from storage, as one adapter (tests pass an in-memory one instead). */
 export const syncStore = {
   getConfig: getSyncConfig, setConfig: setSyncConfig, requeueAll, pendingOps, pendingCount, removeSentOps,
-  getCursor: getSyncCursor, applyRemote, getLastSynced, setLastSynced,
+  getCursor: getSyncCursor, applyRemote, replaceWithRemote, liveItemCount, getLastSynced, setLastSynced,
   onChangesEnqueued: (fn) => onChangesEnqueued(fn),
 };
 
