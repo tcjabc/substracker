@@ -21,7 +21,7 @@ import {
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.10.4';
+const APP_VERSION = '1.11.0';
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
