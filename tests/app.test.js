@@ -1387,6 +1387,24 @@ test('Import with AI: a reply pasted on a phone (invisible spaces, curly quotes,
   eq((await storage.getAll()).length, before.length, 'nothing imported');
 });
 
+test('Import with AI: the exact phone paste (line wrapping copied as line breaks) reviews like the clean reply', async () => {
+  const before = await storage.getAll();
+  const wrapped = await (await fetch('./fixtures/ai-reply-wrapped.txt', { cache: 'no-store' })).text();
+  eq((wrapped.match(/\n/g) ?? []).length, 33, 'the fixture has its 33 line breaks');
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  await reviewReply(wrapped);
+  eq(text($('#ai-review-summary')), '18 rows · 16 selected · 2 with an unsupported cycle.', 'read, not "the JSON has a mistake"');
+  assert($('#ai-reply-error').hidden, 'no error for the reply');
+  const names = $$('#ai-rows [data-row]').map((r) => text(r));
+  assert(names[0].includes('Salary - Northwind Learning Co') && names[6].includes('City Power & Water'), 'names have their spaces back');
+  assert(!names.some((n) => /Clo ud|Utiliti es|LearningCo/.test(n)), 'no wrap left in a name or category');
+  $('[data-ai-close]').click();
+  await until(() => !aiDlg().open, 'closed');
+  eq((await storage.getAll()).length, before.length, 'nothing imported');
+});
+
 test('Import with AI: Reduce motion and effects: the thumb returns at once, no transition', async () => {
   $('#set-motion').checked = true; $('#set-motion').dispatchEvent(new Event('change'));
   try {

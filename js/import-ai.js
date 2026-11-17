@@ -12,6 +12,7 @@
 
 import { CURRENCIES, uid, isOnce, MERGE_SYNC_NOTE } from './util.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
+import { DEFAULT_CATEGORIES } from './services.js';
 
 export const AI_SCHEMA_VERSION = 1;
 export const MAX_AI_CHARS = 500_000;
@@ -65,22 +66,141 @@ function balancedObject(text, start) {
 const SMART_QUOTE = /[\u201C\u201D\u201E\u201F\u2033\u2036]/;
 const UNICODE_SPACE = /[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/;
 const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u2060-\u2064\uFEFF]/;
-// Inside a string, joiners stay: they hold emoji and some scripts together.
 const BOM = new RegExp(String.fromCharCode(0xfeff), 'g');
+// Inside a string, joiners stay: they hold emoji and some scripts together.
 const INVISIBLE_IN_TEXT =/[\u00AD\u180E\u200B\u2060-\u2064\uFEFF]/;
 // After a curly closing quote inside a straight-quoted string: the string ends there if JSON goes on.
 const ENDS_STRING = /^[ \t\r\n]*[:,}\]]/;
 
+// A chat app can also copy its on-screen line wrapping as real line breaks: JSON written on one
+// line comes out in lines of the screen's width, with breaks inside strings, keys and numbers. The
+// wrapping breaks at a space when the line has one, and the space is lost ("Learning⏎Co" was
+// "Learning Co"); only a line with no space at all is split mid-word, at the full width ("Clo⏎ud",
+// "2026-⏎11-26"), and nothing was lost there. So a break after a short line, or a line with a
+// space in it, was a space; a break after a full line without one was mid-word.
+//
+// What "full" measures depends on the chat's font, so the reply itself is the ruler: a break
+// inside a key, inside a field that never has spaces (a date, a code, a cycle, a type), or between
+// tokens of JSON with no spaces between tokens, can only be mid-word, so those lines are full. If
+// they all have the same number of characters the view is monospaced and that number decides;
+// otherwise a line is full when its rough glyph width reaches theirs (narrow characters such as
+// quotes and colons count less). A space right at the edge of a line still looks full, so plainJson
+// only marks each break inside a string with its guess, and the field decides (tidyRow).
+const glyphWidth = (c) => (/[ ,.:;'|!ijl]/.test(c) ? 0.45 : /["frtI()[\]{}-]/.test(c) ? 0.65 : /[mwMW]/.test(c) ? 1.6 : /[A-Z&]/.test(c) ? 1.25 : 1);
+/** Without a ruler from the reply: within 3% of the widest line. With one: within 1% of its narrowest full line. */
+const FULL_GLYPHS = 0.97;
+const FULL_RULER = 0.99;
+/** Fields whose values never contain spaces, so a break in them was always mid-word. */
+const SPACELESS_FIELDS = new Set(['version', 'rows', 'amount', 'currency', 'cycle', 'nextDate', 'type', 'id']);
+const KEY_AFTER = new RegExp(`^(?:[ \\t\\r\\n]|${UNICODE_SPACE.source}|${INVISIBLE.source})*:`);
+/** Marks plainJson leaves inside strings for a copied line break: probably mid-word, or probably a lost space. */
+const WRAP_JOIN = String.fromCharCode(0xe000);
+const WRAP_SPACE = String.fromCharCode(0xe001);
+const WRAP_ANY = new RegExp(`[${WRAP_JOIN}${WRAP_SPACE}]`, 'g');
+
+/** Whether the curly or straight quote `c` at `i` closes a string opened by `str` (as plainJson reads it). */
+const closesString = (s, i, c, str) => c === '"' || (SMART_QUOTE.test(c) && (str === 'smart' || ENDS_STRING.test(s.slice(i + 1, i + 40))));
+
+/**
+ * Where each line break in `s` falls: 'key', 'spaceless' (a value of SPACELESS_FIELDS), 'text'
+ * (any other string value) or 'outside' (between tokens); and whether there are spaces between tokens.
+ */
+function scanBreaks(s) {
+  const kinds = [];
+  let str = null;
+  let inString = []; // the breaks in the current string, labelled when it closes
+  let text = '';
+  let lastKey = null;
+  let spaced = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\n') {
+      if (str) inString.push(kinds.length);
+      kinds.push(str ? 'text' : 'outside');
+    } else if (str) {
+      if (c === '\\') { text += s[i + 1] ?? ''; i++; }
+      else if (closesString(s, i, c, str)) {
+        const isKey = KEY_AFTER.test(s.slice(i + 1, i + 40));
+        const kind = isKey ? 'key' : SPACELESS_FIELDS.has(lastKey) ? 'spaceless' : 'text';
+        for (const b of inString) kinds[b] = kind;
+        if (isKey) lastKey = text.replace(INVISIBLE_ALL, '').replace(/\s/g, '');
+        str = null; inString = []; text = '';
+      } else text += c;
+    } else if (c === '"') str = 'straight';
+    else if (SMART_QUOTE.test(c)) str = 'smart';
+    else if (c === ' ' || c === '\t' || UNICODE_SPACE.test(c)) spaced = true;
+  }
+  return { kinds, spaced };
+}
+
+/** For each line break in `s`: whether the line before it looks like a mid-word wrap rather than one at a space. */
+function wrapBreaks(s, lead) {
+  const lines = s.split('\n').map((l) => l.replace(/\r$/, ''));
+  if (lines.length < 2) return [];
+  const { kinds, spaced } = scanBreaks(s);
+  const chars = lines.map((l, i) => l.length + (i === 0 ? lead : 0));
+  const glyphs = lines.map((l, i) => [...l].reduce((sum, c) => sum + glyphWidth(c), 0) + (i === 0 ? lead : 0));
+  const noSpace = lines.map((l) => !/[ \t]/.test(l));
+  const ruler = kinds.map((k, i) => i).filter((i) => noSpace[i] && i > 0
+    && (kinds[i] === 'key' || kinds[i] === 'spaceless' || (kinds[i] === 'outside' && !spaced)));
+  const rulerChars = ruler.map((i) => chars[i]);
+  const monospaced = ruler.length >= 2 && Math.min(...rulerChars) === Math.max(...rulerChars);
+  const fullChars = monospaced ? rulerChars[0] : Math.max(...chars);
+  const fullGlyphs = ruler.length ? Math.min(...ruler.map((i) => glyphs[i])) * FULL_RULER : Math.max(...glyphs) * FULL_GLYPHS;
+  return lines.slice(0, -1).map((l, i) => noSpace[i]
+    && (monospaced ? chars[i] >= fullChars : chars[i] >= fullChars || glyphs[i] >= fullGlyphs));
+}
+
+/** A text value with the line-break marks resolved: as text with spaces (a name) or as a code (a date, currency…). */
+const unwrapText = (v, spaced) => v.replaceAll(WRAP_JOIN, '').replaceAll(WRAP_SPACE, spaced ? ' ' : '');
+
+/**
+ * A name with line-break marks. A break that looks mid-word may still be a space that fell right at
+ * the edge of the line; in a name, a space is usually followed by a capital, a digit or "&" ("Learning
+ * Co"), and a mid-word split rarely is ("Clo|ud"), so that decides those.
+ */
+const unwrapName = (v) => v
+  .replace(new RegExp(`(?<=[\\p{L}\\p{N}.)])${WRAP_JOIN}(?=[\\p{Lu}\\p{N}&(])`, 'gu'), ' ')
+  .replaceAll(WRAP_JOIN, '')
+  .replaceAll(WRAP_SPACE, ' ');
+
+/** A category with line-break marks: the reading that is a known category if one is, else the guess. */
+function unwrapCategory(v, known) {
+  const isKnown = (text) => known.some((k) => k.toLowerCase() === text.trim().toLowerCase());
+  const guess = unwrapText(v, true);
+  if (isKnown(guess)) return guess;
+  const marks = [...v].filter((c) => c === WRAP_JOIN || c === WRAP_SPACE).length;
+  if (marks <= 4) {
+    const parts = v.split(WRAP_ANY);
+    for (let bits = 0; bits < 2 ** marks; bits++) {
+      const text = parts.reduce((acc, p, i) => (i === 0 ? p : acc + ((bits >> (i - 1)) & 1 ? ' ' : '') + p), '');
+      if (isKnown(text)) return text;
+    }
+  }
+  return guess;
+}
+
 /**
  * JSON with the characters above made plain: Unicode spaces between tokens become spaces,
- * invisible characters go, and curly quotes around keys and values become straight ones. Text inside
- * strings is kept, apart from invisible characters that aren't joiners. Run on one candidate at a time.
+ * invisible characters go, curly quotes around keys and values become straight ones, and line
+ * breaks a copied line wrap put inside strings or numbers are undone (see wrapBreaks). Text inside
+ * strings is kept, apart from invisible characters that aren't joiners. Run on one candidate at a
+ * time; `lead` is how many characters came before it on its first line.
  */
-export function plainJson(s) {
+export function plainJson(s, lead = 0) {
+  const midWord = wrapBreaks(s, lead);
+  let line = 0;
   let out = '';
   let str = null; // null outside a string, else 'straight' or 'smart' for the quote that opened it
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
+    if (c === '\r' && s[i + 1] === '\n') continue; // the \n below handles the pair
+    if (c === '\n') {
+      const mid = midWord[line++];
+      if (str) out += mid ? WRAP_JOIN : WRAP_SPACE; // resolved per field by tidyKeys / tidyRow
+      else if (!(/[\d.]$/.test(out) && /^[\d.]/.test(s.slice(i + 1, i + 2)))) out += c; // not inside a number
+      continue;
+    }
     if (str) {
       if (c === '\\') { out += c + (s[i + 1] ?? ''); i++; }
       else if (c === '"') { out += c; str = null; }
@@ -98,19 +218,35 @@ const INVISIBLE_ALL = new RegExp(INVISIBLE.source, 'g');
 const INVISIBLE_IN_TEXT_ALL = new RegExp(INVISIBLE_IN_TEXT.source, 'g');
 
 /**
- * An object with its keys trimmed of spaces and invisible characters (a key like "version " or
- * "\u200Bversion"); with `values`, its text values lose invisible characters other than joiners too
- * (a date like "2026-11-01" with a zero-width space in it). A key written exactly wins over a tidied one.
+ * An object with its keys trimmed of spaces, invisible characters and line-break marks (a key like
+ * "version " or "\u200Bversion"). A key written exactly wins over a tidied one.
  */
-function tidyKeys(v, { values = false } = {}) {
+function tidyKeys(v) {
   if (!isObj(v)) return v;
   const out = {};
   for (const [k, val] of Object.entries(v)) {
-    const key = k.replace(INVISIBLE_ALL, '').trim();
+    const key = k.replace(INVISIBLE_ALL, '').replace(WRAP_ANY, '').trim();
     if (Object.prototype.hasOwnProperty.call(out, key) && key !== k) continue;
-    out[key] = values && typeof val === 'string' ? val.replace(INVISIBLE_IN_TEXT_ALL, '') : val;
+    out[key] = val;
   }
   return out;
+}
+
+/**
+ * A row with tidy keys and text values: invisible characters other than joiners go (a date like
+ * "2026-11-01" with a zero-width space in it), and copied line breaks are resolved per field: a
+ * name takes the guess, a category a known category (`knownCategories`) where one fits, and every
+ * other field (dates, codes, cycles, types) has no spaces, so the breaks just go.
+ */
+function tidyRow(raw, knownCategories) {
+  const row = tidyKeys(raw);
+  if (!isObj(row)) return row;
+  for (const [k, val] of Object.entries(row)) {
+    if (typeof val !== 'string') continue;
+    const v = val.replace(INVISIBLE_IN_TEXT_ALL, '');
+    row[k] = k === 'name' ? unwrapName(v) : k === 'category' ? unwrapCategory(v, knownCategories) : unwrapText(v, false);
+  }
+  return row;
 }
 
 /**
@@ -129,23 +265,24 @@ export function extractJson(input) {
   const text = input.replace(BOM, '').trim();
   if (!text) throw new AiImportError('Nothing to import. Paste the reply or pick its file.');
 
-  const candidates = [text];
-  for (const m of text.matchAll(/```[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)```/g)) candidates.push(m[1].trim());
+  // [candidate, how many characters come before it on its line] (for undoing a copied line wrap)
+  const candidates = [[text, 0]];
+  for (const m of text.matchAll(/```[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)```/g)) candidates.push([m[1].trim(), 0]);
   // Each outermost {...} once; the search goes on after it, not inside it.
   let tries = 0;
   for (let i = text.indexOf('{'); i !== -1 && tries < 50; tries++) {
     const obj = balancedObject(text, i);
     if (!obj) break;
-    candidates.push(obj);
+    candidates.push([obj, i - (text.lastIndexOf('\n', i - 1) + 1)]);
     i = text.indexOf('{', i + obj.length);
   }
   let found = null;
   let broken = null;
-  for (const c of candidates) {
+  for (const [c, lead] of candidates) {
     let r = tryParse(c);
-    if (!r.ok) r = tryParse(plainJson(c));
+    if (!r.ok) r = tryParse(plainJson(c, lead));
     if (!r.ok) {
-      if (c.startsWith('{') && /"\s*(version|rows)\s*"/.test(plainJson(c))) broken ??= c;
+      if (c.startsWith('{') && /"\s*(version|rows)\s*"/.test(plainJson(c, lead))) broken ??= c;
       continue;
     }
     const value = tidyKeys(r.value);
@@ -284,9 +421,10 @@ const keyOfItem = (s) => duplicateKey({ name: s.name, amount: s.price, currency:
  */
 export function reviewRows(rawRows, existing = []) {
   const have = new Set(existing.map(keyOfItem));
+  const knownCategories = [...DEFAULT_CATEGORIES, ...existing.map((s) => s.category).filter(Boolean)];
   const seen = new Map();
   return rawRows.map((raw, i) => {
-    const { n, fields, problems } = checkRow(tidyKeys(raw, { values: true }), i + 1);
+    const { n, fields, problems } = checkRow(tidyRow(raw, knownCategories), i + 1);
     let duplicateOf = null;
     // A one-off without a usable date isn't compared until its date is fixed.
     const comparable = fields.name !== null && fields.amount !== null && fields.currency !== null && fields.cycle !== null

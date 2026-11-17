@@ -1,0 +1,2 @@
+# Test fixtures are byte-exact copies of pasted text (line breaks included): never convert them.
+tests/fixtures/** -text

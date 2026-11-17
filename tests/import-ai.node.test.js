@@ -108,6 +108,56 @@ test('the statement fixture: 18 rows, weekly and quarterly flagged, both Tutorin
   assert.deepEqual(rows.filter((r) => r.fields.name === 'Tutoring').map((r) => [r.fields.nextDate, r.include]), [['2026-10-25', true], ['2026-11-26', true]]);
 });
 
+// tests/fixtures/ai-reply-wrapped.txt is the exact text read from the paste box on the phone: the
+// chat app copied its on-screen line wrapping as line breaks, at spaces (the space lost) and
+// mid-word, inside names, categories, keys and dates, and a stray "q" follows the JSON.
+const WRAPPED = fixture('ai-reply-wrapped.txt');
+
+test('the phone paste with copied line wrapping reads exactly like the clean reply', () => {
+  assert.equal(WRAPPED.length, 2505);
+  assert.equal((WRAPPED.match(/\n/g) ?? []).length, 33);
+  assert.ok(/[^\x20-\x7e\n]/.test(WRAPPED) === false, 'printable ASCII and line breaks only');
+  assert.throws(() => JSON.parse(WRAPPED.slice(0, -1)), /control character/, 'plain JSON.parse fails on it');
+  assert.deepEqual(outcome(WRAPPED), EXPECTED);
+  const rows = reviewAiImport(WRAPPED);
+  assert.deepEqual(rows.slice(0, 3).map((r) => [r.fields.name, r.fields.category]),
+    [['Salary - Northwind Learning Co', ''], ['LoopTune Music', 'Music'], ['PixelFlix Streaming', 'Entertainment']]);
+  assert.deepEqual([rows[5].fields.category, rows[6].fields.category, rows[16].fields.nextDate], ['Cloud storage', 'Utilities', '2026-11-26']);
+  assert.deepEqual(outcome(WRAPPED.replaceAll('\n', '\r\n')), EXPECTED, 'the same with CRLF line breaks');
+  assert.deepEqual(outcome(`Here you go: ${WRAPPED}`), EXPECTED, 'with text before the JSON on its first line');
+});
+
+/** The text wrapped the way a screen does: at the last space that fits (the space is lost), else mid-word. */
+function wrapLikeAScreen(text, width) {
+  const lines = [];
+  let pos = 0;
+  while (text.length - pos > width) {
+    const k = text.lastIndexOf(' ', pos + width);
+    if (k > pos) { lines.push(text.slice(pos, k)); pos = k + 1; } else { lines.push(text.slice(pos, pos + width)); pos += width; }
+  }
+  lines.push(text.slice(pos));
+  return lines.join('\n');
+}
+
+test('copied line wrapping at any width: dates, amounts, codes, cycles, types and categories come back exactly', () => {
+  const clean = reviewAiImport(STATEMENT);
+  const strict = (r) => [r.fields.amount, r.fields.currency, r.fields.cycle, r.fields.cycleText, r.fields.nextDate, r.fields.type, r.fields.category, r.status, r.include];
+  let names = 0;
+  for (let width = 20; width <= 150; width++) {
+    const rows = reviewAiImport(wrapLikeAScreen(STATEMENT.trim(), width));
+    assert.deepEqual(rows.map(strict), clean.map(strict), `width ${width}`);
+    names += rows.filter((r, i) => r.fields.name === clean[i].fields.name).length;
+  }
+  // A space that falls exactly at the edge of a line can't be told from a mid-word break; names
+  // are guessed then, and almost all come back exactly.
+  assert.ok(names / (131 * 18) > 0.97, `${names} of ${131 * 18} names exact`);
+});
+
+test('a line break copied inside a number or a key is undone', () => {
+  const lines = [`{"version":1,"rows":[{"name":"Rent","amount":180`, `00,"currency":"TWD","cycle":"monthly","nextDa`, `te":"2026-11-05","category":"","type":"expense"}]}`];
+  assert.deepEqual(reviewAiImport(lines.join('\n')).map((r) => [r.fields.amount, r.fields.nextDate, r.status]), [[18000, '2026-11-05', 'ok']]);
+});
+
 test('the statement fixture with suggestion text after it reads the same', () => {
   const text = fixture('ai-reply-with-chips.txt');
   assert.ok(text.trimEnd().endsWith('Explain the categories'));
