@@ -815,6 +815,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ai-fix { flex: 1 1 var(--field-narrow); }
 .ai-totals-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .ai-total-cur { font-weight: var(--weight-semibold); }
+.ai-totals-groups { margin: var(--space-1) 0 0; padding: 0 0 0 var(--space-4); list-style: none; display: grid; gap: var(--hairline-gap); }
+.ai-total-label { color: var(--text-muted); }
 
 /* Slide to confirm (js/slide-confirm.js). The thumb springs back with a transition, which
    .reduce-motion cuts, so with reduced motion it returns at once. */

@@ -173,7 +173,7 @@ async function init() {
     storage,
     ui: {
       openDialog, closeDialog, confirmDialog, toast, overlays, exportData, reloadData,
-      items: () => state.subs, isSynced: syncIsSetUp,
+      items: () => state.subs, isSynced: syncIsSetUp, reduceMotion: () => reduceEffects(),
     },
   });
   bindEditTaps();

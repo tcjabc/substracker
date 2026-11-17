@@ -10,7 +10,7 @@
 // storage.parseBackup and the existing Merge / Replace import, so ids, field stamps, types and
 // nextRenewal are made exactly as for any other import.
 
-import { CURRENCIES, uid, monthlyCost, isOnce, MERGE_SYNC_NOTE } from './util.js';
+import { CURRENCIES, uid, isOnce, MERGE_SYNC_NOTE } from './util.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
 
 export const AI_SCHEMA_VERSION = 1;
@@ -281,25 +281,31 @@ export function backupFromRows(rows, { now = new Date().toISOString(), newId = u
 }
 
 /**
- * Totals for the review screen from the selected items: per currency, the monthly equivalent of
- * recurring expenses and income, and the one-off expenses and income.
- * Returns [{ currency, count, expenseMonthly, incomeMonthly, onceExpense, onceIncome }] by currency.
+ * Totals for the review screen from the selected items, on the app's cash basis: nothing is
+ * averaged. Per currency and per cycle, the amounts as they are paid: monthly items (each month),
+ * yearly items (each year) and one-offs (once), money out and money in.
+ * Returns [{ currency, count, monthly: { out, in, count }, annual: {...}, once: {...} }] by currency.
  */
 export function totalsOf(items) {
   const by = new Map();
+  const empty = () => ({ out: 0, in: 0, count: 0 });
   for (const s of items) {
-    const t = by.get(s.currency) ?? { currency: s.currency, count: 0, expenseMonthly: 0, incomeMonthly: 0, onceExpense: 0, onceIncome: 0 };
+    const t = by.get(s.currency) ?? { currency: s.currency, count: 0, monthly: empty(), annual: empty(), once: empty() };
+    const bucket = t[isOnce(s) ? 'once' : s.cycle === 'annual' ? 'annual' : 'monthly'];
+    bucket[s.type === 'income' ? 'in' : 'out'] += s.price;
+    bucket.count++;
     t.count++;
-    const income = s.type === 'income';
-    if (isOnce(s)) t[income ? 'onceIncome' : 'onceExpense'] += s.price;
-    else t[income ? 'incomeMonthly' : 'expenseMonthly'] += monthlyCost(s);
     by.set(s.currency, t);
   }
   const r2 = (v) => Math.round(v * 100) / 100;
+  const tidy = (b) => ({ out: r2(b.out), in: r2(b.in), count: b.count });
   return [...by.values()]
-    .map((t) => ({ ...t, expenseMonthly: r2(t.expenseMonthly), incomeMonthly: r2(t.incomeMonthly), onceExpense: r2(t.onceExpense), onceIncome: r2(t.onceIncome) }))
+    .map((t) => ({ ...t, monthly: tidy(t.monthly), annual: tidy(t.annual), once: tidy(t.once) }))
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
+
+/** The labels for totalsOf's groups, as the review screen shows them. */
+export const TOTAL_LABELS = { monthly: 'Monthly items', annual: 'Yearly items', once: 'One-off' };
 
 /**
  * The text "Copy error for your AI" copies: what's wrong, row by row, and a request for corrected

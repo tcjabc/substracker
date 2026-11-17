@@ -6,7 +6,7 @@
 
 import { esc, money, cycleLabel, parseDate, shortDate, chooseImportMode, backupLabel } from './util.js';
 import {
-  AiImportError, parseAiImport, reviewRows, backupFromRows, itemFromFields, totalsOf, errorReport,
+  AiImportError, parseAiImport, reviewRows, backupFromRows, itemFromFields, totalsOf, TOTAL_LABELS, errorReport,
   aiImportMessage, aiReplaceConfirm, AI_CHOICE_TITLE, MAX_AI_CHARS, PROBLEM,
 } from './import-ai.js';
 import { AI_IMPORT_PROMPT } from './import-ai-prompt.js';
@@ -46,7 +46,8 @@ export async function copyText(text, fallback) {
 
 /**
  * `ui` provides openDialog, closeDialog, confirmDialog, toast, overlays, exportData (resolves true
- * when a backup was delivered), items() (the live items), isSynced() and reloadData().
+ * when a backup was delivered), items() (the live items), isSynced(), reloadData() and
+ * reduceMotion() (the "Reduce motion and effects" setting).
  */
 export function initImportAiSheet({ storage, ui }) {
   const dlg = $('#ai-dialog');
@@ -75,6 +76,7 @@ export function initImportAiSheet({ storage, ui }) {
 
   const slider = createSlideConfirm($('#ai-slide'), {
     onChange: (on) => { continueBtn.disabled = !on; },
+    reduceMotion: () => ui.reduceMotion?.() === true,
   });
 
   /* ---------------- steps ---------------- */
@@ -116,6 +118,9 @@ export function initImportAiSheet({ storage, ui }) {
 
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
   dlg.addEventListener('close', () => {
+    // The close event comes after the dialog has closed; if it was opened again in between, this
+    // event belongs to the earlier visit and must not stop the new lock or clear the new reply.
+    if (dlg.open) return;
     ui.overlays?.remove('ai-step');
     slider.stop();
     document.body.classList.remove('sheet-open');
@@ -254,14 +259,15 @@ export function initImportAiSheet({ storage, ui }) {
   function renderTotals(items) {
     const el = $('#ai-totals');
     if (!items.length) { el.innerHTML = '<p class="sync-text">No rows selected.</p>'; return; }
+    // Cash basis, as everywhere in the app: each group as it is paid, never an average.
+    const EVERY = { monthly: ', each month', annual: ', each year', once: '' };
     const lines = totalsOf(items).map((t) => {
-      const parts = [
-        t.expenseMonthly ? `${money(t.expenseMonthly, t.currency)} / mo out` : '',
-        t.incomeMonthly ? `${money(t.incomeMonthly, t.currency)} / mo in` : '',
-        t.onceExpense ? `${money(t.onceExpense, t.currency)} one-off out` : '',
-        t.onceIncome ? `${money(t.onceIncome, t.currency)} one-off in` : '',
-      ].filter(Boolean);
-      return `<li><span class="ai-total-cur">${esc(t.currency)}</span> ${esc(parts.join(' · ') || money(0, t.currency))}</li>`;
+      const groups = ['monthly', 'annual', 'once'].filter((k) => t[k].count).map((k) => {
+        const g = t[k];
+        const amounts = [g.out || !g.in ? `${money(g.out, t.currency)} out` : '', g.in ? `${money(g.in, t.currency)} in` : ''].filter(Boolean).join(', ');
+        return `<li><span class="ai-total-label">${TOTAL_LABELS[k]} (${g.count}):</span> ${esc(amounts + EVERY[k])}</li>`;
+      }).join('');
+      return `<li><span class="ai-total-cur">${esc(t.currency)}</span><ul class="ai-totals-groups">${groups}</ul></li>`;
     }).join('');
     el.innerHTML = `<ul class="ai-totals-list">${lines}</ul>`;
   }

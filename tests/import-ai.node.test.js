@@ -10,7 +10,7 @@ import * as sync from '../js/sync-core.js';
 import * as storage from '../js/storage.js';
 import {
   AiImportError, extractJson, parseAiImport, checkRow, reviewRows, reviewAiImport, backupFromRows,
-  itemFromFields, totalsOf, errorReport, isRealDay, AI_SCHEMA_VERSION, MAX_AI_CHARS, MAX_AI_ROWS, PROBLEM,
+  itemFromFields, totalsOf, TOTAL_LABELS, errorReport, isRealDay, AI_SCHEMA_VERSION, MAX_AI_CHARS, MAX_AI_ROWS, PROBLEM,
 } from '../js/import-ai.js';
 import { AI_IMPORT_PROMPT } from '../js/import-ai-prompt.js';
 
@@ -278,13 +278,16 @@ test('round trip: imported rows export and re-import unchanged', () => {
   ]);
 });
 
-test('totals preview: monthly equivalents and one-offs per currency', () => {
-  const rows = reviewRows([row(), row({ name: 'Cloud', cycle: 'annual', amount: 1200 }), row({ name: 'Pay', type: 'income', amount: 50000 }), row({ name: 'Desk', cycle: 'one-off', amount: 99 }), row({ name: 'US', currency: 'USD', amount: 10 })]);
+test('totals preview: cash basis per currency and cycle, nothing averaged', () => {
+  const rows = reviewRows([row(), row({ name: 'Cloud', cycle: 'annual', amount: 1290 }), row({ name: 'Bonus', cycle: 'annual', type: 'income', amount: 30000 }),
+    row({ name: 'Pay', type: 'income', amount: 50000 }), row({ name: 'Desk', cycle: 'one-off', amount: 99 }), row({ name: 'US', currency: 'USD', amount: 10 })]);
   const { items } = backupFromRows(rows, { now: NOW, newId });
   assert.deepEqual(totalsOf(items), [
-    { currency: 'TWD', count: 4, expenseMonthly: 490, incomeMonthly: 50000, onceExpense: 99, onceIncome: 0 },
-    { currency: 'USD', count: 1, expenseMonthly: 10, incomeMonthly: 0, onceExpense: 0, onceIncome: 0 },
+    { currency: 'TWD', count: 5, monthly: { out: 390, in: 50000, count: 2 }, annual: { out: 1290, in: 30000, count: 2 }, once: { out: 99, in: 0, count: 1 } },
+    { currency: 'USD', count: 1, monthly: { out: 10, in: 0, count: 1 }, annual: { out: 0, in: 0, count: 0 }, once: { out: 0, in: 0, count: 0 } },
   ]);
+  assert.equal(JSON.stringify(totalsOf(items)).includes('107.5'), false, 'no 1290 / 12 anywhere');
+  assert.deepEqual(TOTAL_LABELS, { monthly: 'Monthly items', annual: 'Yearly items', once: 'One-off' });
 });
 
 /* ------------------------------------------------------------------ Error text for the AI */

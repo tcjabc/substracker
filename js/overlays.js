@@ -51,7 +51,9 @@ export function createOverlayStack() {
       } catch (err) {
         console.error(err);
       }
-      if (!alive(entry)) stack.remove(id);
+      // Drop this entry only: its close path may have opened a new overlay under the same id
+      // (a step going back to the previous step), which must stay.
+      if (!alive(entry)) entries = entries.filter((e) => e !== entry);
       return entries.includes(entry) ? 'kept' : 'closed';
     },
     /** Close every overlay, topmost first. Stops at one that refuses, which stays open. */

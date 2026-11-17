@@ -187,3 +187,17 @@ test('rapid Back presses walk down one level each: overlays, then the root tab, 
   assert.deepEqual(log, ['close confirm-dialog', 'close sub-dialog']);
   assert.deepEqual(calls, ['root', 'minimize']);
 });
+
+test('a step whose Back opens the previous step under the same id: that new step stays on the stack', () => {
+  const stack = createOverlayStack();
+  let view = 'review';
+  const step = (name, back) => stack.open('step', { close: () => { view = back; if (back !== 'start') step(back, 'start'); }, isOpen: () => view === name });
+  stack.open('sheet', { close: () => {}, isOpen: () => true });
+  step('review', 'prompt');
+  assert.equal(stack.closeTop(), 'closed', 'review → prompt');
+  assert.equal(view, 'prompt');
+  assert.deepEqual(stack.ids(), ['sheet', 'step'], 'the prompt step was re-registered and kept');
+  assert.equal(stack.top(), 'step', 'so the next Back goes to the prompt step, not the sheet');
+  assert.equal(stack.closeTop(), 'closed', 'prompt → start');
+  assert.deepEqual(stack.ids(), ['sheet'], 'only the sheet is left');
+});

@@ -2,8 +2,8 @@
 // tapped through. It is locked for a moment after it's shown, so it can't be swiped by reflex, and
 // springs back when released early. The same confirmation is also a checkbox (keyboard and screen
 // reader friendly, locked for the same moment), and the thumb is a keyboard-operable slider.
-// The spring back is a CSS transition, which "Reduce motion and effects" turns off (app.css), so
-// the thumb then returns at once. The pure parts at the top are covered by Node tests.
+// The spring back is a CSS transition. With "Reduce motion and effects" (`reduceMotion`) the
+// thumb returns at once instead, and app.css cuts every transition as well. The pure parts at the top are covered by Node tests.
 
 export const SLIDE_LOCK_MS = 2000;
 /** How far along the track (0–1) the thumb must be released to confirm. */
@@ -38,7 +38,7 @@ export function slideKey(key, fraction) {
  * screen is shown: it clears the confirmation and starts the lock again.
  */
 export function createSlideConfirm(root, {
-  onChange = () => {}, lockMs = SLIDE_LOCK_MS, label = "Slide to confirm you've read this",
+  onChange = () => {}, reduceMotion = () => false, lockMs = SLIDE_LOCK_MS, label = "Slide to confirm you've read this",
   doneLabel = 'Confirmed ✓', lockedLabel = 'Read the points above first…',
 } = {}) {
   const track = root.querySelector('[data-slide-track]');
@@ -75,6 +75,15 @@ export function createSlideConfirm(root, {
     if (changed) onChange(confirmed);
   };
   const springBack = () => {
+    if (reduceMotion()) {
+      // Reduce motion and effects: straight back, no spring. Placed while transitions are off,
+      // and the style flushed before they come back, so nothing animates.
+      root.classList.add('is-dragging');
+      place(0);
+      void thumb.offsetWidth;
+      root.classList.remove('is-dragging');
+      return;
+    }
     root.classList.remove('is-dragging'); // the transition applies again: the thumb springs back
     place(0);
   };
@@ -93,9 +102,7 @@ export function createSlideConfirm(root, {
   const release = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
     drag = null;
-    root.classList.remove('is-dragging');
-    if (e.type === 'pointerup' && slideRelease(fraction, locked) === 'done') setConfirmed(true);
-    else springBack();
+    if (e.type === 'pointerup' && slideRelease(fraction, locked) === 'done') { root.classList.remove('is-dragging'); setConfirmed(true); } else springBack();
   };
   thumb.addEventListener('pointerup', release);
   thumb.addEventListener('pointercancel', release);

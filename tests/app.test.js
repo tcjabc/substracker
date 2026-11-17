@@ -2,7 +2,8 @@
 // summary strip on a cash basis (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
 // add/edit form requiring a renewal or payment date (with field-level saves and rollover still
 // working), and the Insights Ring (3D) with its flat fallbacks and the Reduce motion and effects
-// setting. Open tests/app.html from a local server. The app runs with
+// setting, and Import with AI (the slide to confirm and its fallback, Back on every step, the review,
+// Replace all with the backup button, reduced motion, a blocked clipboard, both themes). Open tests/app.html from a local server. The app runs with
 // index.html's markup against a throwaway database, seeded with made-up items dated relative to
 // today, so the tests work in any month. The tests run in order, as one session in the app.
 
@@ -1072,6 +1073,361 @@ test('Back: with nothing open, Insights and Settings go to Money; Money leaves t
   backIs('root', 'Settings → Money');
   backIs('minimize', 'Money with nothing open');
   eq(typeof globalThis.Capacitor, 'undefined', 'web: no native bridge, so no listener and the browser\'s Back is unchanged');
+});
+
+/* ------------------------------------------------------------------ Import with AI */
+
+const aiDlg = () => $('#ai-dialog');
+const aiView = () => $$('#ai-dialog [data-ai-view]').find((v) => !v.hidden)?.dataset.aiView;
+const slide = () => $('#ai-slide');
+const thumb = () => $('#ai-slide [data-slide-thumb]');
+const slideCheck = () => $('#ai-slide [data-slide-check]');
+const thumbX = () => new DOMMatrix(getComputedStyle(thumb()).transform).m41;
+const aiReply = (rows) => JSON.stringify({ version: 1, rows });
+const aiRow = (over = {}) => ({
+  name: 'Test Streaming', amount: 390, currency: 'TWD', cycle: 'monthly', nextDate: day(Y, M + 1, 5),
+  category: 'Entertainment', type: 'expense', ...over,
+});
+
+/** Drag the thumb `fraction` of the way along the track with pointer events, then let go. */
+async function dragThumb(fraction) {
+  const t = thumb().getBoundingClientRect();
+  const travel = $('#ai-slide [data-slide-track]').clientWidth - t.width;
+  const at = (x, type) => thumb().dispatchEvent(new PointerEvent(type, {
+    bubbles: true, pointerId: 7, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: x, clientY: t.y + t.height / 2,
+  }));
+  const x0 = t.x + t.width / 2;
+  at(x0, 'pointerdown');
+  for (let i = 1; i <= 8; i++) { at(x0 + (travel * fraction * i) / 8, 'pointermove'); await tick(5); }
+  getComputedStyle(thumb()).transform; // a frame would have drawn the dragged position
+  at(x0 + travel * fraction, 'pointerup');
+}
+
+/** Open the sheet from Settings; it starts on the warning, locked. */
+async function openAi() {
+  goTab('settings');
+  $('#btn-import-ai').click();
+  await until(() => aiDlg().open && aiView() === 'warning', 'the warning step');
+}
+/** Wait out the lock and confirm with the checkbox. */
+async function confirmWarning() {
+  await until(() => !slide().classList.contains('is-locked'), 'the lock to end', 3000);
+  slideCheck().click();
+  await until(() => !$('#ai-continue').disabled, 'Continue enabled');
+}
+/** From the prompt step: paste `text` and review. */
+async function reviewReply(text) {
+  $('#ai-reply').value = text;
+  $('#ai-review').click();
+  await until(() => aiView() === 'review', 'the review step');
+}
+
+// Anchor downloads (the web export) are caught, so the tests never save files.
+const downloads = [];
+const realClick = HTMLAnchorElement.prototype.click;
+HTMLAnchorElement.prototype.click = function click() {
+  if (this.hasAttribute('download')) { downloads.push(this.download); return; }
+  realClick.call(this);
+};
+/** Replace navigator.clipboard for one test: 'blocked' rejects; else writes are recorded in `copied`. */
+const copied = [];
+function setClipboard(mode) {
+  if (mode === 'real') { delete navigator.clipboard; return; }
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: (t) => (mode === 'blocked' ? Promise.reject(new Error('blocked')) : (copied.push(t), Promise.resolve())) },
+  });
+}
+
+test('Import with AI: the warning is locked for about 2 s; drags then and early releases spring back', async () => {
+  localStorage.setItem('substracker.reduceMotion', 'off');
+  $('#set-motion').checked = false; $('#set-motion').dispatchEvent(new Event('change'));
+  const opened = performance.now();
+  await openAi();
+  eq(overlays.top(), 'ai-dialog', 'the sheet is on the overlay stack');
+  assert(slide().classList.contains('is-locked'), 'locked');
+  assert(slideCheck().disabled && $('#ai-continue').disabled, 'checkbox and Continue disabled');
+  eq(thumb().getAttribute('aria-disabled'), 'true', 'aria-disabled while locked');
+  await dragThumb(1);
+  eq(thumb().getAttribute('aria-valuenow'), '0', 'a full drag while locked springs back');
+  slideCheck().click();
+  assert(!slideCheck().checked, 'the checkbox stays unticked while locked');
+  thumb().dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+  eq(thumb().getAttribute('aria-valuenow'), '0', 'keys do nothing while locked');
+  await until(() => !slide().classList.contains('is-locked'), 'unlocked', 3000);
+  const lockMs = performance.now() - opened;
+  assert(lockMs > 1800 && lockMs < 2900, `locked for about 2 s (${Math.round(lockMs)} ms)`);
+  eq(text($('#ai-slide [data-slide-label]')), "Slide to confirm you've read this", 'the label');
+  await dragThumb(0.6);
+  eq(thumb().getAttribute('aria-valuenow'), '0', 'released early: back to the start');
+  assert(thumbX() > 0, 'and it animates back (springs) with motion on');
+  await until(() => thumbX() === 0, 'settled at the start');
+  assert($('#ai-continue').disabled, 'still not confirmed');
+  await dragThumb(1);
+  eq(thumb().getAttribute('aria-valuenow'), '100', 'a full drag confirms');
+  assert(slide().classList.contains('is-done') && slideCheck().checked, 'shown as confirmed, checkbox ticked too');
+  eq(text($('#ai-slide [data-slide-label]')), 'Confirmed ✓', 'says so');
+  assert(!$('#ai-continue').disabled, 'Continue enabled');
+});
+
+test('Import with AI: keyboard and the checkbox fallback, aria labels; shown again every time', async () => {
+  // Still open from the last test, confirmed. Unticking the checkbox takes the confirmation back.
+  slideCheck().click();
+  assert(!slideCheck().checked && $('#ai-continue').disabled, 'unticked: not confirmed');
+  eq(thumb().getAttribute('role'), 'slider', 'the thumb is a slider');
+  eq(thumb().getAttribute('aria-label'), "Slide to confirm you've read this", 'labelled');
+  eq(thumb().tabIndex, 0, 'focusable');
+  const key = (k) => thumb().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  key('ArrowRight');
+  eq(thumb().getAttribute('aria-valuenow'), '25', 'arrow right steps');
+  key('ArrowLeft');
+  eq(thumb().getAttribute('aria-valuenow'), '0', 'arrow left steps back');
+  key('End');
+  assert(slide().classList.contains('is-done') && !$('#ai-continue').disabled, 'End confirms');
+  $('#ai-continue').click();
+  eq(aiView(), 'prompt', 'on to the prompt');
+  $('#ai-prompt-back').click();
+  eq(aiView(), 'warning', 'back to the warning');
+  assert(slide().classList.contains('is-locked') && !slide().classList.contains('is-done'), 'locked and unconfirmed again');
+  assert($('#ai-continue').disabled, 'Continue disabled again');
+  $('#ai-warning-cancel').click();
+  assert(!aiDlg().open, 'Cancel closes the sheet');
+  await openAi(); // at once: the earlier close event must not stop this visit's lock
+  assert(slide().classList.contains('is-locked') && !slideCheck().checked, 'reopened: locked and unconfirmed');
+  await confirmWarning();
+  assert(slide().classList.contains('is-done'), 'the checkbox confirms too');
+  $('[data-ai-close]').click();
+});
+
+test('Import with AI: the warning\'s backup button exports and says so; it is optional', async () => {
+  await openAi();
+  const n = (await storage.getAll()).length;
+  const btn = $('#ai-dialog [data-ai-backup]');
+  eq(text(btn), `Export a backup first (${n} items)`, 'mentions the item count');
+  assert(text($('#ai-backup-hint')).includes(`${n} items`), 'and the hint does too');
+  const before = downloads.length;
+  btn.click();
+  await until(() => text(btn) === 'Backup saved ✓', 'Backup saved');
+  eq(downloads.length, before + 1, 'one backup file delivered');
+  assert(downloads.at(-1).startsWith('substracker-'), 'the normal backup file');
+  await confirmWarning(); // Continue works whether or not a backup was made
+  $('[data-ai-close]').click();
+  await openAi();
+  eq(text(btn), `Export a backup first (${n} items)`, 'a new visit starts without the tick');
+  $('[data-ai-close]').click();
+});
+
+test('Import with AI: Back on every step goes back one step and imports nothing', async () => {
+  const before = (await storage.getAll()).length;
+  await openAi();
+  backIs('closed', 'Back on the warning');
+  assert(!aiDlg().open, 'the sheet closed');
+  eq(appTab(), 'settings', 'still on Settings');
+
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  eq(overlays.ids().slice(-2), ['ai-dialog', 'ai-step'], 'the prompt step is on the stack');
+  backIs('closed', 'Back on the prompt step');
+  eq(aiView(), 'warning', 'back on the warning, open');
+  assert(aiDlg().open && slide().classList.contains('is-locked'), 'locked again');
+
+  await confirmWarning();
+  $('#ai-continue').click();
+  await reviewReply(aiReply([aiRow()]));
+  backIs('closed', 'Back on the review step');
+  eq(aiView(), 'prompt', 'back on the prompt');
+  eq($('#ai-reply').value, aiReply([aiRow()]), 'the pasted reply is kept');
+
+  $('#ai-review').click();
+  await until(() => aiView() === 'review', 'review again');
+  $('#ai-import').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Import these items?', 'the choice dialog');
+  eq(overlays.top(), 'confirm-dialog', 'the choice is on top');
+  backIs('closed', 'Back on the choice');
+  await tick(50);
+  assert(!confirmOpen() && aiDlg().open && aiView() === 'review', 'cancelled; still on the review');
+
+  $('#ai-import').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Import these items?', 'the choice again');
+  confirmButton('Replace all').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Replace all items?', 'the Replace confirmation');
+  backIs('closed', 'Back on the Replace confirmation');
+  await tick(50);
+  assert(!confirmOpen() && aiDlg().open, 'cancelled; the sheet stays');
+  eq((await storage.getAll()).length, before, 'nothing imported or replaced');
+
+  backIs('closed', `review → prompt (${overlays.ids()} on ${aiView()})`);
+  backIs('closed', `prompt → warning (${overlays.ids()} on ${aiView()})`);
+  backIs('closed', `warning → closed (${overlays.ids()} on ${aiView()} open=${aiDlg().open})`);
+  assert(!aiDlg().open, 'closed');
+  eq(overlays.ids(), [], 'nothing left on the stack');
+  eq((await storage.getAll()).length, before, 'still nothing imported');
+});
+
+test('Import with AI: copy buttons fall back to selectable text when the clipboard is blocked', async () => {
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  setClipboard('ok');
+  $('#ai-copy-prompt').click();
+  await until(() => copied.length === 1, 'copied');
+  assert(copied[0].includes('"version": 1') && copied[0].includes('only the JSON, nothing else'), 'the prompt was copied');
+  assert($('#ai-prompt-fallback').hidden, 'no fallback when copying works');
+
+  setClipboard('blocked');
+  $('#ai-copy-prompt').click();
+  await until(() => !$('#ai-prompt-fallback').hidden, 'the fallback note');
+  assert($('#ai-prompt-details').open, 'the prompt is shown');
+  const ta = $('#ai-prompt-text');
+  eq(ta.value, copied[0], 'the same text, to copy by hand');
+  assert(ta.readOnly && document.activeElement === ta, 'read-only and focused');
+  eq([ta.selectionStart, ta.selectionEnd], [0, ta.value.length], 'all of it selected');
+
+  $('#ai-reply').value = '';
+  $('#ai-review').click();
+  eq(aiView(), 'prompt', 'an empty reply: nothing to review');
+  assert(text($('#ai-reply-problems')).startsWith('Nothing to import'), 'and says so');
+  $('#ai-reply').value = 'Sorry, I could not read the statement.';
+  $('#ai-review').click();
+  await until(() => !$('#ai-reply-error').hidden, 'the reply error');
+  eq(aiView(), 'prompt', 'still on the prompt');
+  assert(text($('#ai-reply-problems')).includes("Couldn't find any JSON"), 'says what is wrong');
+  eq($('#ai-reply').getAttribute('aria-invalid'), 'true', 'the field is marked');
+  $('#ai-reply-copy-error').click();
+  await until(() => !$('#ai-reply-error-text').hidden, 'the error text fallback');
+  assert($('#ai-reply-error-text').value.startsWith('Peek Budget could not import some of your JSON:'), 'the error report, to copy by hand');
+
+  setClipboard('ok');
+  $('#ai-reply-copy-error').click();
+  await until(() => copied.length === 2, 'copied the error');
+  assert(copied[1].includes("Couldn't find any JSON") && copied[1].includes('reply with the whole corrected JSON only'), 'the error for the AI');
+  setClipboard('real');
+  $('[data-ai-close]').click();
+  await until(() => $('#ai-reply').value === '', 'closing clears the pasted reply');
+});
+
+test('Import with AI: review flags rows, fixes dates and cycles, totals on a cash basis, then Merge', async () => {
+  const before = await storage.getAll();
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  await reviewReply('Here you go:\n```json\n' + aiReply([
+    aiRow(),
+    aiRow({ name: 'Test Pay', amount: 52000, type: 'income', category: '' }),
+    aiRow({ name: 'Test Gym', amount: 800, cycle: 'weekly', category: 'Fitness' }),
+    aiRow({ name: 'Test Drive', amount: 1290, cycle: 'annual', nextDate: '', category: 'Cloud storage' }),
+    aiRow(),
+    aiRow({ name: 'Test Lamp', amount: '590', cycle: 'one-off' }),
+    aiRow({ name: 'Phone', amount: 499, nextDate: day(Y, M, 5), category: 'Utilities' }), // already in the list
+    aiRow({ name: 'Test Desk', amount: 2400, cycle: 'one-off', nextDate: day(Y, M, 2), category: '' }),
+  ]) + '\n```');
+  const row = (n) => $(`#ai-rows [data-row="${n}"]`);
+  const include = (n) => $('[data-include]', row(n));
+  eq(text($('#ai-review-summary')), '8 rows · 3 selected · 1 needs a date · 1 with an unsupported cycle · 2 duplicates skipped · 1 can’t be imported.', 'summary');
+  eq([1, 2, 3, 4, 5, 6, 7, 8].map((n) => include(n).checked), [true, true, false, false, false, false, false, true], 'starting choices');
+  eq([3, 4, 6].map((n) => include(n).disabled), [true, true, true], 'flagged rows can\'t be ticked');
+  assert(text(row(3)).includes('Unsupported cycle') && $('[data-fix-cycle="3"]', row(3)), 'unsupported cycle flagged, with a fix');
+  assert(text(row(4)).includes('Needs a date') && $('[data-fix-date="4"]', row(4)), 'missing date flagged, with a picker');
+  assert(text(row(5)).includes('same as row 1, skipped') && text(row(7)).includes('already in your list'), 'duplicates');
+  assert(text(row(6)).includes('amount must be a number without quotes, like 390') && !$('[data-fix-date], [data-fix-cycle]', row(6)), 'errors: message, no fix');
+  assert(!$('#ai-review-error').hidden, 'Copy error for your AI is offered');
+
+  const totals = () => $$('#ai-totals .ai-totals-groups li').map(text);
+  eq(totals(), [`Monthly items (2): ${T(390)} out, ${T(52000)} in, each month`, `One-off (1): ${T(2400)} out`], 'totals by cycle, as paid');
+
+  const fix = (sel, value) => { const el = $(sel); el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })); };
+  fix('[data-fix-date="4"]', day(Y + 1, 2, 1));
+  fix('[data-fix-cycle="3"]', 'monthly');
+  eq([3, 4].map((n) => include(n).checked), [true, true], 'fixed rows are included');
+  include(8).click();
+  assert(!include(8).checked, 'a row can be left out');
+  include(5).click();
+  assert(include(5).checked, 'a duplicate can be included on purpose');
+  eq(totals(), [`Monthly items (4): ${T(1580)} out, ${T(52000)} in, each month`, `Yearly items (1): ${T(1290)} out, each year`], 'no averaged figure: yearly stays yearly');
+  assert(!$$('#ai-totals li').some((li) => text(li).includes(T(107.5))), 'no 1,290 / 12');
+  eq(text($('#ai-import')), 'Import 5 items', 'the button counts them');
+  eq((await storage.getAll()).length, before.length, 'nothing saved during the review');
+
+  $('#ai-import').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Import these items?', 'the choice');
+  assert(text($('#confirm-message')).startsWith(`5 items to add. Merge adds them to your ${before.length} items.`), 'the AI wording');
+  confirmButton('Merge').click();
+  await until(() => text($('#toast-text')) === 'Added 5 items', 'merged');
+  assert(!aiDlg().open, 'the sheet closed');
+  const after = await storage.getAll();
+  eq(after.length, before.length + 5, 'five added');
+  const added = after.filter((s) => !before.some((b) => b.id === s.id));
+  const by = (name) => added.filter((s) => s.name === name);
+  eq(by('Test Streaming').length, 2, 'the duplicate went in, as chosen');
+  eq([by('Test Gym')[0].cycle, by('Test Drive')[0].nextRenewal, by('Test Drive')[0].cycle], ['monthly', day(Y + 1, 2, 1), 'annual'], 'the fixes were used');
+  eq([by('Test Pay')[0].type, by('Test Pay')[0].category, by('Test Pay')[0].nextRenewal], ['income', '', day(Y, M + 1, 5)], 'income uses nextRenewal');
+  eq(by('Test Desk').length, 0, 'the row left out stayed out');
+  assert(added.every((s) => s.id !== 'settings' && s.createdAt && s.updatedAt), 'new ids and stamps');
+});
+
+test('Import with AI: Reduce motion and effects: the thumb returns at once, no transition', async () => {
+  $('#set-motion').checked = true; $('#set-motion').dispatchEvent(new Event('change'));
+  try {
+  assert(document.documentElement.classList.contains('reduce-motion'), 'reduce motion on');
+  await openAi();
+  const dur = parseFloat(getComputedStyle(thumb()).transitionDuration) * 1000;
+  assert(dur < 1, `no spring animation (${dur} ms)`);
+  assert(parseFloat(getComputedStyle(aiDlg()).animationDuration) * 1000 < 1, 'the sheet does not slide in');
+  await until(() => !slide().classList.contains('is-locked'), 'unlocked', 3000);
+  await dragThumb(0.6);
+  eq(thumbX(), 0, 'released early: back at once, in the same moment');
+  await dragThumb(1);
+  assert(slide().classList.contains('is-done'), 'still confirms');
+  } finally {
+    if (aiDlg().open) $('[data-ai-close]').click();
+    $('#set-motion').checked = false; $('#set-motion').dispatchEvent(new Event('change'));
+  }
+});
+
+test('Import with AI: light and dark themes use the theme tokens', async () => {
+  const token = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const rgb = (hex) => { const d = document.createElement('div'); d.style.color = hex; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+  for (const theme of ['light', 'dark']) {
+    $('#set-theme').value = theme; $('#set-theme').dispatchEvent(new Event('change'));
+    await openAi();
+    eq(getComputedStyle(aiDlg()).backgroundColor, rgb(token('--surface')), `${theme}: sheet surface`);
+    eq(getComputedStyle($('#ai-dialog .sync-warning')).backgroundColor, rgb(token('--warn-soft')), `${theme}: warning box`);
+    eq(getComputedStyle(thumb()).backgroundColor, rgb(token('--accent')), `${theme}: thumb`);
+    eq(getComputedStyle($('#ai-dialog .ai-points')).color, rgb(token('--text-muted')), `${theme}: text`);
+    $('[data-ai-close]').click();
+  }
+  $('#set-theme').value = 'system'; $('#set-theme').dispatchEvent(new Event('change'));
+});
+
+// Last: Replace all removes the seeded items.
+test('Import with AI: Replace all with the backup button beside it, at both steps', async () => {
+  const before = await storage.getAll();
+  const settingsBefore = await storage.getSettings();
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  await reviewReply(aiReply([aiRow({ name: 'Only One', amount: 100 }), aiRow({ name: 'Only Two', amount: 200, cycle: 'annual' })]));
+  $('#ai-import').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Import these items?', 'the choice');
+  eq($$('#confirm-actions button').map(text), ['Cancel', `Export a backup first (${before.length} items)`, 'Replace all', 'Merge'], 'backup beside Replace all');
+  const n = downloads.length;
+  confirmButton(`Export a backup first (${before.length} items)`).click();
+  await until(() => confirmOpen() && confirmButton('Backup saved ✓'), 'the choice again, with the tick');
+  eq(downloads.length, n + 1, 'a backup was delivered');
+  confirmButton('Replace all').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Replace all items?', 'the final confirmation');
+  eq($$('#confirm-actions button').map(text), ['Cancel', 'Backup saved ✓', 'Replace all'], 'the backup again beside Replace all');
+  assert(text($('#confirm-message')).includes('Settings stay as they are'), 'says settings stay');
+  confirmButton('Backup saved ✓').click();
+  await until(() => confirmOpen() && confirmTitle() === 'Replace all items?' && downloads.length === n + 2, 'backed up again, same step');
+  confirmButton('Replace all').click();
+  await until(() => text($('#toast-text')) === 'Replaced with 2 items', 'replaced');
+  const after = await storage.getAll();
+  eq(after.map((s) => s.name).sort(), ['Only One', 'Only Two'], 'only the imported items remain');
+  const s = await storage.getSettings();
+  eq([s.defaultCurrency, JSON.stringify(s.groupColors)], [settingsBefore.defaultCurrency, JSON.stringify(settingsBefore.groupColors)], 'settings unchanged');
+  HTMLAnchorElement.prototype.click = realClick;
 });
 
 /* ------------------------------------------------------------------ Runner */
