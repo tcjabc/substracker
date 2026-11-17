@@ -10,10 +10,11 @@ import { initSyncSheet } from './sync-sheet.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
+import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight, shareText } from './donut-flat.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  chooseImportMode,
+  chooseImportMode, reduceMotionFrom, catViewFrom,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
@@ -40,8 +41,9 @@ const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
   view: storage.getPref('view') === 'list' ? 'list' : 'grid',
-  catView: storage.getPref('catView') === 'list' ? 'list' : 'donut', // Insights "By category"
-  donutActive: null, // highlighted donut slice key, or null
+  // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
+  catView: catViewFrom(storage.getPref('catView')),
+  donutActive: null, // highlighted donut slice key (the Ring's front slice), or null
   tab: ['subs', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
   period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
@@ -220,6 +222,7 @@ async function init() {
   }
   fillStaticLists();
   applyTheme(storage.getPref('theme') || 'system');
+  applyMotion();
   setTab(state.tab, { focus: false });
   render();
   registerSW();
@@ -571,6 +574,7 @@ function currenciesInUse() {
 }
 
 function renderInsights() {
+  detachRing();
   const root = $('#insights');
   const chips = $('#currency-chips');
   const currencies = currenciesInUse();
@@ -648,6 +652,15 @@ function renderInsights() {
 
   const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
+  const slices = donutSlices(catList, monthly, (name) => swatchVar(groupSwatch(name)));
+  // The Ring, unless something rules it out; then the flat donut stands in, saying why.
+  const ringWhy = state.catView === 'ring' && slices.length ? ringBlocker() : '';
+  const showRing = state.catView === 'ring' && slices.length && !ringWhy;
+  const catViewBtn = (view, title, icon) => `
+          <button type="button" class="seg-btn" data-catview="${view}" aria-pressed="${state.catView === view}" title="${title}">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>
+            <span class="sr-only">${title}</span>
+          </button>`;
 
   const ranked = [...inMonth].sort((a, b) => b.due - a.due || byName(a, b));
 
@@ -703,17 +716,14 @@ function renderInsights() {
       <div class="section-head">
         <h2 class="section-title" id="cat-title">By category <span class="optional">${esc(monthName)}</span></h2>
         <div class="segmented" role="group" aria-label="Category view">
-          <button type="button" class="seg-btn" data-catview="donut" aria-pressed="${state.catView === 'donut'}" title="Donut chart">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/></svg>
-            <span class="sr-only">Donut</span>
-          </button>
-          <button type="button" class="seg-btn" data-catview="list" aria-pressed="${state.catView === 'list'}" title="List view">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
-            <span class="sr-only">List</span>
-          </button>
+          ${catViewBtn('ring', '3D ring', '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
+          ${catViewBtn('donut', 'Donut chart', '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
+          ${catViewBtn('list', 'List view', '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
         </div>
       </div>
-      ${state.catView === 'donut' ? donutHTML(donutSlices(catList, monthly), monthly, cur, monthName) : `
+      ${showRing ? ringHTML(slices, monthly, cur, monthName)
+        : state.catView === 'ring' ? (slices.length ? donutHTML(slices, monthly, cur, monthName, { note: ringWhy, keys: true }) : emptyDonutHTML(cur, monthName))
+        : state.catView === 'donut' ? donutHTML(slices, monthly, cur, monthName) : `
       <div class="panel">
         ${catList.length ? catList.map((c) => {
           const share = monthly ? Math.round((c.total / monthly) * 100) : 0;
@@ -760,12 +770,149 @@ function renderInsights() {
     storage.setPref('catView', state.catView);
     renderInsights();
   }));
+  if (showRing) {
+    mountRing(root, slices, monthly, cur, monthName);
+    return;
+  }
   // Tap a slice or legend row to highlight it; tap it again to clear.
   $$('[data-slice]', root).forEach((el) => el.addEventListener('click', () => {
-    state.donutActive = state.donutActive === el.dataset.slice ? null : el.dataset.slice;
-    applyDonutHighlight(root);
+    state.donutActive = applyDonutHighlight(root, state.donutActive === el.dataset.slice ? null : el.dataset.slice);
   }));
-  applyDonutHighlight(root);
+  // Standing in for the Ring, the flat donut takes the same arrow keys to move the highlight.
+  $('[data-donut-keys]', root)?.addEventListener('keydown', (e) => {
+    const i = slices.findIndex((s) => s.key === state.donutActive);
+    const next = keyStep(e, i, slices.length);
+    if (next === null) return;
+    e.preventDefault();
+    state.donutActive = applyDonutHighlight(root, slices[next].key);
+  });
+  state.donutActive = applyDonutHighlight(root, state.donutActive);
+}
+
+/* Ring (3D) ---------------------------------------------------------------- */
+// js/donut-3d.js and three.js load on first use. Until then, and whenever the Ring can't run, the
+// flat donut stands in. A failure (no WebGL, the module didn't load, a lost context) lasts the session.
+let ringModule = null;
+let ringFailure = '';
+let ring = null;
+let ringAnnounced = null;
+
+/** Why the Ring can't show right now (a sentence for the note above the flat donut), or ''. */
+function ringBlocker() {
+  if (reduceEffects()) return 'Showing the flat donut: Reduce motion and effects is on in Settings.';
+  if (new URLSearchParams(location.search).get('flat') === '1') return 'Showing the flat donut (flat=1).';
+  if (ringFailure) return ringFailure;
+  if (!webglWorks()) return "Showing the flat donut: this device can't show the 3D ring.";
+  return '';
+}
+
+let webglChecked = null;
+function webglWorks() {
+  if (webglChecked === null) {
+    try {
+      const c = document.createElement('canvas');
+      webglChecked = !!(c.getContext('webgl2') || c.getContext('webgl'));
+    } catch { webglChecked = false; }
+  }
+  return webglChecked;
+}
+
+function detachRing() {
+  ring?.detach();
+  ring = null;
+}
+
+/** Arrow keys (and Home / End) as a step through n slices from index i; null for other keys. */
+function keyStep(e, i, n) {
+  const d = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  if (e.key === 'Home') return 0;
+  if (e.key === 'End') return n - 1;
+  if (d === undefined) return null;
+  return i < 0 ? 0 : (i + d + n) % n;
+}
+
+function ringHTML(slices, total, cur, monthName) {
+  return `
+    <div class="panel">
+      <div class="ring-stage" tabindex="0" role="group" aria-roledescription="rotating donut chart"
+        aria-label="Outgoings by category for ${esc(monthName)}" aria-describedby="ring-help">
+        <div class="ring-caption" aria-hidden="true">
+          <span class="ring-name"></span>
+          <span class="ring-amount"></span>
+          <span class="ring-share"></span>
+        </div>
+      </div>
+      <p class="sr-only" id="ring-help">Drag to spin. Left and right arrow keys bring the previous or next category to the front. Amounts are listed below.</p>
+      <p class="sr-only" id="ring-live" aria-live="polite" aria-atomic="true"></p>
+      ${legendHTML(slices, total, cur)}
+    </div>`;
+}
+
+async function mountRing(root, slices, total, cur, monthName) {
+  const stage = $('.ring-stage', root);
+  const rows = $$('.legend-row', root);
+  const describe = (s) => `${s.name}, ${money(s.total, cur)}, ${shareText(s.total, total)}`;
+  let front = Math.max(0, slices.findIndex((s) => s.key === state.donutActive));
+  let announceTimer = 0;
+  const show = (i) => {
+    front = i;
+    const s = slices[i];
+    state.donutActive = s.key;
+    $('.ring-name', stage).textContent = s.name;
+    $('.ring-amount', stage).textContent = money(s.total, cur);
+    $('.ring-share', stage).textContent = `${shareText(s.total, total)} of ${monthName}`;
+    stage.setAttribute('aria-label', `Outgoings by category for ${monthName}. Front: ${describe(s)}`);
+    rows.forEach((r, k) => r.setAttribute('aria-pressed', String(k === i)));
+  };
+  // Announce once the ring is at rest, and only a slice that wasn't announced last.
+  const announce = (i) => {
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => {
+      if (!stage.isConnected || ringAnnounced === slices[i].key) return;
+      ringAnnounced = slices[i].key;
+      $('#ring-live', root).textContent = describe(slices[i]);
+    }, 250);
+  };
+  const goTo = (i) => {
+    if (ring) ring.goTo(i);
+    else { show(i); announce(i); }
+  };
+  show(front);
+  rows.forEach((r, k) => r.addEventListener('click', () => goTo(k)));
+  stage.addEventListener('keydown', (e) => {
+    const next = keyStep(e, front, slices.length);
+    if (next === null) return;
+    e.preventDefault();
+    goTo(next);
+  });
+
+  const fallBack = (why) => {
+    ringFailure = why;
+    if (stage.isConnected) renderInsights();
+  };
+  try {
+    ringModule ||= await import('./donut-3d.js');
+  } catch (err) {
+    console.error(err);
+    fallBack("Showing the flat donut: the 3D ring couldn't load (are you offline?).");
+    return;
+  }
+  if (!stage.isConnected) return; // re-rendered while loading
+  if (!ringModule.ringAvailable()) {
+    fallBack("Showing the flat donut: this device can't show the 3D ring.");
+    return;
+  }
+  try {
+    ring = ringModule.createRing(stage, {
+      slices, selected: front,
+      onFront: show,
+      onSettle: announce,
+      onFail: () => { ring = null; fallBack('Showing the flat donut: the 3D view stopped working.'); },
+    });
+  } catch (err) {
+    console.error(err);
+    fallBack("Showing the flat donut: this device can't show the 3D ring.");
+  }
 }
 
 /** The yearly card: Income, Outgoings and Left over from yearSummary(), for `y`. */
@@ -827,7 +974,7 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
     months: data.months, average: data.average, nowIndex: nowIndex(months, now),
     rolling: state.yearRange === 'roll', stack: state.yearStack, showIncome: state.yearIncome,
     money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)),
-    pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn, overlays,
+    pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn, overlays, reduced: reduceEffects(),
   });
 
   $$('[data-year-range]', root).forEach((b) => b.addEventListener('click', () => {
@@ -846,94 +993,6 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
   $('[data-year-income]', root).addEventListener('click', () => {
     state.yearIncome = !state.yearIncome;
     renderInsights(); // the scale may change; the position is kept
-  });
-}
-
-/* Donut ------------------------------------------------------------------- */
-const DONUT = { r: 80, gap: 2 }; // SVG user units in a 200 × 200 viewBox; stroke width lives in app.css
-const SMALL_SLICE = 0.03; // categories under 3% of the month are pooled into "Other"
-
-/** Slices for the month, largest first. Two or more categories under 3% become one neutral "Other". */
-function donutSlices(catList, total) {
-  const big = [];
-  const small = [];
-  for (const c of catList) (total && c.total / total < SMALL_SLICE ? small : big).push(c);
-  // Pooling a single category would only hide its name, so keep it as its own slice.
-  if (small.length < 2) big.push(...small.splice(0));
-  const slices = big.map((c) => ({
-    key: `cat:${c.name}`, name: c.name, total: c.total, sub: plural(c.count, 'item'),
-    swatch: swatchVar(groupSwatch(c.name)),
-  }));
-  if (small.length) {
-    slices.push({
-      key: 'other', name: 'Other', total: small.reduce((t, c) => t + c.total, 0),
-      sub: small.map((c) => c.name).join(', '), swatch: 'var(--group-other)',
-    });
-  }
-  return slices;
-}
-
-const shareText = (v, total) => {
-  const p = total ? (v / total) * 100 : 0;
-  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`;
-};
-
-function donutHTML(slices, total, cur, monthName) {
-  if (!slices.length) {
-    return `
-      <div class="panel donut-empty">
-        <div class="donut-empty-ring" aria-hidden="true"></div>
-        <p class="donut-empty-title">No ${esc(cur)} outgoings in ${esc(monthName)}</p>
-        <p class="donut-empty-text">Add an expense, or step to another month.</p>
-      </div>`;
-  }
-  const C = 2 * Math.PI * DONUT.r;
-  const gap = slices.length > 1 ? DONUT.gap : 0; // a single category is a full ring
-  let offset = 0;
-  const arcs = slices.map((s) => {
-    const len = total ? (s.total / total) * C : C / slices.length;
-    const dash = Math.max(len - gap, 0.5);
-    const arc = `<circle class="donut-slice" data-slice="${esc(s.key)}" cx="100" cy="100" r="${DONUT.r}"
-      style="--swatch: ${s.swatch}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}"
-      stroke-dashoffset="${(-offset).toFixed(2)}"><title>${esc(s.name)}: ${esc(money(s.total, cur))} (${shareText(s.total, total)})</title></circle>`;
-    offset += len;
-    return arc;
-  }).join('');
-
-  return `
-    <div class="panel">
-      <div class="donut-wrap">
-        <div class="donut">
-          <svg viewBox="0 0 200 200" role="img" aria-label="Donut chart of outgoings by category for ${esc(monthName)}. Amounts are listed below.">${arcs}</svg>
-          <div class="donut-center">
-            <span class="donut-total">${esc(money(total, cur))}</span>
-            <span class="donut-label">${esc(monthName)}</span>
-          </div>
-        </div>
-      </div>
-      <div class="legend">
-        ${slices.map((s) => `
-        <button type="button" class="legend-row" data-slice="${esc(s.key)}" aria-pressed="false">
-          <span class="legend-dot" style="--swatch: ${s.swatch}" aria-hidden="true"></span>
-          <span class="legend-text">
-            <span class="legend-name">${esc(s.name)}</span>
-            <span class="legend-sub">${esc(s.sub)}</span>
-          </span>
-          <span class="cat-amount">${esc(money(s.total, cur))}<span class="pct">${shareText(s.total, total)}</span></span>
-        </button>`).join('')}
-      </div>
-    </div>`;
-}
-
-function applyDonutHighlight(root) {
-  const key = state.donutActive;
-  const has = !!key && $$('[data-slice]', root).some((el) => el.dataset.slice === key);
-  if (!has) state.donutActive = null;
-  $$('.donut, .legend', root).forEach((el) => el.classList.toggle('has-active', has));
-  $$('[data-slice]', root).forEach((el) => {
-    const on = has && el.dataset.slice === key;
-    el.classList.toggle('is-active', on);
-    if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
   });
 }
 
@@ -1246,6 +1305,12 @@ function bindSettings() {
     applyTheme(e.target.value);
   });
 
+  // Per device, like the theme: a localStorage preference, never synced or exported.
+  $('#set-motion').addEventListener('change', (e) => {
+    storage.setPref('reduceMotion', e.target.checked ? 'on' : 'off');
+    applyMotion();
+  });
+
   $('#btn-export').addEventListener('click', exportData);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', async (e) => {
@@ -1274,6 +1339,22 @@ const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 // In "system" mode, follow the device when it switches between light and dark.
 darkScheme.addEventListener?.('change', () => applyTheme(storage.getPref('theme') || 'system'));
 
+/* "Reduce motion and effects": on, off, or (never set) the system's prefers-reduced-motion. On, the
+   Insights Ring shows as the flat donut, the year chart's springs settle at once and CSS transitions
+   and animations are cut (the .reduce-motion rule in app.css). */
+const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+const reduceEffects = () => reduceMotionFrom(storage.getPref('reduceMotion'), motionQuery.matches);
+motionQuery.addEventListener?.('change', () => { if (!storage.getPref('reduceMotion')) applyMotion(); });
+
+let motionApplied = null;
+function applyMotion() {
+  const on = reduceEffects();
+  document.documentElement.classList.toggle('reduce-motion', on);
+  $('#set-motion').checked = on;
+  if (motionApplied !== null && motionApplied !== on && state.tab === 'insights') renderInsights();
+  motionApplied = on;
+}
+
 function applyTheme(mode) {
   const root = document.documentElement;
   if (mode === 'light' || mode === 'dark') root.dataset.theme = mode;
@@ -1289,6 +1370,7 @@ function applyTheme(mode) {
         m.content = m.media.includes('dark') ? '#111216' : '#f6f6f9';
       } else m.content = bg;
     });
+    ring?.theme(); // the Ring reads its colours from the theme tokens
   });
 }
 

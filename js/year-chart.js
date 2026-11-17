@@ -58,11 +58,13 @@ const monthFull = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { mo
 /**
  * Draw the chart into `host`. opts: { months, average, nowIndex, rolling, stack: 'type' |
  * 'category', showIncome, money(n), categoryColour(group), pos (optional start position),
- * onSettle(pos), fadeIn, overlays (optional, js/overlays.js: focus mode registers there) }.
+ * onSettle(pos), fadeIn, overlays (optional, js/overlays.js: focus mode registers there),
+ * reduced (optional: reduce motion; defaults to the system's prefers-reduced-motion) }.
  * Returns { setStack, destroy, state, stats }.
  */
 export function createYearChart(host, opts) {
-  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The app passes its "Reduce motion and effects" setting; on its own the chart follows the system.
+  const reduced = opts.reduced ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const W = (w) => (reduced ? REDUCED_OMEGA : w);
   const money = opts.money;
   // Derived figures (the average, differences) in whole units once they're 10 or more.

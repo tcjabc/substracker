@@ -4,6 +4,11 @@ const VERSION = 'v1.10.4';
 const SHELL_CACHE = `substracker-shell-${VERSION}`;
 const LOGO_CACHE = 'substracker-logos';
 const LOGO_LIMIT = 200;
+// three.js (js/three.module.min.js, about 690 KB) is not in the shell: only the Insights Ring uses it, so
+// it is cached the first time the Ring loads it (RUNTIME below), in a cache named for its release so app
+// updates don't fetch it again. Offline before that first use, the Ring falls back to the flat donut.
+const THREE_CACHE = 'substracker-three-r170';
+const RUNTIME = ['./js/three.module.min.js'];
 
 // Relative to the worker's location, so this works at / and at /substracker/.
 const SHELL = [
@@ -34,6 +39,9 @@ const SHELL = [
   './js/insights-calc.js',
   './js/year-chart-math.js',
   './js/year-chart.js',
+  './js/donut-math.js',
+  './js/donut-flat.js',
+  './js/donut-3d.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -51,7 +59,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(
-      keys.filter((k) => k.startsWith('substracker-shell-') && k !== SHELL_CACHE).map((k) => caches.delete(k))
+      keys.filter((k) => (k.startsWith('substracker-shell-') && k !== SHELL_CACHE)
+        || (k.startsWith('substracker-three-') && k !== THREE_CACHE)).map((k) => caches.delete(k))
     );
     await self.clients.claim();
   })());
@@ -86,11 +95,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // three.js: cache first; fetched and kept the first time it's needed.
+  if (RUNTIME.some((p) => url.pathname === new URL(p, self.location).pathname)) {
+    event.respondWith(cacheOnFirstUse(req));
+    return;
+  }
+
   // Everything else same-origin: cache first, then network.
   event.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req))
   );
 });
+
+async function cacheOnFirstUse(req) {
+  const cache = await caches.open(THREE_CACHE);
+  const hit = await cache.match(req, { ignoreSearch: true });
+  if (hit) return hit;
+  const res = await fetch(req); // offline: this rejects and the import fails, so the flat donut shows
+  if (res.ok) await cache.put(req, res.clone());
+  return res;
+}
 
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(LOGO_CACHE);

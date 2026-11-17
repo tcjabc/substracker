@@ -38,6 +38,9 @@
   --group-9: #2d8a8c;  /* teal */
   --group-10: #a8474f; /* brick */
   --group-other: #a3a6b4; /* "Other" slice: neutral */
+  /* Insights Ring (js/donut-3d.js): ground-shadow strength, glow on raised slices (a share of their
+     colour), and the hemisphere light's sky and ground colours. */
+  --ring-shadow: 0.28; --ring-glow: 0.07; --ring-sky: #ffffff; --ring-ground: #c9c6d6;
   /* Year chart: plan types (monthly teal, annual the accent, one-offs warm orange: three hues at
      different lightness, >= 3:1 on the card, distinct under protan/deutan/tritan simulation) and
      the veil that mutes the bars away from the centre (the card colour). */
@@ -191,6 +194,7 @@
     --group-9: #5bb3b3;
     --group-10: #d0727a;
     --group-other: #5f6270;
+    --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
     --type-monthly: #5eead4;
     --type-annual: var(--accent);
     --type-once: #f0a35e;
@@ -234,6 +238,7 @@
   --group-9: #5bb3b3;
   --group-10: #d0727a;
   --group-other: #5f6270;
+  --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
   --type-monthly: #5eead4;
   --type-annual: var(--accent);
   --type-once: #f0a35e;
@@ -649,6 +654,24 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .legend-name { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .legend-sub { font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Ring: the 3D donut (js/donut-3d.js draws into a canvas here; the caption sits under the ring) */
+.ring-stage {
+  position: relative; width: 100%; max-width: 30rem; margin: 0 auto; aspect-ratio: 4 / 3.2;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  border-radius: var(--radius-md); outline: none;
+}
+.ring-stage:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.ring-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.ring-stage.is-dragging .ring-canvas { cursor: grabbing; }
+.ring-caption {
+  position: absolute; left: 0; right: 0; bottom: 4%; display: grid; justify-items: center; gap: 2px;
+  text-align: center; pointer-events: none; line-height: var(--leading-tight);
+}
+.ring-name { font-size: var(--text-sm); color: var(--text-muted); }
+.ring-amount { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.ring-share { font-size: var(--text-xs); color: var(--text-muted); }
+.ring-note { font-size: var(--text-xs); color: var(--text-muted); padding: var(--space-3) var(--space-4) 0; text-align: center; }
+
 .donut-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-6) var(--space-4); text-align: center; }
 .donut-empty-ring {
   width: calc(var(--donut-size) / 2); aspect-ratio: 1; margin-bottom: var(--space-2);
@@ -995,6 +1018,6 @@ dialog::backdrop { background: var(--scrim); }
    floating + and − buttons, however little follows the chart. */
 .yc-year-stats { max-width: 32rem; margin: 0 auto calc(var(--space-6) + var(--fab-stack)); grid-template-columns: 1fr; }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}
+/* "Reduce motion and effects" (Settings). js/app.js sets the class from the setting, which follows the
+   system's prefers-reduced-motion until it is changed, so either way this one rule applies. */
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

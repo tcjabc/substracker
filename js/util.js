@@ -221,3 +221,12 @@ export function hash(str) {
   for (const ch of str) h = (h * 31 + ch.codePointAt(0)) | 0;
   return Math.abs(h);
 }
+
+/**
+ * Whether "Reduce motion and effects" is on. `pref` is this device's saved choice ('on', 'off', or
+ * null when never set); an unset choice follows the system's prefers-reduced-motion (`systemReduce`).
+ */
+export const reduceMotionFrom = (pref, systemReduce) => (pref === 'on' ? true : pref === 'off' ? false : !!systemReduce);
+
+/** Insights "By category" view from the saved preference: a saved Donut or List is kept, else the Ring. */
+export const catViewFrom = (pref) => (pref === 'donut' || pref === 'list' ? pref : 'ring');

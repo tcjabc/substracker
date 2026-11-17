@@ -1,7 +1,8 @@
 // In-browser tests for the app screens (js/app.js): the Insights month view and the Money tab
 // summary strip on a cash basis (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
 // add/edit form requiring a renewal or payment date (with field-level saves and rollover still
-// working). Open tests/app.html from a local server. The app runs with
+// working), and the Insights Ring (3D) with its flat fallbacks and the Reduce motion and effects
+// setting. Open tests/app.html from a local server. The app runs with
 // index.html's markup against a throwaway database, seeded with made-up items dated relative to
 // today, so the tests work in any month. The tests run in order, as one session in the app.
 
@@ -13,7 +14,7 @@ import { generateKey } from '../js/crypto.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange'];
+const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'theme', 'reduceMotion'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -131,6 +132,131 @@ test('the income bar, the donut and the category list all use the month cash tot
   $('#insights [data-catview="list"]').click();
   eq($$('#insights .cat-row .cat-amount').map((el) => el.firstChild.textContent.trim()), [T(1699)], 'category list total');
   eq(text($$('#insights .stat')[2].querySelector('.stat-sub')), '1 monthly · 1 annual · 0 one-off', 'items due');
+});
+
+/* ------------------------------------------------- Insights Ring (3D) */
+// Six months from now TWD has two categories due: Utilities (Phone 499) and Uncategorised (Domain 360).
+
+const stage = () => $('#insights .ring-stage');
+const caption = () => text($('#insights .ring-name'));
+const pressedRows = () => $$('#insights .legend-row').map((r) => r.getAttribute('aria-pressed'));
+const keyOn = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+const setUrlFlag = (q) => history.replaceState(null, '', `${location.pathname}${q}`);
+let ringMod = null;
+async function openRing() {
+  $('#insights [data-catview="ring"]').click();
+  await until(() => $('#insights .ring-canvas'), 'the Ring canvas appears', 8000);
+  ringMod ||= await import('../js/donut-3d.js'); // the module instance the app loaded
+  await until(() => !ringMod.ringStats.running, 'the Ring at rest');
+}
+
+test('Reduce motion and effects: per device, follows the system until set, flat Ring, not exported or synced', async () => {
+  const box = $('#set-motion');
+  const sys = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The app started with the setting unset (see run()), so it follows the system. (The runner also
+  // loads this page with prefers-reduced-motion emulated as "reduce" to cover the other case.)
+  eq(localStorage.getItem('substracker.reduceMotion'), null, 'unset');
+  eq(box.checked, sys, 'unset: the checkbox shows the system setting');
+  eq(document.documentElement.classList.contains('reduce-motion'), sys, 'unset: the page follows the system');
+  const flip = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+  flip(true);
+  eq(localStorage.getItem('substracker.reduceMotion'), 'on', 'saved on this device');
+  assert(document.documentElement.classList.contains('reduce-motion'), 'motion cut app-wide');
+  $('#insights [data-catview="ring"]').click();
+  assert(!$('#insights .ring-stage') && $('#insights .donut svg'), 'the Ring shows as the flat donut');
+  assert(text($('#insights .ring-note')).includes('Reduce motion and effects'), 'and says why');
+  flip(false);
+  eq(localStorage.getItem('substracker.reduceMotion'), 'off');
+  assert(!document.documentElement.classList.contains('reduce-motion'), 'off overrides the system');
+  // Never in a backup or in the synced settings.
+  const backup = JSON.stringify(await storage.exportAll());
+  assert(!/reduceMotion|reduce-motion/i.test(backup), 'not exported');
+  const settings = await storage.getSettings();
+  assert(!Object.keys(settings).some((k) => /motion/i.test(k)), 'not a synced setting');
+  flip(false);
+});
+
+test('Ring: a 3D view with caption, legend and labels; arrow keys turn it; aria-live says the front slice', async () => {
+  await step(6);
+  await openRing();
+  eq(caption(), 'Utilities', 'the largest slice starts at the front');
+  eq(text($('#insights .ring-amount')), T(499), 'caption amount');
+  eq(text($('#insights .ring-share')), `58% of ${$('#insights .month-label').textContent}`, 'caption share of the month');
+  eq(pressedRows(), ['true', 'false'], 'legend marks the front slice');
+  assert(stage().getAttribute('aria-label').includes(`Front: Utilities, ${T(499)}, 58%`), 'stage label names the front slice');
+  assert($('#insights .ring-canvas').getAttribute('aria-hidden') === 'true', 'the canvas itself is hidden from screen readers');
+  keyOn(stage(), 'ArrowRight');
+  await until(() => caption() === 'Uncategorised', 'ArrowRight brings the next slice to the front');
+  await until(() => !ringMod.ringStats.running, 'settles');
+  await until(() => text($('#ring-live')) === `Uncategorised, ${T(360)}, 42%`, 'announced once at rest');
+  eq(pressedRows(), ['false', 'true'], 'legend follows');
+  keyOn(stage(), 'ArrowLeft');
+  await until(() => caption() === 'Utilities' && !ringMod.ringStats.running, 'ArrowLeft goes back');
+});
+
+test('Ring: draws no frames while idle, and only while it moves', async () => {
+  const f0 = ringMod.ringStats.frames;
+  await tick(600);
+  eq(ringMod.ringStats.frames, f0, 'no frames while nothing moves');
+  assert(!ringMod.ringStats.running, 'no loop running');
+  $$('#insights .legend-row')[1].click(); // a legend row brings its slice round
+  await until(() => ringMod.ringStats.running, 'the loop starts');
+  await until(() => !ringMod.ringStats.running, 'and stops at rest');
+  const f1 = ringMod.ringStats.frames;
+  assert(f1 > f0 + 5, `frames drawn while turning (${f1 - f0})`);
+  await tick(400);
+  eq(ringMod.ringStats.frames, f1, 'idle again');
+  eq(ringMod.ringStats.calls, 3, 'one draw call per slice plus the shadow');
+});
+
+test('Ring: tapping a slice brings it to the front', async () => {
+  eq(caption(), 'Uncategorised', 'starting slice');
+  // The far half of the ring is the other slice: tap the back of the ring, near the top of the stage.
+  const c = $('#insights .ring-canvas');
+  const b = c.getBoundingClientRect();
+  const at = { clientX: b.left + b.width / 2, clientY: b.top + b.height * 0.2, pointerId: 41, bubbles: true, isPrimary: true, pointerType: 'touch' };
+  c.dispatchEvent(new PointerEvent('pointerdown', at));
+  await tick(40);
+  c.dispatchEvent(new PointerEvent('pointerup', at));
+  await until(() => caption() === 'Utilities', 'the tapped slice comes to the front');
+  await until(() => !ringMod.ringStats.running, 'settles');
+});
+
+test('Ring: a theme change redraws once with the theme colours', async () => {
+  const before = ringMod.ringStats.frames;
+  $('#set-theme').value = 'dark';
+  $('#set-theme').dispatchEvent(new Event('change'));
+  await until(() => ringMod.ringStats.frames === before + 1, 'one frame for the new theme');
+  $('#set-theme').value = 'light';
+  $('#set-theme').dispatchEvent(new Event('change'));
+  await until(() => ringMod.ringStats.frames === before + 2, 'and one back');
+  await tick(200);
+  eq(ringMod.ringStats.frames, before + 2, 'nothing more');
+  $('#set-theme').value = 'system';
+  $('#set-theme').dispatchEvent(new Event('change'));
+  await tick(50);
+});
+
+test('Ring falls back to the flat donut when WebGL is ruled out (flat=1), with arrow keys there too', async () => {
+  setUrlFlag('?flat=1');
+  $('#insights [data-catview="ring"]').click();
+  assert(!$('#insights .ring-stage'), 'no Ring');
+  assert($('#insights .donut svg'), 'the flat donut instead');
+  assert(text($('#insights .ring-note')).includes('flat donut'), 'a note says why');
+  const chart = $('#insights [data-donut-keys]');
+  assert(chart, 'the flat donut is focusable');
+  keyOn(chart, 'ArrowRight');
+  eq(pressedRows().filter((p) => p === 'true').length, 1, 'arrow keys highlight one slice');
+  setUrlFlag('');
+});
+
+test('Ring: a lost WebGL context falls back to the flat donut for the session', async () => {
+  await openRing();
+  ringMod.loseContextForTest();
+  await until(() => !$('#insights .ring-stage') && $('#insights .donut svg'), 'flat donut after the context is lost');
+  assert(text($('#insights .ring-note')).includes('stopped working'), 'says why');
+  $('#insights [data-catview="donut"]').click();
+  await step(-6);
 });
 
 /* ------------------------------------------------------- Money tab strip */
@@ -959,6 +1085,8 @@ async function run() {
   storage.setPref('period', 'monthly');
   storage.setPref('insightsMode', 'month');
   storage.setPref('yearRange', 'roll');
+  localStorage.removeItem('substracker.reduceMotion'); // unset: follows the system
+  localStorage.removeItem('substracker.theme');
 
   // Bring in the app's own markup, then the app itself (which starts on import).
   const html = await (await fetch('../index.html', { cache: 'no-store' })).text();
