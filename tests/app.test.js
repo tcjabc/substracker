@@ -1366,6 +1366,27 @@ test('Import with AI: review flags rows, fixes dates and cycles, totals on a cas
   assert(added.every((s) => s.id !== 'settings' && s.createdAt && s.updatedAt), 'new ids and stamps');
 });
 
+test('Import with AI: a reply pasted on a phone (invisible spaces, curly quotes, suggestions after it) is read', async () => {
+  const before = await storage.getAll();
+  const ch = (code) => String.fromCharCode(code);
+  const tutoring = (nextDate) => aiRow({ name: 'Test Tutoring', amount: 4800, cycle: 'one-off', nextDate, category: '', type: 'income' });
+  const json = aiReply([aiRow({ name: 'Test Music', amount: 149 }), tutoring(day(Y, M, 3)), tutoring(day(Y, M, 26)), tutoring(day(Y, M, 3))])
+    .replace('{"version":1,', `{${ch(0xfeff)}${ch(0x201c)}version${ch(0x201d)}:${ch(0xa0)}1,${ch(0x200b)}`)
+    .replace('"rows":', `"rows"${ch(0x2060)}:${ch(0x200d)}`);
+  await openAi();
+  await confirmWarning();
+  $('#ai-continue').click();
+  await reviewReply(`${json}\n\nCheck the weekly gym membership\nAdd my one-off purchases too`);
+  eq(text($('#ai-review-summary')), '4 rows · 3 selected · 1 duplicate skipped.', 'read, not "version is missing"');
+  assert($('#ai-reply-error').hidden, 'no error for the reply');
+  const include = (n) => $(`#ai-rows [data-row="${n}"] [data-include]`).checked;
+  eq([1, 2, 3, 4].map(include), [true, true, true, false], 'both one-offs on different dates go in; the same date again is a duplicate');
+  assert(text($('#ai-rows [data-row="4"]')).includes('same as row 2, skipped'), 'the duplicate says which row');
+  $('[data-ai-close]').click();
+  await until(() => !aiDlg().open, 'closed');
+  eq((await storage.getAll()).length, before.length, 'nothing imported');
+});
+
 test('Import with AI: Reduce motion and effects: the thumb returns at once, no transition', async () => {
   $('#set-motion').checked = true; $('#set-motion').dispatchEvent(new Event('change'));
   try {

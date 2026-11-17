@@ -91,6 +91,77 @@ test('a parsed object is accepted as it is', () => {
   assert.equal(extractJson({ version: 1, rows: [row()] }).rows.length, 1);
 });
 
+/* ------------------------------------------------------------------ Replies pasted on a phone */
+// tests/fixtures/ai-reply-statement.json is a real reply's shape from a fictional statement; the
+// .txt one is the same reply followed by the follow-up suggestions a chat app shows under it.
+const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
+const STATEMENT = fixture('ai-reply-statement.json');
+const ch = (code) => String.fromCharCode(code); // invisible characters by code, so none hide in this file
+const outcome = (text) => reviewAiImport(text).map((r) => `${r.n} ${r.fields.name} ${r.status} ${r.include}`);
+const EXPECTED = outcome(STATEMENT);
+
+test('the statement fixture: 18 rows, weekly and quarterly flagged, both Tutoring one-offs included', () => {
+  const rows = reviewAiImport(STATEMENT);
+  assert.equal(rows.length, 18);
+  assert.deepEqual(rows.filter((r) => r.status !== 'ok').map((r) => [r.n, r.status, r.fields.cycleText]), [[5, 'cycle', 'weekly'], [13, 'cycle', 'quarterly']]);
+  assert.equal(rows.filter((r) => r.include).length, 16);
+  assert.deepEqual(rows.filter((r) => r.fields.name === 'Tutoring').map((r) => [r.fields.nextDate, r.include]), [['2026-10-25', true], ['2026-11-26', true]]);
+});
+
+test('the statement fixture with suggestion text after it reads the same', () => {
+  const text = fixture('ai-reply-with-chips.txt');
+  assert.ok(text.trimEnd().endsWith('Explain the categories'));
+  assert.deepEqual(outcome(text), EXPECTED);
+});
+
+test('invisible characters and curly quotes from a phone paste are read, not reported as a missing "version"', () => {
+  const NBSP = ch(0xa0); const ZWSP = ch(0x200b); const ZWNJ = ch(0x200c); const ZWJ = ch(0x200d); const WJ = ch(0x2060);
+  const BOM = ch(0xfeff); const SHY = ch(0xad); const NNBSP = ch(0x202f); const IDEO = ch(0x3000); const LSEP = ch(0x2028);
+  const LQ = ch(0x201c); const RQ = ch(0x201d);
+  const cases = {
+    'no-break space between tokens': STATEMENT.replace('"version":1,', `"version":1,${NBSP}`).replaceAll('},{', `},${NBSP}{`),
+    'no-break space inside a key': STATEMENT.replace('"version"', `"version${NBSP}"`),
+    'narrow no-break and ideographic spaces': STATEMENT.replace('{"version"', `{${NNBSP}"version"`).replace('"rows":', `"rows":${IDEO}`),
+    'line separator': STATEMENT.replace('"rows":', `"rows":${LSEP}`),
+    'zero-width space between tokens': STATEMENT.replace('"version":1,', `"version":1${ZWSP},`),
+    'zero-width space inside a key': STATEMENT.replace('"version"', `"${ZWSP}version"`).replace('"nextDate"', `"next${ZWSP}Date"`),
+    'zero-width space inside a date in otherwise valid JSON': STATEMENT.replace('"2026-11-03"', `"2026-11${ZWSP}-03"`),
+    'zero-width joiner between tokens':STATEMENT.replace('"version":1,', `"version":1${ZWJ},`),
+    'zero-width non-joiner between tokens': STATEMENT.replace('"rows":[', `"rows":${ZWNJ}[`),
+    'word joiner': STATEMENT.replace('"rows":', `"rows"${WJ}:`),
+    'soft hyphen': STATEMENT.replace('"rows":', `"rows":${SHY}`),
+    'byte-order mark before the JSON': `Here it is:\n${BOM}${STATEMENT}`,
+    'byte-order mark inside the JSON': STATEMENT.replace('{"version"', `{${BOM}"version"`).replace('"rows":', `"rows":${BOM}`),
+    'curly quotes around the keys': STATEMENT.replace('"version"', `${LQ}version${RQ}`).replace('"rows"', `${LQ}rows${RQ}`),
+    'curly quotes everywhere': STATEMENT.replaceAll(/"([^"]*)"/g, `${LQ}$1${RQ}`),
+    'a straight quote closed by a curly one': STATEMENT.replace('"version"', `"version${RQ}`),
+    'all of them at once': `${BOM}Sure:${NBSP}\n${STATEMENT.replace('{"version":1,', `{${ZWSP}${LQ}version${RQ}:${NBSP}1,${ZWJ}`)}\n\nExplain the categories`,
+  };
+  for (const [label, text] of Object.entries(cases)) {
+    assert.notEqual(text, STATEMENT, `${label}: the case changes the text`);
+    assert.deepEqual(outcome(text), EXPECTED, label);
+  }
+});
+
+test('cleaning keeps what belongs inside names: joiners in emoji, curly quotes as text', () => {
+  const ZWJ = ch(0x200d); const ZWSP = ch(0x200b); const LQ = ch(0x201c); const RQ = ch(0x201d);
+  const family = `${String.fromCodePoint(0x1f468)}${ZWJ}${String.fromCodePoint(0x1f467)} Family Plan`;
+  const text = `${reply([row({ name: family }), row({ name: `The ${LQ}Best${RQ} Shop` }), row({ name: `Zero${ZWSP}Width` })])}${ch(0xa0)}`;
+  assert.deepEqual(reviewAiImport(text).map((r) => r.fields.name), [family, `The ${LQ}Best${RQ} Shop`, 'ZeroWidth']);
+});
+
+test('a broken reply says the JSON has a mistake, never that a row lacks "version"', () => {
+  for (const text of [STATEMENT.replace('},{"name":"Rent"', '}{"name":"Rent"'), STATEMENT.slice(0, -2), `Here:\n${STATEMENT.replace(':62000,', ':62000,,')}`]) {
+    assert.throws(() => parseAiImport(text), (e) => e instanceof AiImportError && !/version/.test(e.message), text.slice(-30));
+  }
+  assert.throws(() => parseAiImport(STATEMENT.replace('},{"name":"Rent"', '}{"name":"Rent"')),
+    { message: 'The JSON has a mistake and can\'t be read, for example a missing comma, quote or bracket. Ask for the whole JSON again, with straight double quotes and nothing else.' });
+});
+
+test('the missing-version message, word for word', () => {
+  assert.throws(() => parseAiImport(JSON.stringify({ rows: [row()] })), { message: '"version" is missing; add "version": 1.' });
+});
+
 /* ------------------------------------------------------------------ Rows */
 
 test('partial JSON: good rows stay usable next to bad ones, with row-level messages', () => {
@@ -208,6 +279,23 @@ test('duplicates of items already in the list are skipped', () => {
   assert.deepEqual(rows.map((r) => r.status), ['duplicate', 'duplicate', 'ok']);
   assert.deepEqual(messages(rows[0]), ['Row 1: already in your list, skipped']);
   assert.deepEqual(rows[0].duplicateOf, { existing: true });
+});
+
+test('one-offs are duplicates only on the same date; monthly and annual ignore the date', () => {
+  const tutoring = (nextDate) => row({ name: 'Tutoring', amount: 4800, cycle: 'one-off', nextDate, category: '', type: 'income' });
+  const rows = reviewRows([tutoring('2026-10-25'), tutoring('2026-11-26'), tutoring('2026-10-25'),
+    row(), row({ nextDate: '2027-01-05' }), row({ cycle: 'annual', name: 'Cloud' }), row({ cycle: 'annual', name: 'Cloud', nextDate: '2027-06-01' })]);
+  assert.deepEqual(rows.map((r) => [r.status, r.include]), [
+    ['ok', true], ['ok', true], ['duplicate', false],
+    ['ok', true], ['duplicate', false], ['ok', true], ['duplicate', false],
+  ]);
+  assert.deepEqual(messages(rows[2]), ['Row 3: same as row 1, skipped']);
+  // Against the list: a one-off already there on another date is a new transaction.
+  const existing = [{ id: 'a', type: 'income', name: 'Tutoring', price: 4800, currency: 'TWD', cycle: 'once', date: '2026-10-25' }];
+  assert.deepEqual(reviewRows([tutoring('2026-10-25'), tutoring('2026-11-26')], existing).map((r) => r.status), ['duplicate', 'ok']);
+  // A one-off with no date isn't compared until the date is fixed.
+  assert.deepEqual(reviewRows([tutoring('2026-10-25'), tutoring('')]).map((r) => r.status), ['ok', 'date']);
+  assert.deepEqual(reviewRows([tutoring('2026-10-25'), tutoring('2026-10-25')], []).map((r) => r.status), ['ok', 'duplicate']);
 });
 
 test('a row with a real error and a duplicate shows the error first', () => {

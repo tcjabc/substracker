@@ -60,9 +60,65 @@ function balancedObject(text, start) {
   return null;
 }
 
+// What copying from a chat on a phone can add to JSON: no-break and other Unicode spaces, zero-width
+// spaces and joiners, a byte-order mark in the middle of the text, a soft hyphen, and curly quotes.
+const SMART_QUOTE = /[\u201C\u201D\u201E\u201F\u2033\u2036]/;
+const UNICODE_SPACE = /[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/;
+const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u2060-\u2064\uFEFF]/;
+// Inside a string, joiners stay: they hold emoji and some scripts together.
+const BOM = new RegExp(String.fromCharCode(0xfeff), 'g');
+const INVISIBLE_IN_TEXT =/[\u00AD\u180E\u200B\u2060-\u2064\uFEFF]/;
+// After a curly closing quote inside a straight-quoted string: the string ends there if JSON goes on.
+const ENDS_STRING = /^[ \t\r\n]*[:,}\]]/;
+
 /**
- * The JSON object in a pasted reply or picked file. Tolerant of what chats wrap around it: a
- * byte-order mark, code fences, or text before and after. Throws AiImportError when there's none.
+ * JSON with the characters above made plain: Unicode spaces between tokens become spaces,
+ * invisible characters go, and curly quotes around keys and values become straight ones. Text inside
+ * strings is kept, apart from invisible characters that aren't joiners. Run on one candidate at a time.
+ */
+export function plainJson(s) {
+  let out = '';
+  let str = null; // null outside a string, else 'straight' or 'smart' for the quote that opened it
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (str) {
+      if (c === '\\') { out += c + (s[i + 1] ?? ''); i++; }
+      else if (c === '"') { out += c; str = null; }
+      else if (SMART_QUOTE.test(c) && (str === 'smart' || ENDS_STRING.test(s.slice(i + 1, i + 40)))) { out += '"'; str = null; }
+      else if (!INVISIBLE_IN_TEXT.test(c)) out += c;
+    } else if (c === '"') { out += c; str = 'straight'; }
+    else if (SMART_QUOTE.test(c)) { out += '"'; str = 'smart'; }
+    else if (UNICODE_SPACE.test(c)) out += ' ';
+    else if (!INVISIBLE.test(c)) out += c;
+  }
+  return out;
+}
+
+const INVISIBLE_ALL = new RegExp(INVISIBLE.source, 'g');
+const INVISIBLE_IN_TEXT_ALL = new RegExp(INVISIBLE_IN_TEXT.source, 'g');
+
+/**
+ * An object with its keys trimmed of spaces and invisible characters (a key like "version " or
+ * "\u200Bversion"); with `values`, its text values lose invisible characters other than joiners too
+ * (a date like "2026-11-01" with a zero-width space in it). A key written exactly wins over a tidied one.
+ */
+function tidyKeys(v, { values = false } = {}) {
+  if (!isObj(v)) return v;
+  const out = {};
+  for (const [k, val] of Object.entries(v)) {
+    const key = k.replace(INVISIBLE_ALL, '').trim();
+    if (Object.prototype.hasOwnProperty.call(out, key) && key !== k) continue;
+    out[key] = values && typeof val === 'string' ? val.replace(INVISIBLE_IN_TEXT_ALL, '') : val;
+  }
+  return out;
+}
+
+/**
+ * The JSON object in a pasted reply or picked file. Tolerant of what chats wrap around it and what
+ * copying on a phone adds: a byte-order mark, code fences, text before and after (an
+ * explanation, suggested follow-up questions), Unicode spaces, invisible characters and curly
+ * quotes. Only whole objects are tried, never one nested inside a broken reply, so a reply that
+ * doesn't parse is reported as such and not as a row with no "version". Throws AiImportError.
  */
 export function extractJson(input) {
   if (isObj(input)) return input;
@@ -70,24 +126,37 @@ export function extractJson(input) {
   if (input.length > MAX_AI_CHARS) {
     throw new AiImportError(`That's too long to import (over ${MAX_AI_CHARS.toLocaleString('en')} characters). Import fewer rows at a time.`);
   }
-  const text = input.replace(/^﻿/, '').trim();
+  const text = input.replace(BOM, '').trim();
   if (!text) throw new AiImportError('Nothing to import. Paste the reply or pick its file.');
 
   const candidates = [text];
   for (const m of text.matchAll(/```[a-zA-Z]*[ \t]*\r?\n?([\s\S]*?)```/g)) candidates.push(m[1].trim());
+  // Each outermost {...} once; the search goes on after it, not inside it.
   let tries = 0;
-  for (let i = text.indexOf('{'); i !== -1 && tries < 50; i = text.indexOf('{', i + 1), tries++) {
+  for (let i = text.indexOf('{'); i !== -1 && tries < 50; tries++) {
     const obj = balancedObject(text, i);
-    if (obj) candidates.push(obj);
+    if (!obj) break;
+    candidates.push(obj);
+    i = text.indexOf('{', i + obj.length);
   }
   let found = null;
+  let broken = null;
   for (const c of candidates) {
-    const r = tryParse(c);
-    if (!r.ok) continue;
-    if (isObj(r.value) && 'rows' in r.value) return r.value;
-    found ??= r.value;
+    let r = tryParse(c);
+    if (!r.ok) r = tryParse(plainJson(c));
+    if (!r.ok) {
+      if (c.startsWith('{') && /"\s*(version|rows)\s*"/.test(plainJson(c))) broken ??= c;
+      continue;
+    }
+    const value = tidyKeys(r.value);
+    if (isObj(value) && 'rows' in value) return value;
+    found ??= value;
   }
   if (found !== null) return found;
+  if (broken) {
+    throw new AiImportError('The JSON has a mistake and can\'t be read, for example a missing comma, quote or bracket. '
+      + 'Ask for the whole JSON again, with straight double quotes and nothing else.');
+  }
   throw new AiImportError("Couldn't find any JSON in that. Paste the whole reply, or ask for the JSON only.");
 }
 
@@ -191,13 +260,18 @@ export function checkRow(raw, n) {
   return { n, fields, problems };
 }
 
-/** The duplicate key: name (case and spacing ignored), amount, currency and cycle. */
-export function duplicateKey({ name, amount, currency, cycle }) {
+/**
+ * The duplicate key: name (case and spacing ignored), amount, currency and cycle, and for a
+ * one-off its date too: the same one-off on two dates (a lesson paid twice) is two transactions.
+ * A recurring item's date isn't part of it: statements show the same subscription on different dates.
+ */
+export function duplicateKey({ name, amount, currency, cycle, date = '' }) {
   const nm = String(name ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
-  return `${nm}\u0000${Math.round(Number(amount) * 100) / 100}\u0000${String(currency ?? '').toUpperCase()}\u0000${cycle}`;
+  const key = `${nm}\u0000${Math.round(Number(amount) * 100) / 100}\u0000${String(currency ?? '').toUpperCase()}\u0000${cycle}`;
+  return cycle === 'once' ? `${key} on ${date ?? ''}` : key;
 }
 
-const keyOfItem = (s) => duplicateKey({ name: s.name, amount: s.price, currency: s.currency, cycle: s.cycle });
+const keyOfItem = (s) => duplicateKey({ name: s.name, amount: s.price, currency: s.currency, cycle: s.cycle, date: s.date || s.nextRenewal });
 
 /**
  * Check every row and mark duplicates: a row that matches an earlier row of the reply, or an item
@@ -212,11 +286,13 @@ export function reviewRows(rawRows, existing = []) {
   const have = new Set(existing.map(keyOfItem));
   const seen = new Map();
   return rawRows.map((raw, i) => {
-    const { n, fields, problems } = checkRow(raw, i + 1);
+    const { n, fields, problems } = checkRow(tidyKeys(raw, { values: true }), i + 1);
     let duplicateOf = null;
-    const comparable = fields.name !== null && fields.amount !== null && fields.currency !== null && fields.cycle !== null;
+    // A one-off without a usable date isn't compared until its date is fixed.
+    const comparable = fields.name !== null && fields.amount !== null && fields.currency !== null && fields.cycle !== null
+      && (fields.cycle !== 'once' || fields.nextDate !== null);
     if (comparable) {
-      const k = duplicateKey(fields);
+      const k = duplicateKey({ ...fields, date: fields.nextDate });
       if (have.has(k)) duplicateOf = { existing: true };
       else if (seen.has(k)) duplicateOf = { row: seen.get(k) };
       else seen.set(k, n);
