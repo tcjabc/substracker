@@ -15,7 +15,7 @@ import { generateKey } from '../js/crypto.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'theme', 'reduceMotion'];
+const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'yearStack', 'theme', 'reduceMotion'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -612,17 +612,25 @@ test('range toggle: This year is 12 months, Rolling 13 with the year under each 
   eq(text($$('#year-chart .yc-year')[0]), `'${String(new Date(Y, M - 6, 1).getFullYear()).slice(2)}`, 'first month’s year');
 });
 
-test('stack toggle crossfades on the same chart', async () => {
-  const before = chart();
-  $('[data-year-stack="category"]').click();
-  eq(chart(), before, 'no redraw');
-  eq(chart().state().stack, 'category', 'by category');
+test('stack toggle: By category on a fresh device, crossfades on the same chart, the choice is kept', async () => {
+  const pressedStack = () => $$('[data-year-stack]').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.dataset.yearStack);
+  eq(storage.getPref('yearStack'), null, 'nothing saved on this device');
+  eq([chart().state().stack, pressedStack()], ['category', ['category']], 'a fresh device starts By category');
   assert(text($('#year-chart .yc-legend')).includes('Utilities'), 'category legend');
-  await settle();
-  eq(chart().state().stack, 'category', 'still by category');
+  const before = chart();
   $('[data-year-stack="type"]').click();
+  eq(chart(), before, 'no redraw');
+  eq([chart().state().stack, pressedStack()], ['type', ['type']], 'by type');
+  eq(storage.getPref('yearStack'), 'type', 'the choice is saved on this device');
   await settle();
   assert(text($('#year-chart .yc-legend')).includes('Monthly plans'), 'type legend');
+  $('[data-year-stack="category"]').click();
+  await settle();
+  eq([chart().state().stack, storage.getPref('yearStack')], ['category', 'category'], 'and back, saved');
+  assert(text($('#year-chart .yc-legend')).includes('Utilities'), 'category legend again');
+  $('[data-year-stack="type"]').click(); // the tests after this read the By type legend
+  await settle();
+  eq(chart().state().stack, 'type', 'by type for the next tests');
 });
 
 test('Jump to now: faded when centred, full when not, hidden in focus', async () => {
@@ -1075,6 +1083,164 @@ test('Back: with nothing open, Insights and Settings go to Money; Money leaves t
   eq(typeof globalThis.Capacitor, 'undefined', 'web: no native bridge, so no listener and the browser\'s Back is unchanged');
 });
 
+/* ------------------------------------------------------------------ Bottom-nav pill, Export as CSV */
+
+const pillEl = () => $('.tabbar .tab-pill');
+const tabEl = (t) => $(`.tab[data-tab="${t}"]`);
+const pillRest = () => parseFloat(getComputedStyle(pillEl()).getPropertyValue('--tab-pill-w'));
+const pillWidth = () => pillEl().getBoundingClientRect().width;
+/** Whether the pill sits centred on `tab`, at its resting width, inside the tab's height (to half a pixel). */
+function pillOn(tab) {
+  const p = pillEl().getBoundingClientRect();
+  const t = tabEl(tab).getBoundingClientRect();
+  return Math.abs(p.width - Math.min(pillRest(), t.width)) < 0.6
+    && Math.abs((p.left + p.right) / 2 - (t.left + t.right) / 2) < 0.6
+    && p.top >= t.top - 0.5 && p.bottom <= t.bottom + 0.5;
+}
+/** The pill's widths, one per frame, for `ms`. */
+async function pillWidths(ms) {
+  const out = [];
+  const end = performance.now() + ms;
+  while (performance.now() < end) { out.push(pillWidth()); await new Promise((r) => requestAnimationFrame(r)); }
+  return out;
+}
+/** Run `fn` with this device's Reduce motion setting at `pref` ('on' / 'off'), then put it back. */
+async function withMotionPref(pref, fn) {
+  const was = localStorage.getItem('substracker.reduceMotion');
+  storage.setPref('reduceMotion', pref);
+  try { await fn(); } finally {
+    if (was === null) localStorage.removeItem('substracker.reduceMotion'); else storage.setPref('reduceMotion', was);
+  }
+}
+
+test('Pill: decoration only; the tabs keep their roles, keyboard and focus', async () => {
+  eq($$('.tabbar .tab-pill').length, 1, 'one pill');
+  eq(pillEl().getAttribute('aria-hidden'), 'true', 'hidden from screen readers');
+  eq(getComputedStyle(pillEl()).pointerEvents, 'none', 'takes no taps');
+  eq(pillEl().tabIndex, -1, 'not focusable');
+  eq($$('.tabbar [role="tab"]').map((t) => t.dataset.tab), ['subs', 'insights', 'settings'], 'the same three tabs');
+  goTab('subs');
+  await until(() => pillOn('subs'), 'the pill on Money', 2000);
+  tabEl('subs').focus();
+  $('.tabbar').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  eq([appTab(), document.activeElement?.id], ['insights', 'tab-insights'], 'arrow keys still move the selection and focus');
+  eq($$('.tab').map((t) => [t.getAttribute('aria-selected'), t.tabIndex]), [['false', -1], ['true', 0], ['false', -1]], 'roving tabindex');
+  await until(() => pillOn('insights'), 'the pill follows the keyboard', 2000);
+});
+
+test('Pill: a tap slides it over with a stretch, and it settles exactly on the new tab', async () => {
+  await withMotionPref('off', async () => {
+    goTab('subs');
+    await until(() => pillOn('subs'), 'on Money', 2000);
+    const rest = pillWidth();
+    const start = performance.now();
+    goTab('settings');
+    assert(!pillOn('settings'), 'it moves over time, not in one jump');
+    const widths = await pillWidths(250);
+    assert(Math.max(...widths) > rest * 1.25, `it stretches on the way (max ${Math.round(Math.max(...widths))} px, rest ${Math.round(rest)} px)`);
+    await until(() => pillOn('settings'), 'settled on Settings', 2000);
+    const took = performance.now() - start;
+    assert(took < 900, `settles quickly (${Math.round(took)} ms)`);
+    const after = await pillWidths(80);
+    assert(after.every((w) => Math.abs(w - rest) < 0.6), 'and stays at its resting width');
+  });
+});
+
+test('Pill: with Reduce motion and effects it just moves: no stretch, no spring', async () => {
+  await withMotionPref('on', async () => {
+    goTab('subs');
+    assert(pillOn('subs'), 'on Money at once');
+    const rest = pillWidth();
+    goTab('insights');
+    assert(pillOn('insights'), 'on Insights at once');
+    goTab('settings');
+    assert(pillOn('settings'), 'on Settings at once');
+    const widths = await pillWidths(120);
+    assert(widths.every((w) => Math.abs(w - rest) < 0.6), 'never stretched');
+    assert(pillOn('settings'), 'still there');
+  });
+});
+
+test('Pill: Back to Money moves it the same way', async () => {
+  await withMotionPref('off', async () => {
+    goTab('insights');
+    await until(() => pillOn('insights'), 'on Insights', 2000);
+    const rest = pillWidth();
+    backIs('root', 'Back from Insights goes to Money');
+    eq(appTab(), 'subs', 'Money');
+    const widths = await pillWidths(200);
+    assert(Math.max(...widths) > rest * 1.15, 'it slides with the stretch');
+    await until(() => pillOn('subs'), 'settled on Money', 2000);
+    goTab('settings');
+    await until(() => pillOn('settings'), 'on Settings', 2000);
+    backIs('root', 'Back from Settings goes to Money');
+    await until(() => pillOn('subs'), 'and the pill is back on Money', 2000);
+  });
+});
+
+test('Pill: stays on the active tab when the bar changes size (rotation, insets)', async () => {
+  goTab('insights');
+  await until(() => pillOn('insights'), 'on Insights', 2000);
+  const bar = $('.tabbar');
+  bar.style.right = '140px';
+  try {
+    await until(() => pillOn('insights'), 'follows a narrower bar', 2000);
+    bar.style.paddingLeft = '48px'; // a safe-area inset on the left
+    await until(() => pillOn('insights'), 'follows an inset', 2000);
+  } finally {
+    bar.style.right = '';
+    bar.style.paddingLeft = '';
+  }
+  await until(() => pillOn('insights'), 'and back', 2000);
+  goTab('subs');
+});
+
+test('Export as CSV: live items only, with the BOM, columns, quoting and formula escaping, via the download path', async () => {
+  goTab('settings');
+  assert(text($('#btn-export-csv').closest('.setting-row')).includes('For spreadsheets, not a backup'), 'labelled as not a backup');
+  const extra = [
+    { ...base, id: 'test-csv-cjk', name: '中華電信 5G', price: 599, cycle: 'monthly', nextRenewal: day(Y, M + 1, 9), category: 'Utilities' },
+    { ...base, id: 'test-csv-formula', name: '=HYPERLINK("x")', price: 10, cycle: 'once', date: day(Y, M, 2), category: 'Rent, flat' },
+    { ...base, id: 'test-csv-gone', name: 'Deleted Thing', price: 1, cycle: 'monthly', nextRenewal: day(Y, M + 1, 1) },
+    { ...base, id: 'test-csv-past', name: 'CSV Past Annual', price: 1200, cycle: 'annual', nextRenewal: day(Y - 2, M, 15), category: 'Utilities' },
+    { ...base, type: 'income', id: 'test-csv-pay', name: 'CSV Pay', price: 40000, cycle: 'monthly', nextRenewal: day(Y, M, 25), category: 'ignored' },
+    { ...base, id: 'test-csv-undated', name: 'CSV Undated', price: 900, cycle: 'monthly', nextRenewal: '', category: 'Health' },
+  ];
+  for (const s of extra) await storage.save(s);
+  await storage.remove('test-csv-gone');
+  const blobs = [];
+  const realUrl = URL.createObjectURL;
+  URL.createObjectURL = (b) => { blobs.push(b); return realUrl.call(URL, b); };
+  try {
+    $('#btn-export-csv').click();
+    await until(() => blobs.length === 1, 'the CSV file');
+  } finally { URL.createObjectURL = realUrl; }
+  eq(downloads.at(-1), `substracker-${day(Y, M, now.getDate())}.csv`, 'downloaded as a .csv file');
+  eq(blobs[0].type, 'text/csv;charset=utf-8', 'as CSV');
+  const bytes = new Uint8Array(await blobs[0].arrayBuffer());
+  eq([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf], 'starts with the UTF-8 byte-order mark');
+  const rows = new TextDecoder().decode(bytes).split('\r\n'); // the decoder drops the mark
+  eq(rows[0], 'Name,Amount,Currency,Cycle,Next date,Category,Type', 'the header');
+  const live = await storage.getAll();
+  eq(rows.length - 2, live.length, 'one row per live item (and the final line end)');
+  assert(!rows.some((r) => r.includes('Deleted Thing')), 'a deleted item is left out');
+  assert(!rows.some((r) => /^settings,|defaultCurrency|groupColors/.test(r)), 'the settings record is left out');
+  assert(rows.includes(`中華電信 5G,599,TWD,monthly,${day(Y, M + 1, 9)},Utilities,expense`), 'CJK name');
+  assert(rows.includes(`"'=HYPERLINK(""x"")",10,TWD,one-off,${day(Y, M, 2)},"Rent, flat",expense`), 'formula escaped and quoted');
+  const cloudNext = new Date(Y, M, 15) >= new Date(Y, M, now.getDate()) ? day(Y, M, 15) : day(Y + 1, M, 15);
+  assert(rows.includes(`CSV Past Annual,1200,TWD,annual,${cloudNext},Utilities,expense`), 'a past renewal shows its next date, as the app does');
+  assert(rows.includes(`CSV Pay,40000,TWD,monthly,${nextOf(day(Y, M, 25))},,income`), 'income: no category');
+  assert(rows.includes('CSV Undated,900,TWD,monthly,,Health,expense'), 'no date: blank');
+  await until(() => text($('#toast-text')) === `Exported ${live.length} items as CSV`, 'the toast');
+  for (const s of extra) await storage.remove(s.id).catch(() => {});
+});
+
+/** The next monthly date on or after today for a stored YYYY-MM-DD in this month. */
+function nextOf(stamp) {
+  const d = new Date(`${stamp}T00:00:00`);
+  return d >= new Date(Y, M, now.getDate()) ? stamp : day(Y, M + 1, d.getDate());
+}
+
 /* ------------------------------------------------------------------ Import with AI */
 
 const aiDlg = () => $('#ai-dialog');
@@ -1481,6 +1647,7 @@ async function run() {
   storage.setPref('insightsMode', 'month');
   storage.setPref('yearRange', 'roll');
   localStorage.removeItem('substracker.reduceMotion'); // unset: follows the system
+  localStorage.removeItem('substracker.yearStack'); // unset, as on a fresh device: By category
   localStorage.removeItem('substracker.theme');
 
   // Bring in the app's own markup, then the app itself (which starts on import).

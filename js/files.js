@@ -5,26 +5,36 @@
 import { plugin } from './platform.js';
 
 /**
- * Hand `blob` (text, e.g. a JSON backup) to the person as a file called `filename`.
- * Resolves to true when it was delivered, false when the person closed the share sheet.
+ * Hand `blob` (text, e.g. a JSON backup or a CSV file) to the person as a file called `filename`.
+ * `dialogTitle` is the native share sheet's title. Resolves to true when it was delivered, false
+ * when the person closed the share sheet.
  */
-export async function deliverFile(blob, filename) {
+export async function deliverFile(blob, filename, { dialogTitle = 'Save or send the backup' } = {}) {
   const fs = plugin('Filesystem');
   const share = plugin('Share');
-  if (fs && share) return shareNative(fs, share, blob, filename);
+  if (fs && share) return shareNative(fs, share, blob, filename, dialogTitle);
   downloadInBrowser(blob, filename);
   return true;
 }
 
-async function shareNative(fs, share, blob, filename) {
+const BOM = String.fromCharCode(0xfeff);
+
+/** The blob's text exactly, byte-order mark included (Blob.text() drops a leading one). */
+async function exactText(blob) {
+  const head = new Uint8Array(await blob.slice(0, 3).arrayBuffer());
+  const bom = head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf;
+  return (bom ? BOM : '') + await blob.text();
+}
+
+async function shareNative(fs, share, blob, filename, dialogTitle) {
   const { uri } = await fs.writeFile({
     path: filename,
-    data: await blob.text(),
+    data: await exactText(blob),
     directory: 'CACHE',
     encoding: 'utf8',
   });
   try {
-    await share.share({ title: filename, files: [uri], dialogTitle: 'Save or send the backup' });
+    await share.share({ title: filename, files: [uri], dialogTitle });
     return true;
   } catch (err) {
     // Closing the share sheet rejects with "Share canceled"; that isn't an error.

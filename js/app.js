@@ -8,6 +8,8 @@ import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
 import { initImportAiSheet } from './import-ai-sheet.js';
+import { createTabPill } from './tab-pill.js';
+import { itemsCsv } from './csv-export.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -15,14 +17,14 @@ import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  chooseImportMode, reduceMotionFrom, catViewFrom,
+  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
@@ -51,7 +53,7 @@ const state = {
   insightsMonth: startOfMonth(new Date()),
   insightsMode: storage.getPref('insightsMode') === 'year' ? 'year' : 'month', // Insights Month | Year
   yearRange: storage.getPref('yearRange') === 'year' ? 'year' : 'roll',     // This year | Rolling (default)
-  yearStack: 'type',   // year chart: By type | By category
+  yearStack: yearStackFrom(storage.getPref('yearStack')), // year chart: By category (default) | By type; a saved choice is kept
   yearIncome: false,   // year chart: Show income
   yearPos: null,       // year chart position, kept across redraws
   editingId: null,
@@ -287,7 +289,11 @@ async function reloadData({ remote = false } = {}) {
 // The first tab keeps its internal id `subs` so a saved tab choice still restores.
 const TAB_TITLES = { subs: 'Money', insights: 'Insights', settings: 'Settings' };
 
+// The pill behind the active tab (js/tab-pill.js): it slides with every tab change, Back included.
+let tabPill = null;
+
 function bindTabs() {
+  tabPill = createTabPill($('.tabbar'), { reduceMotion: () => reduceEffects() });
   const tabs = $$('.tab');
   tabs.forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)));
   $('.tabbar').addEventListener('keydown', (e) => {
@@ -307,6 +313,7 @@ function setTab(tab, { focus = true } = {}) {
     t.setAttribute('aria-selected', on);
     t.tabIndex = on ? 0 : -1;
   });
+  tabPill?.moveTo($(`.tab[data-tab="${tab}"]`));
   $('#panel-subs').hidden = tab !== 'subs';
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
@@ -995,6 +1002,7 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
   }));
   $$('[data-year-stack]', root).forEach((b) => b.addEventListener('click', () => {
     state.yearStack = b.dataset.yearStack;
+    storage.setPref('yearStack', state.yearStack);
     $$('[data-year-stack]', root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     yearChart?.setStack(state.yearStack); // crossfade, no redraw
   }));
@@ -1320,6 +1328,7 @@ function bindSettings() {
   });
 
   $('#btn-export').addEventListener('click', exportData);
+  $('#btn-export-csv').addEventListener('click', exportCsv);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -1394,6 +1403,21 @@ async function exportData() {
   } catch (err) {
     console.error(err);
     toast('Export failed.');
+    return false;
+  }
+}
+
+/** "Export as CSV": the live items for a spreadsheet, through the same share sheet or download as a backup. */
+async function exportCsv() {
+  try {
+    const items = await storage.getAll();
+    const blob = new Blob([itemsCsv(items)], { type: 'text/csv;charset=utf-8' });
+    const delivered = await deliverFile(blob, `substracker-${todayStamp()}.csv`, { dialogTitle: 'Save or send the CSV file' });
+    if (delivered) toast(`Exported ${plural(items.length, 'item')} as CSV`);
+    return delivered === true;
+  } catch (err) {
+    console.error(err);
+    toast('CSV export failed.');
     return false;
   }
 }

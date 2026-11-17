@@ -117,6 +117,8 @@
   --donut-stroke: 28px; /* SVG user units: ring thickness in the 200 × 200 viewBox */
   --donut-stroke-active: 34px;
   --tabbar-h: 60px;
+  --tab-pill-w: 76px;   /* the pill behind the active tab, at rest (js/tab-pill.js reads it) */
+  --tab-pill-h: 48px;
   --header-h: 56px;
   --container: 960px;
   --sheet-max: 560px;
@@ -159,6 +161,8 @@
      so max() leaves env() as the only source there. Everything fixed to an edge uses these. */
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
   --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -868,19 +872,28 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
   display: flex; justify-content: center;
-  padding-bottom: var(--safe-bottom);
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   -webkit-backdrop-filter: saturate(1.6) blur(14px);
   backdrop-filter: saturate(1.6) blur(14px);
   border-top: var(--border-width) solid var(--border);
 }
 .tab {
+  position: relative; /* above the pill */
   flex: 1; max-width: 160px; height: var(--tabbar-h);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--hairline-gap);
   border: 0; background: transparent; color: var(--text-faint);
   font-size: var(--text-xs); font-weight: var(--weight-medium);
 }
 .tab[aria-selected="true"] { color: var(--accent); }
+/* The pill behind the active tab. js/tab-pill.js sets its position and width (the liquid stretch);
+   it draws nothing until then, and takes no taps. */
+.tab-pill {
+  position: absolute; left: 0; top: calc((var(--tabbar-h) - var(--tab-pill-h)) / 2);
+  width: var(--tab-pill-w); height: var(--tab-pill-h);
+  border-radius: var(--radius-full); background: var(--accent-soft);
+  pointer-events: none; will-change: transform, width;
+}
 
 /* Vertical FAB stack: small income "+" on top, large expense "−" at the bottom (nearest the thumb). */
 .fab-stack {

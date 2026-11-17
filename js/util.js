@@ -129,10 +129,14 @@ export function shortDate(date) {
   });
 }
 
-export function todayStamp() {
-  const d = new Date();
+/** A local date as YYYY-MM-DD (no timezone shift), the way dates are stored. */
+export function dayStamp(d) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function todayStamp() {
+  return dayStamp(new Date());
 }
 
 // A grapheme counts as an emoji if it holds a pictograph, a flag letter or a keycap mark.
@@ -259,3 +263,6 @@ export const reduceMotionFrom = (pref, systemReduce) => (pref === 'on' ? true : 
 
 /** Insights "By category" view from the saved preference: a saved Donut or List is kept, else the Ring. */
 export const catViewFrom = (pref) => (pref === 'donut' || pref === 'list' ? pref : 'ring');
+
+/** The Insights year chart's stacking from the saved preference: a saved By type is kept, else By category. */
+export const yearStackFrom = (pref) => (pref === 'type' ? 'type' : 'category');
