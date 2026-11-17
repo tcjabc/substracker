@@ -10,17 +10,31 @@ export const faviconUrl = (domain) =>
  * sits underneath and the favicon fades in on top only if it loads at a usable size.
  * Offline or unknown domains keep the initial.
  */
-export function logoHTML(sub, size = 'md') {
+export function logoHTML(sub, size = 'md', { neutral = false, defer = false } = {}) {
+  const tone = neutral ? ' logo-neutral' : '';
   if (sub.emoji) {
-    return `<span class="logo logo-${size} logo-emoji" aria-hidden="true">${esc(sub.emoji)}</span>`;
+    return `<span class="logo logo-${size} logo-emoji${tone}" aria-hidden="true">${esc(sub.emoji)}</span>`;
   }
   const name = (sub.name || '?').trim();
   const initial = esc([...name][0]?.toUpperCase() || '?');
   const colour = (hash(name.toLowerCase()) % AVATAR_COLOURS) + 1;
-  const img = sub.domain
-    ? `<img class="logo-img" src="${esc(faviconUrl(sub.domain))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+  // defer: the address waits in data-src until loadDeferredLogos() (the Wallet loads a card's
+  // logos only once it is on or near the screen).
+  const src = sub.domain ? esc(faviconUrl(sub.domain)) : '';
+  const img = src
+    ? `<img class="logo-img" ${defer ? 'data-src' : 'src'}="${src}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
     : '';
-  return `<span class="logo logo-${size}" style="--logo-bg: var(--avatar-${colour})" aria-hidden="true"><span class="logo-initial">${initial}</span>${img}</span>`;
+  // neutral: a plain tile (the Wallet puts logos on coloured cards, where a coloured initial would clash).
+  const style = neutral ? '' : ` style="--logo-bg: var(--avatar-${colour})"`;
+  return `<span class="logo logo-${size}${tone}"${style} aria-hidden="true"><span class="logo-initial">${initial}</span>${img}</span>`;
+}
+
+/** Start loading the deferred logos inside `root` (see logoHTML's `defer`). */
+export function loadDeferredLogos(root) {
+  root.querySelectorAll('img.logo-img[data-src]').forEach((img) => {
+    img.src = img.dataset.src;
+    img.removeAttribute('data-src');
+  });
 }
 
 // One capturing listener handles every logo on the page, however it was rendered.

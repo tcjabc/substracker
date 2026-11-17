@@ -97,7 +97,23 @@ export function createYearChart(host, opts) {
     'aria-label': 'Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.',
   }, stage);
   const dock = html('div', 'yc-dock', stage);
-  const legend = html('div', 'yc-legend', dock);
+  // The key (legend) is hidden until asked for: a small "Show key" toggle, remembered by the app
+  // (opts.showKey, opts.onKey). Focus mode names every segment itself.
+  const keyBox = html('div', 'yc-keybox', dock);
+  const legend = html('div', 'yc-legend', keyBox);
+  legend.id = `yc-legend-${Math.random().toString(36).slice(2, 8)}`;
+  const keyBtn = html('button', 'yc-keybtn', keyBox);
+  keyBtn.type = 'button';
+  keyBtn.setAttribute('aria-controls', legend.id);
+  let showKey = !!opts.showKey;
+  const setKey = (on) => {
+    showKey = on;
+    legend.hidden = !on;
+    keyBtn.textContent = on ? 'Hide key' : 'Show key';
+    keyBtn.setAttribute('aria-expanded', String(on));
+  };
+  setKey(showKey);
+  keyBtn.addEventListener('click', () => { setKey(!showKey); opts.onKey?.(showKey); });
   const nowBtn = html('button', 'yc-now', dock, 'Jump to now');
   nowBtn.type = 'button';
   const live = html('p', 'sr-only', stage);

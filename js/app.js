@@ -3,7 +3,9 @@ import { deliverFile } from './files.js';
 import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js';
 import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
-import { logoHTML, initLogoHandling } from './logos.js';
+import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
+import { createWallet } from './wallet.js';
+import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES } from './wallet-math.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
@@ -17,17 +19,17 @@ import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight
 import {
   CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom,
+  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 
-// Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
-// auto-assign order, most distinct first (including for colour-blind viewers).
+// Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
+// colour syncs as { name, swatch } with one of these keys.
 const SWATCHES = [
   { key: 'g1', name: 'Gold' }, { key: 'g2', name: 'Steel blue' }, { key: 'g3', name: 'Terracotta' },
   { key: 'g4', name: 'Sky' }, { key: 'g5', name: 'Rose' }, { key: 'g6', name: 'Plum' },
@@ -35,7 +37,11 @@ const SWATCHES = [
   { key: 'g10', name: 'Brick' },
 ];
 const SWATCH_KEYS = new Set(SWATCHES.map((s) => s.key));
-const swatchVar = (key) => `var(--group-${String(key).slice(1)})`;
+// Automatic colours come from the Wallet palette instead (w1 … w15, --wallet-1 … --wallet-15; see
+// js/wallet-math.js). They stay on this device: never synced, and left out of exports.
+const validSwatch = (k) => SWATCH_KEYS.has(k) || isWalletKey(k);
+const swatchVarName = (key) => (isWalletKey(key) ? `--wallet-${key.slice(1)}` : `--group-${String(key).slice(1)}`);
+const swatchVar = (key) => `var(${swatchVarName(key)})`;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -43,7 +49,9 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
-  view: storage.getPref('view') === 'list' ? 'list' : 'grid',
+  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List, per device
+  colorPicks: new Set(), // groups whose colour someone chose (left alone by the automatic colours)
+  yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
   donutActive: null, // highlighted donut slice key (the Ring's front slice), or null
@@ -197,7 +205,8 @@ async function init() {
   }));
   let syncUnavailable = 'Local storage could not be opened.';
   try {
-    const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
+    const [subs, settings, picks] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors()]);
+    state.colorPicks = new Set(Object.keys(picks));
     const usingLegacy = (await storage.status()).usingLegacy;
     syncUnavailable = usingLegacy ? 'Sync needs the storage update to finish first.' : '';
     if (usingLegacy) {
@@ -271,7 +280,8 @@ async function startSync(unavailable) {
  * A remote change leaves the open add/edit form alone; only the Settings currency menu follows.
  */
 async function reloadData({ remote = false } = {}) {
-  const [subs, settings] = await Promise.all([storage.getAll(), storage.getSettings()]);
+  const [subs, settings, picks] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors()]);
+  state.colorPicks = new Set(Object.keys(picks));
   const before = state.settings.defaultCurrency;
   state.subs = subs;
   Object.assign(state.settings, settings);
@@ -315,6 +325,7 @@ function setTab(tab, { focus = true } = {}) {
   });
   tabPill?.moveTo($(`.tab[data-tab="${tab}"]`));
   $('#panel-subs').hidden = tab !== 'subs';
+  document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
@@ -323,13 +334,16 @@ function setTab(tab, { focus = true } = {}) {
   document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') renderInsights();
+  // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
+  if (walletShown()) wallet?.relayout();
 }
 
 function bindViewToggle() {
   $$('.seg-btn[data-view]').forEach((b) =>
     b.addEventListener('click', () => {
-      state.view = b.dataset.view;
+      state.view = viewFrom(b.dataset.view);
       storage.setPref('view', state.view);
+      if (state.view === 'wallet') window.scrollTo({ top: 0 });
       renderSubs();
     })
   );
@@ -351,33 +365,30 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 
 
 /* Group colours ------------------------------------------------------------- */
 /**
- * Give every expense group a swatch, in display order so the first assignment is stable.
- * Groups keep the colour they have; a new group takes the next unused swatch (the least used
- * one once all ten are taken). Income has no colour.
+ * Give every expense group a colour, in display (stack) order. A colour someone chose stays exactly
+ * as it is. The others come from the Wallet palette (js/wallet-math.js assignAutoColours): up to 15
+ * groups get 15 different colours in palette order, more cycle, and an automatic colour is never
+ * the same as the group's neighbour. An automatic colour from the old ten moves to the new palette.
+ * Income has no colour.
  */
 function ensureGroupColors() {
   const map = state.settings.groupColors;
   const names = [...new Set(state.subs.filter((s) => !isIncome(s)).map(groupOf))].sort(byGroupName);
-  const assigned = {};
-  for (const name of names) {
-    if (SWATCH_KEYS.has(map[name])) continue;
-    const uses = new Map(SWATCHES.map((s) => [s.key, 0]));
-    for (const n of names) if (SWATCH_KEYS.has(map[n])) uses.set(map[n], uses.get(map[n]) + 1);
-    map[name] = SWATCHES.reduce((best, s) => (uses.get(s.key) < uses.get(best) ? s.key : best), SWATCHES[0].key);
-    assigned[name] = map[name];
-  }
+  const picked = new Set(names.filter((n) => state.colorPicks.has(n) && validSwatch(map[n])));
+  const patch = assignAutoColours(names, map, picked);
+  Object.assign(map, patch);
   // An automatic pick stays on this device; only a colour someone chooses is shared.
-  if (Object.keys(assigned).length) storage.saveLocalDefaults({ groupColors: assigned }).catch((err) => console.error(err));
+  if (Object.keys(patch).length) storage.saveLocalDefaults({ groupColors: patch }).catch((err) => console.error(err));
 }
 
-const groupSwatch = (name) => (SWATCH_KEYS.has(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'g1');
-const swatchName = (key) => SWATCHES.find((s) => s.key === key)?.name ?? '';
+const groupSwatch = (name) => (validSwatch(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'w1');
+const swatchName = (key) => (isWalletKey(key) ? WALLET_NAMES[Number(key.slice(1)) - 1] : SWATCHES.find((s) => s.key === key)?.name ?? '');
 
-/** Keep only valid `name → swatch key` pairs from an imported settings.groupColors. */
+/** Keep only valid `name → swatch key` pairs (picked swatches and automatic Wallet colours). */
 function sanitizeGroupColors(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   return Object.fromEntries(Object.entries(raw)
-    .filter(([k, v]) => typeof k === 'string' && k.trim() && k.length <= 40 && SWATCH_KEYS.has(v))
+    .filter(([k, v]) => typeof k === 'string' && k.trim() && k.length <= 40 && validSwatch(v))
     .map(([k, v]) => [k.trim(), v]));
 }
 
@@ -427,6 +438,7 @@ function bindGroupColors() {
     if (!b || !group) return;
     const name = group;
     state.settings.groupColors[name] = b.dataset.swatch;
+    state.colorPicks.add(name); // chosen now: the automatic colours leave it alone
     close(false);
     renderSubs();
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
@@ -452,6 +464,50 @@ function renewalTag(sub) {
 
 const ONE_OFF_TAG = '<span class="tag tag-once">One-off</span>';
 
+/* Wallet view (js/wallet.js) ------------------------------------------------ */
+let wallet = null;
+let walletHost = null;
+
+/** Whether the Wallet is what the Money tab shows right now. */
+const walletShown = () => state.tab === 'subs' && state.view === 'wallet' && state.subs.length > 0;
+
+/**
+ * The stack's height: from its top down to the tab bar, so the page itself doesn't scroll; and
+ * `inset`, the strip at its bottom covered by the floating buttons, which the last card clears
+ * once the stack is scrolled to its end.
+ */
+function walletViewport() {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const top = walletHost.getBoundingClientRect().top + window.scrollY;
+  const bar = $('.tabbar').getBoundingClientRect().height;
+  const height = Math.max(20 * rem, innerHeight - top - bar - rem / 2);
+  const fab = $('#fab-stack');
+  const inset = fab.hidden ? 0 : Math.max(0, innerHeight - bar - rem / 2 - fab.getBoundingClientRect().top + rem / 2);
+  return { height, inset };
+}
+
+function renderWallet(list) {
+  if (!walletHost) {
+    walletHost = document.createElement('div');
+    walletHost.id = 'wallet';
+    wallet = createWallet(walletHost, {
+      overlays,
+      isShown: walletShown,
+      reduced: () => reduceEffects(),
+      viewport: walletViewport,
+      logo: (s, size) => logoHTML(s, size, { neutral: true, defer: true }),
+      loadLogos: loadDeferredLogos,
+    });
+    walletHost.wallet = wallet; // for tests, like the year chart's host.yearChart
+  }
+  if (walletHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(walletHost); }
+  const cur = state.settings.defaultCurrency;
+  const now = new Date();
+  const groups = walletGroups(state.subs, { currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() })
+    .map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
+  wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() });
+}
+
 function renderSubs() {
   const list = $('#subs-list');
   const all = state.subs;
@@ -461,6 +517,12 @@ function renderSubs() {
   list.hidden = all.length === 0;
   $('#money-summary').hidden = all.length === 0;
   renderMoneySummary();
+  document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
+  if (state.view === 'wallet') {
+    if (all.length) renderWallet(list); else { wallet?.close(); list.textContent = ''; }
+    return;
+  }
+  wallet?.close();
 
   // Income first (an implicit section, no categories), then expenses grouped by category.
   const groups = [];
@@ -990,6 +1052,7 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
     rolling: state.yearRange === 'roll', stack: state.yearStack, showIncome: state.yearIncome,
     money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)),
     pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn, overlays, reduced: reduceEffects(),
+    showKey: state.yearKey, onKey: (on) => { state.yearKey = on; storage.setPref('yearKey', on ? 'on' : 'off'); },
   });
 
   $$('[data-year-range]', root).forEach((b) => b.addEventListener('click', () => {
@@ -1369,6 +1432,7 @@ function applyMotion() {
   document.documentElement.classList.toggle('reduce-motion', on);
   $('#set-motion').checked = on;
   if (motionApplied !== null && motionApplied !== on && state.tab === 'insights') renderInsights();
+  if (motionApplied !== null && motionApplied !== on) { wallet?.relayout(); document.body.classList.toggle('wallet-view', walletShown() && !on); }
   motionApplied = on;
 }
 
@@ -1388,6 +1452,7 @@ function applyTheme(mode) {
       } else m.content = bg;
     });
     ring?.theme(); // the Ring reads its colours from the theme tokens
+    wallet?.recolour(); // so does the Wallet (and refits each card's text colour)
   });
 }
 
@@ -1396,6 +1461,10 @@ async function exportData() {
   try {
     const payload = await storage.exportAll();
     payload.items.sort(byName);
+    // Automatic Wallet colours stay on this device: a backup carries only the swatches the app has
+    // always written, so a restore (and the sync it reaches) never sees a new key.
+    const colours = payload.settings?.groupColors;
+    if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !isWalletKey(v)));
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const delivered = await deliverFile(blob, `substracker-${todayStamp()}.json`);
     if (delivered) toast(`Exported ${plural(payload.items.length, 'item')}`);

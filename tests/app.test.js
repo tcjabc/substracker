@@ -12,10 +12,15 @@ import { money } from '../js/util.js';
 import { overlays, pressBack } from '../js/overlays.js';
 import { keyToWords } from '../js/words.js';
 import { generateKey } from '../js/crypto.js';
+import { createWallet } from '../js/wallet.js';
+import { walletGroups, parseColour, contrast, isWalletKey } from '../js/wallet-math.js';
+import { dueInMonth, groupOf } from '../js/insights-calc.js';
+import { isIncome } from '../js/util.js';
+import { logoHTML } from '../js/logos.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'yearStack', 'theme', 'reduceMotion'];
+const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -1195,6 +1200,272 @@ test('Pill: stays on the active tab when the bar changes size (rotation, insets)
   goTab('subs');
 });
 
+/* ------------------------------------------------------------------ Wallet */
+// The Money tab's Wallet view (js/wallet.js). Cards in stack order for the seed: Income, Health
+// (only undated plans), Utilities (Phone 499 and Cloud 1,200 this month), Uncategorised (Domain,
+// six months away, plus the two USD plans).
+const wallet = () => $('#wallet')?.wallet;
+const wCards = () => $$('#wallet .w-card');
+const wCard = (name) => wCards().find((c) => text($('.w-name', c)) === name);
+const wBand = (name) => wCard(name)?.querySelector('.w-band');
+const viewBtn = (v) => $(`.seg-btn[data-view="${v}"]`);
+const wSettled = () => until(() => wallet() && !wallet().state().animating, 'the wallet settles', 4000);
+const cssToken = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim().toLowerCase();
+
+test('Wallet: a saved Grid choice is kept; Wallet | Grid | List is remembered per device, never exported', async () => {
+  goTab('subs');
+  eq(viewBtn('grid').getAttribute('aria-pressed'), 'true', 'this device chose Grid before (the runner saved it): kept');
+  eq($$('.seg-btn[data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list'], 'three views');
+  viewBtn('wallet').click();
+  assert($('#subs-list #wallet'), 'the wallet is shown');
+  eq(localStorage.getItem('substracker.view'), 'wallet', 'remembered on this device');
+  eq(viewBtn('wallet').getAttribute('aria-pressed'), 'true', 'pressed');
+  viewBtn('list').click();
+  assert(!$('#subs-list #wallet') && $('#subs-list .sub-row'), 'the list instead');
+  eq(localStorage.getItem('substracker.view'), 'list', 'List remembered');
+  viewBtn('wallet').click();
+  await wSettled();
+  const backup = JSON.stringify(await storage.exportAll());
+  assert(!backup.includes('"view"') && !backup.includes('wallet'), 'not in a backup');
+  assert(!('view' in await storage.getSettings()), 'not a (synced) setting');
+});
+
+// Earlier tests edit the seed (prices, dates), so these compare with the items as they are now,
+// worked out independently with insights-calc's dueInMonth, and with the strip on screen.
+const money$ = (s) => Number(String(s).replace(/[^\d.-]/g, '')) || 0;
+const cardTotal = (c) => { const t = text($('.w-total', c)); return /\d/.test(t) && !t.startsWith('+') ? money$(t) : 0; };
+const walletStrip = () => Object.fromEntries($$('#money-summary .summary-cell').map((c) => [text($('.stat-label', c)), text($('.summary-value', c))]));
+
+test('Wallet: card totals match the Money strip, month and year; other currencies shown apart, never added', async () => {
+  const items = await storage.getAll();
+  eq(wCards().map((c) => text($('.w-name', c))), ['Income', 'Health', 'Utilities', 'Uncategorised'], 'Income, then the Money tab groups');
+  let usdShown = 0;
+  for (const period of ['monthly', 'annual']) {
+    $(`#money-summary [data-period="${period}"]`).click();
+    await wSettled();
+    const word = period === 'annual' ? 'this year' : 'this month';
+    const due = (s) => (period === 'annual' ? [...Array(12).keys()].reduce((t, m) => t + dueInMonth(s, Y, m), 0) : dueInMonth(s, Y, M));
+    const expense = wCards().filter((c) => text($('.w-name', c)) !== 'Income');
+    eq(T(expense.reduce((t, c) => t + cardTotal(c), 0)), walletStrip().Outgoings, `${period}: the cards add up to the strip's Outgoings`);
+    eq(text($('.w-total', wCard('Income'))), walletStrip().Income, `${period}: the Income card is the strip's Income`);
+    for (const c of expense) {
+      const name = text($('.w-name', c));
+      const mine = items.filter((s) => !isIncome(s) && groupOf(s) === name);
+      const twd = mine.filter((s) => s.currency === 'TWD').reduce((t, s) => t + due(s), 0);
+      const usd = mine.filter((s) => s.currency === 'USD' && due(s) > 0).length;
+      eq(cardTotal(c), twd, `${period}: ${name} total`);
+      const n = `${mine.length} item${mine.length === 1 ? '' : 's'}`;
+      eq(c.querySelector('.w-band').getAttribute('aria-label'),
+        `${name}, ${n}, ${twd ? `${T(twd)} ${word}` : `nothing due ${word}`}${usd ? `, plus ${usd} in USD` : ''}`, `${period}: ${name} label`);
+      if (usd) {
+        assert(`${text($('.w-total', c))} ${text($('.w-sub', c))}`.includes(`+${usd} in USD`), `${period}: ${name} shows the USD apart`);
+        usdShown++;
+      }
+      if (!twd && !usd) eq(text($('.w-total', c)), 'Nothing due', `${period}: ${name} says Nothing due`);
+    }
+  }
+  assert(usdShown >= 2, 'the seed has USD plans due in both periods');
+  $('#money-summary [data-period="monthly"]').click();
+  await wSettled();
+});
+
+test('Wallet: tap opens a card to its items; an item opens the edit sheet; Back, Escape and the band close it', async () => {
+  const w = wallet();
+  w.close();
+  wBand('Utilities').click();
+  await until(() => w.state().open === 'g:Utilities' && !w.state().animating, 'opened');
+  eq(wBand('Utilities').getAttribute('aria-expanded'), 'true', 'expanded');
+  eq(overlays.top(), 'wallet-card', 'on the overlay stack');
+  const count = Number(text($('.w-meta', wCard('Utilities'))).split(' ')[0]);
+  eq($$('#wallet .w-card.is-open .w-item').length, count, 'every item');
+  assert(wCards().filter((c) => c !== wCard('Utilities')).every((c) => c.inert), 'the other cards are out of reach');
+  assert(wCard('Utilities').offsetHeight < $('#wallet').offsetHeight, 'the open card fits its items, not the whole stack');
+  const total = text($('.w-total', wCard('Utilities')));
+  await until(() => text($('#wallet [aria-live]')) === `Utilities opened. ${count} items, ${total} due this month.`, 'announced');
+  $('#wallet .w-item[data-id="test-phone"]').click();
+  assert(isOpen(), 'the edit sheet');
+  eq(overlays.ids(), ['wallet-card', 'sub-dialog'], 'sheet on top of the card');
+  backIs('closed', 'Back closes the sheet first');
+  await tick(20);
+  assert(!isOpen() && w.state().open === 'g:Utilities', 'the card is still open');
+  backIs('closed', 'then the card');
+  await until(() => w.state().open === null && !w.state().animating, 'closed');
+  eq(appTab(), 'subs', 'still on Money');
+  await until(() => text($('#wallet [aria-live]')) === 'Utilities closed.', 'announced');
+  wBand('Health').click();
+  await until(() => w.state().open === 'g:Health', 'opened Health');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await until(() => w.state().open === null && !w.state().animating, 'Escape closes');
+  wBand('Utilities').click();
+  await until(() => w.state().open === 'g:Utilities' && !w.state().animating, 'open again');
+  wBand('Utilities').click();
+  await until(() => w.state().open === null && !w.state().animating, 'tapping the card again closes it');
+  eq(overlays.ids(), [], 'nothing left on the stack');
+});
+
+test('Wallet: editing an item updates the stack and the strip; an open card stays open', async () => {
+  const w = wallet();
+  w.close();
+  const phone = (await storage.getAll()).find((s) => s.id === 'test-phone');
+  const before = cardTotal(wCard('Utilities'));
+  const outBefore = money$(walletStrip().Outgoings);
+  wBand('Utilities').click();
+  await until(() => w.state().open === 'g:Utilities' && !w.state().animating, 'opened');
+  $('#wallet .w-item[data-id="test-phone"]').click();
+  $('#sub-form [name="price"]').value = String(phone.price + 100);
+  $('#sub-form').requestSubmit();
+  await until(() => !isOpen() && cardTotal(wCard('Utilities')) === before + 100, 'the new total');
+  eq(w.state().open, 'g:Utilities', 'still open, redrawn');
+  eq(money$(walletStrip().Outgoings), outBefore + 100, 'the strip agrees');
+  $('#wallet .w-item[data-id="test-phone"]').click();
+  $('#sub-form [name="price"]').value = String(phone.price);
+  $('#sub-form').requestSubmit();
+  await until(() => !isOpen() && cardTotal(wCard('Utilities')) === before, 'back as it was');
+  backIs('closed', 'close the card');
+  await wSettled();
+});
+
+
+test('Wallet: keyboard: Tab reaches each card, arrow keys move between them', async () => {
+  const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  wBand('Income').focus();
+  key('ArrowDown');
+  eq(document.activeElement, wBand('Health'), 'down');
+  key('End');
+  eq(document.activeElement, wBand('Uncategorised'), 'End');
+  key('ArrowUp');
+  eq(document.activeElement, wBand('Utilities'), 'up');
+  key('Home');
+  eq(document.activeElement, wBand('Income'), 'Home');
+  assert(wCards().every((c) => c.querySelector('.w-band').tabIndex === 0 && !c.inert), 'every band is a tab stop');
+  eq(getComputedStyle(wCards().at(-1)).visibility, 'visible', 'off-screen cards stay focusable');
+  document.activeElement.blur();
+  await wSettled();
+});
+
+test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; picked colours stay', async () => {
+  const fill = (name) => wCard(name).style.getPropertyValue('--card').toLowerCase();
+  for (const theme of ['light', 'dark']) {
+    $('#set-theme').value = theme; $('#set-theme').dispatchEvent(new Event('change'));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    eq([fill('Health'), fill('Utilities'), fill('Uncategorised')], ['--wallet-1', '--wallet-2', '--wallet-3'].map(cssToken), `${theme}: slots 1–3 in order`);
+    eq(fill('Income'), cssToken('--wallet-income'), `${theme}: Income is neutral`);
+    for (const c of wCards()) {
+      const ink = parseColour(getComputedStyle(c).color);
+      for (const v of ['--card-top', '--card', '--card-bot']) {
+        const bg = parseColour(c.style.getPropertyValue(v));
+        assert(contrast(ink, bg) >= 4.5, `${theme} ${text($('.w-name', c))} on ${v}: ${contrast(ink, bg).toFixed(2)}`);
+      }
+    }
+    for (const f of wallet().state().fits) assert(f.ratio >= 4.5 && f.ratio2 >= 4.5, `${theme} ${f.key}: fitted ${f.ratio.toFixed(2)} / ${f.ratio2.toFixed(2)}`);
+  }
+  $('#set-theme').value = 'system'; $('#set-theme').dispatchEvent(new Event('change'));
+  // Pick a colour for Health (from the grid's colour dot): it stays exactly as picked in the wallet.
+  viewBtn('grid').click();
+  $('#subs-list .group-dot[data-group="Health"]').click();
+  $('#swatch-grid [data-swatch="g6"]').click();
+  await until(async () => (await storage.getSettings()).groupColors.Health === 'g6', 'saved as a pick');
+  viewBtn('wallet').click();
+  await wSettled();
+  eq(fill('Health'), cssToken('--group-6'), 'the picked swatch');
+  eq(fill('Utilities'), cssToken('--wallet-2'), 'the others keep theirs');
+  const fills = wCards().map((c) => c.style.getPropertyValue('--card'));
+  assert(fills.every((f, i) => i === 0 || f !== fills[i - 1]), 'no two neighbours alike');
+  // A backup carries the picked colour only: automatic Wallet colours stay on this device.
+  const blobs = [];
+  const realUrl = URL.createObjectURL;
+  URL.createObjectURL = (b) => { blobs.push(b); return realUrl.call(URL, b); };
+  try {
+    $('#btn-export').click();
+    await until(() => blobs.length === 1, 'the backup file');
+  } finally { URL.createObjectURL = realUrl; }
+  const file = JSON.parse(await blobs[0].text());
+  eq(file.settings.groupColors, { Health: 'g6' }, 'only the picked swatch is in the backup');
+  assert(Object.values((await storage.getSettings()).groupColors).some(isWalletKey), 'the automatic colours are kept on the device');
+});
+
+test('Wallet: Reduce motion and effects: a plain list, no tilt or springs; a card opens and closes at once', async () => {
+  $('#set-motion').checked = true; $('#set-motion').dispatchEvent(new Event('change'));
+  try {
+    const w = wallet();
+    assert($('#wallet').classList.contains('is-reduced'), 'list mode');
+    assert(wCards().every((c) => getComputedStyle(c).transform === 'none' && getComputedStyle(c).position === 'relative'), 'no 3D, in the page flow');
+    const frames = w.state().frames;
+    wBand('Utilities').click();
+    eq(w.state().open, 'g:Utilities', 'open at once');
+    eq(w.state().animating, false, 'no spring');
+    eq(wCards().filter((c) => getComputedStyle(c).display !== 'none').length, 1, 'only the open card');
+    eq(overlays.top(), 'wallet-card', 'Back still closes it');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    eq(w.state().open, null, 'closed at once');
+    eq(wCards().filter((c) => getComputedStyle(c).display !== 'none').length, 4, 'all cards again');
+    eq(w.state().frames, frames, 'not a single animation frame');
+  } finally {
+    $('#set-motion').checked = false; $('#set-motion').dispatchEvent(new Event('change'));
+  }
+  await wSettled();
+  assert(!$('#wallet').classList.contains('is-reduced'), 'the stack is back');
+});
+
+test('Wallet: one group, a group with nothing due, and no groups at all', async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const w = createWallet(host, {
+    reduced: () => false, viewport: () => ({ height: 400, inset: 0 }),
+    logo: (s, size) => logoHTML(s, size, { neutral: true, defer: true }), loadLogos: () => {},
+  });
+  try {
+    const ctx = { currency: 'TWD', period: 'monthly', year: Y, month: M };
+    const items = [{ ...base, id: 'w-duo', name: 'Duolingo', price: 2490, cycle: 'annual', nextRenewal: day(Y, M + 2, 20), category: 'Education' }];
+    w.update({ ...ctx, groups: walletGroups(items, ctx).map((g) => ({ ...g, fillVar: '--wallet-1' })) });
+    eq(host.querySelectorAll('.w-card').length, 1, 'one card');
+    eq(text(host.querySelector('.w-total')), 'Nothing due', 'nothing due this month');
+    eq(host.querySelector('.w-band').getAttribute('aria-label'), 'Education, 1 item, nothing due this month', 'label');
+    assert(text(host.querySelector('.w-preview')).includes('Nothing due this month'), 'the front card says so');
+    assert(text(host.querySelector('.w-preview')).includes('Next: Duolingo'), 'and what comes next');
+    eq(w.state().maxScroll, 0, 'nothing to scroll');
+    assert(host.querySelector('.logo-neutral'), 'logos on neutral tiles');
+    w.update({ ...ctx, groups: [] });
+    eq(host.querySelectorAll('.w-card').length, 0, 'no groups: no cards');
+  } finally {
+    w.destroy();
+    host.remove();
+  }
+  // The app with no items shows its empty state instead (the wallet needs at least one item).
+  assert($('#subs-empty').hidden && !$('#subs-list').hidden, 'with items: the wallet, not the empty state');
+});
+
+test('Year chart: the key hides behind Show key (remembered per device); focus mode still names each segment', async () => {
+  goTab('insights');
+  mode('year');
+  await settle();
+  const btn = () => $('#year-chart .yc-keybtn');
+  const legend = () => $('#year-chart .yc-legend');
+  eq(text(btn()), 'Show key', 'the toggle');
+  assert(legend().hidden, 'the key starts hidden');
+  eq(btn().getAttribute('aria-expanded'), 'false', 'collapsed');
+  eq(btn().getAttribute('aria-controls'), legend().id, 'controls the key');
+  btn().click();
+  assert(!legend().hidden && text(legend()).length > 0, 'shown, with its entries');
+  eq(text(btn()), 'Hide key', 'Hide key');
+  eq(localStorage.getItem('substracker.yearKey'), 'on', 'remembered on this device');
+  mode('month');
+  mode('year');
+  await settle();
+  assert(!legend().hidden, 'still shown after a redraw');
+  btn().click();
+  assert(legend().hidden, 'hidden again');
+  eq(localStorage.getItem('substracker.yearKey'), 'off', 'remembered');
+  await tapBar(chart().state().centre);
+  await settle();
+  eq(chart().state().focus, true, 'focus mode');
+  assert(text($('#year-chart .yc-svg')).includes('Phone'), 'the open month names its segments');
+  backIs('closed', 'Back leaves focus mode');
+  await settle();
+  mode('month');
+  goTab('subs');
+});
+
 test('Export as CSV: live items only, with the BOM, columns, quoting and formula escaping, via the download path', async () => {
   goTab('settings');
   assert(text($('#btn-export-csv').closest('.setting-row')).includes('For spreadsheets, not a backup'), 'labelled as not a backup');
@@ -1648,6 +1919,7 @@ async function run() {
   storage.setPref('yearRange', 'roll');
   localStorage.removeItem('substracker.reduceMotion'); // unset: follows the system
   localStorage.removeItem('substracker.yearStack'); // unset, as on a fresh device: By category
+  localStorage.removeItem('substracker.yearKey'); // unset: the year chart's key starts hidden
   localStorage.removeItem('substracker.theme');
 
   // Bring in the app's own markup, then the app itself (which starts on import).

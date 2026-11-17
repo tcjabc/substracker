@@ -915,6 +915,17 @@ export async function getSettings() {
   return effectiveSettings(local, rec);
 }
 
+/**
+ * The group colours someone chose ({ groupName: swatchKey }), without the ones the app picked by
+ * itself. With shared settings that's the household's record; before that step every colour was
+ * kept in one per-device map, so all of them count as chosen. Read-only.
+ */
+export async function getPickedGroupColors() {
+  const db = await open();
+  if (!settingsShared) return cleanColors((await readSettings(db.transaction(SETTINGS).objectStore(SETTINGS))).groupColors);
+  return settingsFromRecord(await result(db.transaction(RECORDS).objectStore(RECORDS).get(SETTINGS_ID))).groupColors;
+}
+
 async function readSettings(store) {
   const rows = await result(store.getAll());
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
