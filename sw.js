@@ -42,6 +42,8 @@ const SHELL = [
   './js/donut-math.js',
   './js/donut-flat.js',
   './js/donut-3d.js',
+  './js/import-ai.js',
+  './js/import-ai-prompt.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
