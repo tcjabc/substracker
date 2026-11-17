@@ -525,6 +525,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .tag-soon { background: var(--warn-soft); color: var(--warn); }
 .tag-once { background: var(--accent-soft); color: var(--accent); }
+.tag-warn { background: var(--warn-soft); color: var(--warn); }
+.tag-danger { background: var(--danger-soft); color: var(--danger); }
 
 .subs-list {
   display: flex; flex-direction: column;
@@ -779,6 +781,71 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .qr-figure { margin: 0; display: grid; gap: var(--space-2); justify-items: center; text-align: center; }
 .qr { width: var(--qr-size); height: var(--qr-size); border-radius: var(--radius-sm); background: var(--qr-bg); color: var(--qr-fg); }
 .qr svg { display: block; width: 100%; height: 100%; }
+
+/* Import with AI sheet (js/import-ai-sheet.js). Its views use .sync-view like the Sync sheet. */
+.ai-block { display: grid; gap: var(--space-2); justify-items: start; }
+.ai-block > .field { justify-self: stretch; }
+.ai-points { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); color: var(--text-muted); font-size: var(--text-sm); }
+.ai-text { font-family: var(--font-mono); font-size: var(--text-sm); resize: vertical; }
+.ai-details { justify-self: stretch; }
+.ai-details summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); font-weight: var(--weight-medium); }
+.ai-details .ai-text { width: 100%; }
+.ai-error {
+  display: grid; gap: var(--space-2); justify-items: start;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--danger-soft);
+}
+.ai-error .ai-text { justify-self: stretch; }
+.ai-rows { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+.ai-row {
+  display: grid; gap: var(--space-2); padding: var(--space-3);
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface);
+}
+.ai-row.is-blocked { background: var(--surface-2); }
+.ai-row-main { display: flex; align-items: flex-start; gap: var(--space-3); cursor: pointer; }
+.ai-row-main .check { margin-top: var(--hairline-gap); }
+.ai-row-body { flex: 1; min-width: 0; display: grid; gap: var(--hairline-gap); }
+.ai-row-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.ai-row-n { color: var(--text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ai-row-meta { font-size: var(--text-xs); color: var(--text-muted); }
+.ai-row-amount { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ai-row-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.ai-row-problems { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-muted); }
+.ai-row.is-blocked .ai-row-problems { color: var(--danger); }
+.ai-fixes { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.ai-fix { flex: 1 1 var(--field-narrow); }
+.ai-totals-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.ai-total-cur { font-weight: var(--weight-semibold); }
+
+/* Slide to confirm (js/slide-confirm.js). The thumb springs back with a transition, which
+   .reduce-motion cuts, so with reduced motion it returns at once. */
+.slide-confirm { display: grid; gap: var(--space-2); }
+.slide-track {
+  position: relative; height: var(--tap); border-radius: var(--radius-full);
+  background: var(--surface-2); border: var(--border-width) solid var(--border);
+  overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.slide-fill {
+  position: absolute; inset: 0 auto 0 0; width: var(--slide-fill, 0px);
+  background: var(--accent-soft); transition: width var(--dur) var(--ease);
+}
+.slide-label {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding-inline: calc(var(--tap) + var(--space-2)); text-align: center;
+  font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); pointer-events: none;
+}
+.slide-thumb {
+  position: absolute; top: 0; left: 0; width: var(--tap); height: 100%;
+  display: grid; place-items: center; border-radius: var(--radius-full);
+  background: var(--accent); color: var(--accent-contrast); box-shadow: var(--shadow-sm);
+  cursor: grab; touch-action: none; transition: transform var(--dur) var(--ease);
+}
+.slide-thumb:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+.slide-confirm.is-dragging .slide-thumb, .slide-confirm.is-dragging .slide-fill { transition: none; }
+.slide-confirm.is-dragging .slide-thumb { cursor: grabbing; }
+.slide-confirm.is-locked .slide-thumb { opacity: var(--disabled-opacity); cursor: not-allowed; }
+.slide-confirm.is-done .slide-thumb { background: var(--positive); cursor: default; }
+.slide-confirm.is-done .slide-fill { background: var(--positive-soft); }
+.slide-confirm.is-done .slide-label { color: var(--positive); }
 
 /* A radio choice with a title and an explanation */
 .sync-choices { gap: var(--space-2); }

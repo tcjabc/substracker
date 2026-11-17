@@ -10,7 +10,7 @@
 // storage.parseBackup and the existing Merge / Replace import, so ids, field stamps, types and
 // nextRenewal are made exactly as for any other import.
 
-import { CURRENCIES, uid, monthlyCost, isOnce } from './util.js';
+import { CURRENCIES, uid, monthlyCost, isOnce, MERGE_SYNC_NOTE } from './util.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
 
 export const AI_SCHEMA_VERSION = 1;
@@ -23,6 +23,7 @@ const AMOUNT_MAX = 1e12;
 /** The cycles the schema accepts, and the app's own name for each. Anything else is flagged, never guessed. */
 export const AI_CYCLES = { monthly: 'monthly', annual: 'annual', 'one-off': 'once' };
 const TYPES = ['expense', 'income'];
+const SHAPE = '{"version": 1, "rows": [...]}';
 
 /** A problem with the reply as a whole (not one row). `message` is written for the person importing. */
 export class AiImportError extends Error {}
@@ -96,15 +97,15 @@ export function extractJson(input) {
  */
 export function parseAiImport(input) {
   const data = extractJson(input);
-  if (Array.isArray(data)) throw new AiImportError('The JSON is a list. It should be an object with "version": 1 and "rows": [...].');
-  if (!isObj(data)) throw new AiImportError('The JSON should be an object with "version": 1 and "rows": [...].');
-  if (data.version === undefined) throw new AiImportError('"version" missing. It should be 1.');
-  if (data.version !== AI_SCHEMA_VERSION) throw new AiImportError(`"version" should be ${AI_SCHEMA_VERSION}.`);
-  if (data.rows === undefined) throw new AiImportError('"rows" missing. It should be a list of rows.');
-  if (!Array.isArray(data.rows)) throw new AiImportError('"rows" should be a list of rows.');
-  if (!data.rows.length) throw new AiImportError('"rows" is empty: there is nothing to import.');
+  if (Array.isArray(data)) throw new AiImportError(`The JSON is a list; it must be an object like ${SHAPE}.`);
+  if (!isObj(data)) throw new AiImportError(`The JSON must be an object like ${SHAPE}.`);
+  if (data.version === undefined) throw new AiImportError('"version" is missing; add "version": 1.');
+  if (data.version !== AI_SCHEMA_VERSION) throw new AiImportError(`"version" must be the number ${AI_SCHEMA_VERSION} without quotes, like "version": ${AI_SCHEMA_VERSION}.`);
+  if (data.rows === undefined) throw new AiImportError('"rows" is missing; add "rows": [...] with one object per item.');
+  if (!Array.isArray(data.rows)) throw new AiImportError('"rows" must be a list in square brackets, like "rows": [{...}, {...}].');
+  if (!data.rows.length) throw new AiImportError('"rows" is empty; there is nothing to import.');
   if (data.rows.length > MAX_AI_ROWS) {
-    throw new AiImportError(`That's ${data.rows.length} rows; the most at once is ${MAX_AI_ROWS}. Import them in smaller batches.`);
+    throw new AiImportError(`"rows" has ${data.rows.length} rows; the most at once is ${MAX_AI_ROWS}, so split them into smaller batches.`);
   }
   return data.rows;
 }
@@ -126,7 +127,7 @@ function dateLabel(type, cycle) {
  * Check one row. Returns { n, fields, problems } where `fields` holds the clean values
  * ({ name, amount, currency, cycle (the app's name), cycleText, nextDate, category, type }, each
  * null when unusable) and `problems` is a list of { code, message } with messages like
- * "Row 3: currency missing". Any `id` in the row is ignored (every row gets a new id), and a row
+ * "Row 3: currency is missing; add …", each saying how to fix it. Any `id` in the row is ignored (every row gets a new id), and a row
  * asking for the reserved id is rejected.
  */
 export function checkRow(raw, n) {
@@ -134,53 +135,56 @@ export function checkRow(raw, n) {
   const add = (code, msg) => problems.push({ code, message: `Row ${n}: ${msg}` });
   const fields = { name: null, amount: null, currency: null, cycle: null, cycleText: null, nextDate: null, category: '', type: null };
   if (!isObj(raw)) {
-    add(PROBLEM.error, 'is not an object with fields');
+    add(PROBLEM.error, 'must be an object with name, amount, currency, cycle, nextDate, category and type');
     return { n, fields, problems };
   }
-  if (raw.id === SETTINGS_ID) add(PROBLEM.error, `id "${SETTINGS_ID}" is reserved`);
+  if (raw.id === SETTINGS_ID) add(PROBLEM.error, `remove "id": "${SETTINGS_ID}"; rows don't need an id`);
 
-  if (blank(raw.name)) add(PROBLEM.error, 'name missing');
-  else if (typeof raw.name !== 'string') add(PROBLEM.error, 'name should be text');
-  else if (raw.name.trim().length > NAME_MAX) add(PROBLEM.error, `name is longer than ${NAME_MAX} characters`);
+  if (blank(raw.name)) add(PROBLEM.error, 'name is missing; add the merchant or payer name as text, like "Example Streaming"');
+  else if (typeof raw.name !== 'string') add(PROBLEM.error, 'name must be text in quotes, like "Example Streaming"');
+  else if (raw.name.trim().length > NAME_MAX) add(PROBLEM.error, `name must be at most ${NAME_MAX} characters; shorten it`);
   else fields.name = raw.name.trim();
 
-  if (raw.amount === undefined || raw.amount === null || raw.amount === '') add(PROBLEM.error, 'amount missing');
-  else if (typeof raw.amount !== 'number') add(PROBLEM.error, 'amount should be a number, not text');
-  else if (!Number.isFinite(raw.amount)) add(PROBLEM.error, 'amount should be a number');
-  else if (raw.amount < 0) add(PROBLEM.error, 'amount should be 0 or more (use "type": "income" for money coming in)');
-  else if (raw.amount > AMOUNT_MAX) add(PROBLEM.error, 'amount is too large');
+  if (raw.amount === undefined || raw.amount === null || raw.amount === '') add(PROBLEM.error, 'amount is missing; add it as a number without quotes, like 390');
+  else if (typeof raw.amount !== 'number') add(PROBLEM.error, 'amount must be a number without quotes, like 390');
+  else if (!Number.isFinite(raw.amount)) add(PROBLEM.error, 'amount must be a number without quotes, like 390');
+  else if (raw.amount < 0) add(PROBLEM.error, 'amount must be 0 or more without a minus sign; use "type": "income" for money coming in');
+  else if (raw.amount > AMOUNT_MAX) add(PROBLEM.error, 'amount is too large; check it against the document');
   else fields.amount = Math.round(raw.amount * 100) / 100;
 
-  if (blank(raw.currency)) add(PROBLEM.error, 'currency missing');
-  else if (typeof raw.currency !== 'string') add(PROBLEM.error, 'currency should be a 3-letter code such as TWD');
+  if (blank(raw.currency)) add(PROBLEM.error, 'currency is missing; add a 3-letter code in quotes, like "TWD"');
+  else if (typeof raw.currency !== 'string') add(PROBLEM.error, 'currency must be a 3-letter code in quotes, like "TWD"');
   else {
     const c = raw.currency.trim().toUpperCase();
-    if (!CURRENCIES.includes(c)) add(PROBLEM.error, `currency "${raw.currency.trim().slice(0, 12)}" isn't one the app supports`);
+    if (!CURRENCIES.includes(c)) add(PROBLEM.error, `currency "${raw.currency.trim().slice(0, 12)}" isn't supported; use one of ${CURRENCIES.join(', ')}, or leave the row out`);
     else fields.currency = c;
   }
 
-  if (blank(raw.type)) add(PROBLEM.error, 'type missing');
-  else if (typeof raw.type !== 'string' || !TYPES.includes(raw.type.trim().toLowerCase())) add(PROBLEM.error, 'type should be "expense" or "income"');
+  if (blank(raw.type)) add(PROBLEM.error, 'type is missing; use "expense" or "income"');
+  else if (typeof raw.type !== 'string' || !TYPES.includes(raw.type.trim().toLowerCase())) add(PROBLEM.error, 'type must be "expense" or "income"');
   else fields.type = raw.type.trim().toLowerCase();
 
-  if (blank(raw.cycle)) add(PROBLEM.error, 'cycle missing');
-  else if (typeof raw.cycle !== 'string') add(PROBLEM.error, 'cycle should be "monthly", "annual" or "one-off"');
+  if (blank(raw.cycle)) add(PROBLEM.error, 'cycle is missing; use "monthly", "annual" or "one-off"');
+  else if (typeof raw.cycle !== 'string') add(PROBLEM.error, 'cycle must be "monthly", "annual" or "one-off" in quotes');
   else {
     const c = raw.cycle.trim().toLowerCase();
     fields.cycleText = c.slice(0, 30);
     if (Object.prototype.hasOwnProperty.call(AI_CYCLES, c)) fields.cycle = AI_CYCLES[c];
-    else add(PROBLEM.cycle, `unsupported cycle "${fields.cycleText}" (use monthly, annual or one-off, or leave the row out)`);
+    else add(PROBLEM.cycle, `unsupported cycle "${fields.cycleText}"; cycle must be "monthly", "annual" or "one-off", or leave the row out`);
   }
 
   const label = dateLabel(fields.type, fields.cycle);
-  if (blank(raw.nextDate)) add(PROBLEM.date, `${label} missing`);
+  if (blank(raw.nextDate)) add(PROBLEM.date, `nextDate is missing; add the ${label} as YYYY-MM-DD, like 2026-12-05`);
   else if (typeof raw.nextDate !== 'string' || !isRealDay(raw.nextDate.trim())) {
-    add(PROBLEM.date, `${label} "${String(raw.nextDate).slice(0, 20)}" isn't a YYYY-MM-DD date`);
+    const got = String(raw.nextDate).slice(0, 20);
+    add(PROBLEM.date, /^\d{4}-\d{2}-\d{2}$/.test(got.trim())
+      ? `nextDate "${got}" isn't a real date; use the ${label} as a real YYYY-MM-DD date`
+      : `nextDate must be YYYY-MM-DD, like 2026-12-05, not "${got}"`);
   } else fields.nextDate = raw.nextDate.trim();
 
   if (raw.category === undefined || raw.category === null) fields.category = '';
-  else if (typeof raw.category !== 'string') add(PROBLEM.error, 'category should be text');
-  else if (raw.category.trim().length > CATEGORY_MAX) add(PROBLEM.error, `category is longer than ${CATEGORY_MAX} characters`);
+  else if (typeof raw.category !== 'string') add(PROBLEM.error, 'category must be text in quotes, or ""');
+  else if (raw.category.trim().length > CATEGORY_MAX) add(PROBLEM.error, `category must be at most ${CATEGORY_MAX} characters; shorten it or use ""`);
   else fields.category = raw.category.trim();
   if (fields.type === 'income') fields.category = ''; // income has no categories in the app
 
@@ -314,4 +318,35 @@ export function errorReport(problem) {
     'Please fix these and reply with the whole corrected JSON only, nothing else, in the same shape ({"version": 1, "rows": [...]}).',
     'If a fix needs a date, an amount or a cycle you can\'t read from my documents, ask me instead of guessing.',
   ].join('\n');
+}
+
+/* --------------------------------------------------------------------------
+   The Merge / Replace all wording for these items
+   -------------------------------------------------------------------------- */
+// The rows bring no settings and always get new ids, so Merge only adds and Replace all only
+// replaces the items; the default currency and group colours stay as they are.
+const countOf = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export const AI_CHOICE_TITLE = 'Import these items?';
+export const AI_REPLACE_SYNC_WARNING = 'Replace all deletes the current items here and on every device you sync with.';
+export const AI_REPLACE_TITLE = 'Replace all items?';
+export const AI_REPLACE_MESSAGE = "This deletes all current items on this device and keeps only the imported ones. Settings stay as they are. This can't be undone.";
+
+/** The choice dialog's text from previewImport()'s merge summary. */
+export function aiImportMessage({ total, existing }, { synced = false } = {}) {
+  const text = existing
+    ? `${countOf(total, 'item')} to add. Merge adds them to your ${countOf(existing, 'item')}. `
+      + `Replace all deletes your ${countOf(existing, 'item')} and keeps only these ${total}. `
+      + 'Your default currency and group colours stay as they are.'
+    : `${countOf(total, 'item')} to add. Your list is empty, so both options give the same result.`;
+  return synced ? `${text}\n${AI_REPLACE_SYNC_WARNING}\n${MERGE_SYNC_NOTE}` : text;
+}
+
+/** The final confirmation after choosing Replace all. Cancel comes first: it's focused, and dismissing picks it. */
+export function aiReplaceConfirm({ synced = false } = {}) {
+  return {
+    title: AI_REPLACE_TITLE,
+    message: synced ? `${AI_REPLACE_MESSAGE}\nIt also deletes them on every device you sync with.` : AI_REPLACE_MESSAGE,
+    actions: [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }],
+  };
 }

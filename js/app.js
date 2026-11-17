@@ -7,6 +7,7 @@ import { logoHTML, initLogoHandling } from './logos.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
+import { initImportAiSheet } from './import-ai-sheet.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -21,7 +22,7 @@ import {
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 // Group colour swatches: keys map to --group-1 … --group-10 in app.css. The order is the
 // auto-assign order, most distinct first (including for colour-blind viewers).
@@ -168,6 +169,13 @@ async function init() {
   bindViewToggle();
   bindForm();
   bindSettings();
+  initImportAiSheet({
+    storage,
+    ui: {
+      openDialog, closeDialog, confirmDialog, toast, overlays, exportData, reloadData,
+      items: () => state.subs, isSynced: syncIsSetUp,
+    },
+  });
   bindEditTaps();
   bindGroupColors();
   bindDialogFormFallback();
@@ -1374,6 +1382,7 @@ function applyTheme(mode) {
   });
 }
 
+/** Export a backup file. Resolves true when it was delivered (saved or shared), else false. */
 async function exportData() {
   try {
     const payload = await storage.exportAll();
@@ -1381,10 +1390,20 @@ async function exportData() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const delivered = await deliverFile(blob, `substracker-${todayStamp()}.json`);
     if (delivered) toast(`Exported ${plural(payload.items.length, 'item')}`);
+    return delivered === true;
   } catch (err) {
     console.error(err);
     toast('Export failed.');
+    return false;
   }
+}
+
+/** Whether sync is set up here (a key and sync turned on); then an import reaches every device. */
+async function syncIsSetUp() {
+  try {
+    const cfg = await storage.getSyncConfig();
+    return Boolean(cfg.enabled && storage.householdIdentity(cfg)); // no need to read the key itself
+  } catch { return false; } // no sync on a fallback store
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -1413,11 +1432,7 @@ async function importFile(file) {
   }
 
   // Sync set up here (a key and sync turned on): both choices reach every device, so say so.
-  let synced = false;
-  try {
-    const cfg = await storage.getSyncConfig();
-    synced = Boolean(cfg.enabled && storage.householdIdentity(cfg)); // no need to read the key itself
-  } catch { /* no sync on a fallback store */ }
+  const synced = await syncIsSetUp();
   // Merge or Replace all; Replace asks once more. Cancelling at either step applies nothing.
   const mode = await chooseImportMode(preview, { synced, confirm: confirmDialog });
   if (!mode) return;

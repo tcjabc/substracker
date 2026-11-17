@@ -194,25 +194,54 @@ export function replaceConfirm({ synced = false } = {}) {
 }
 
 /**
+ * The label of an optional "Export a backup first" button: the item count when there are items,
+ * and "Backup saved ✓" once a backup was delivered.
+ */
+export function backupLabel(count, saved = false) {
+  if (saved) return 'Backup saved ✓';
+  return count > 0 ? `Export a backup first (${countOf(count, 'item')})` : 'Export a backup first';
+}
+
+/**
  * Ask how to import: the Merge / Replace all choice, then, for Replace, a final confirmation.
  * `confirm` shows a dialog ({ title, message, actions, stacked }) and resolves with the chosen
  * action's value (the first action's when dismissed). Resolves with 'merge', 'replace', or null
  * when the person cancelled at either step, in which case nothing may be applied.
+ * `title`, `message` and `replace` (the final confirmation's options) replace the backup-file
+ * wording. `backup`, when given, is an async () => boolean (true once a backup was delivered) and
+ * adds an optional backup button beside Replace all at both steps, labelled by backupLabel with
+ * `count`; choosing it runs the backup and shows the same step again. It is never required.
  */
-export async function chooseImportMode(preview, { synced = false, confirm }) {
-  const mode = await confirm({
-    title: 'Import this backup?',
-    message: importMessage(preview, { synced }),
-    stacked: true,
-    actions: [
-      { label: 'Cancel', value: null },
-      { label: 'Replace all', value: 'replace', kind: 'danger' },
-      { label: 'Merge', value: 'merge', kind: 'primary' },
-    ],
-  });
-  if (mode === 'merge') return 'merge';
-  if (mode !== 'replace') return null;
-  return (await confirm(replaceConfirm({ synced }))) === true ? 'replace' : null;
+export async function chooseImportMode(preview, {
+  synced = false, confirm, title = 'Import this backup?', message, replace, backup, count = 0,
+} = {}) {
+  let saved = false;
+  const backupAction = () => (backup ? [{ label: backupLabel(count, saved), value: 'backup' }] : []);
+  const runBackup = async () => { try { saved = (await backup()) === true || saved; } catch { /* the backup reports its own failure */ } };
+  for (;;) {
+    const mode = await confirm({
+      title,
+      message: message ?? importMessage(preview, { synced }),
+      stacked: true,
+      actions: [
+        { label: 'Cancel', value: null },
+        ...backupAction(),
+        { label: 'Replace all', value: 'replace', kind: 'danger' },
+        { label: 'Merge', value: 'merge', kind: 'primary' },
+      ],
+    });
+    if (mode === 'backup') { await runBackup(); continue; }
+    if (mode === 'merge') return 'merge';
+    if (mode !== 'replace') return null;
+    break;
+  }
+  const final = replace ?? replaceConfirm({ synced });
+  for (;;) {
+    const [cancel, ...rest] = final.actions;
+    const ok = await confirm({ ...final, actions: [cancel, ...backupAction(), ...rest] });
+    if (ok === 'backup') { await runBackup(); continue; }
+    return ok === true ? 'replace' : null;
+  }
 }
 
 /** Stable small hash for picking avatar colours. */

@@ -34,10 +34,10 @@ When everything is clear, reply with only the JSON, nothing else: no explanation
   ]
 }
 
-Fields (every field is required on every row):
+Fields (every field must be present on every row; category may be ''):
 - "name": the merchant or payer, as short text (at most 80 characters).
 - "amount": a positive number with a dot for decimals and no currency symbol or thousands separator, e.g. 1290.5.
-- "currency": one of ${CURRENCIES.join(', ')}. Use the currency shown on the document; if it's another currency, ask me.
+- "currency": one of ${CURRENCIES.join(', ')}. Use the currency shown on the document. For a currency not in this list, ask me, and leave that item out unless I tell you which currency to use.
 - "cycle": "monthly", "annual" or "one-off". If something repeats on another schedule (weekly, every two weeks, quarterly, or anything else), write the schedule as you see it, e.g. "weekly", and the app will flag it for me to fix.
 - "nextDate": a date as YYYY-MM-DD. For "monthly" and "annual", the next payment date if the document shows it, otherwise the date of the most recent payment (the app works out the next one). For "one-off", the date it happened.
 - "category": a short category such as ${DEFAULT_CATEGORIES.filter((c) => c !== 'Other').join(', ')}; use "" if none fits. Use "" for income.

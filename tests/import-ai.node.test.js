@@ -65,12 +65,12 @@ test('bad JSON: no JSON at all, or broken JSON', () => {
 test('the envelope is checked strictly: object, version 1, a non-empty rows list', () => {
   const cases = [
     ['[1, 2]', /is a list/],
-    ['"text"', /should be an object/],
-    [JSON.stringify({ rows: [row()] }), /"version" missing/],
-    [JSON.stringify({ version: 2, rows: [row()] }), /"version" should be 1/],
-    [JSON.stringify({ version: '1', rows: [row()] }), /"version" should be 1/],
-    [JSON.stringify({ version: 1 }), /"rows" missing/],
-    [JSON.stringify({ version: 1, rows: {} }), /"rows" should be a list/],
+    ['"text"', /must be an object like \{"version": 1, "rows": \[\.\.\.\]\}/],
+    [JSON.stringify({ rows: [row()] }), /"version" is missing; add "version": 1\./],
+    [JSON.stringify({ version: 2, rows: [row()] }), /"version" must be the number 1 without quotes/],
+    [JSON.stringify({ version: '1', rows: [row()] }), /"version" must be the number 1 without quotes/],
+    [JSON.stringify({ version: 1 }), /"rows" is missing; add "rows": \[\.\.\.\]/],
+    [JSON.stringify({ version: 1, rows: {} }), /"rows" must be a list in square brackets/],
     [JSON.stringify({ version: 1, rows: [] }), /"rows" is empty/],
   ];
   for (const [text, re] of cases) assert.throws(() => parseAiImport(text), re, text);
@@ -96,33 +96,37 @@ test('a parsed object is accepted as it is', () => {
 test('partial JSON: good rows stay usable next to bad ones, with row-level messages', () => {
   const rows = reviewAiImport(reply([row(), row({ currency: undefined }), 'oops', row({ name: 'Other' })]));
   assert.deepEqual(rows.map((r) => r.status), ['ok', 'error', 'error', 'ok']);
-  assert.deepEqual(messages(rows[1]), ['Row 2: currency missing']);
-  assert.deepEqual(messages(rows[2]), ['Row 3: is not an object with fields']);
+  assert.deepEqual(messages(rows[1]), ['Row 2: currency is missing; add a 3-letter code in quotes, like "TWD"']);
+  assert.deepEqual(messages(rows[2]), ['Row 3: must be an object with name, amount, currency, cycle, nextDate, category and type']);
   assert.deepEqual(rows.map((r) => r.include), [true, false, false, true]);
 });
 
 test('missing required fields each get their own message', () => {
   const r = checkRow({}, 4);
   assert.deepEqual(r.problems.map((p) => p.message), [
-    'Row 4: name missing', 'Row 4: amount missing', 'Row 4: currency missing', 'Row 4: type missing',
-    'Row 4: cycle missing', 'Row 4: next renewal date missing',
+    'Row 4: name is missing; add the merchant or payer name as text, like "Example Streaming"',
+    'Row 4: amount is missing; add it as a number without quotes, like 390',
+    'Row 4: currency is missing; add a 3-letter code in quotes, like "TWD"',
+    'Row 4: type is missing; use "expense" or "income"',
+    'Row 4: cycle is missing; use "monthly", "annual" or "one-off"',
+    'Row 4: nextDate is missing; add the next renewal date as YYYY-MM-DD, like 2026-12-05',
   ]);
 });
 
 test('wrong types are errors, never converted', () => {
   const cases = [
-    [{ name: 42 }, 'Row 1: name should be text'],
-    [{ amount: '390' }, 'Row 1: amount should be a number, not text'],
-    [{ amount: -5 }, 'Row 1: amount should be 0 or more (use "type": "income" for money coming in)'],
-    [{ amount: 1e13 }, 'Row 1: amount is too large'],
-    [{ currency: 901 }, 'Row 1: currency should be a 3-letter code such as TWD'],
-    [{ currency: 'XYZ' }, 'Row 1: currency "XYZ" isn\'t one the app supports'],
-    [{ type: 'refund' }, 'Row 1: type should be "expense" or "income"'],
-    [{ cycle: 12 }, 'Row 1: cycle should be "monthly", "annual" or "one-off"'],
-    [{ category: ['x'] }, 'Row 1: category should be text'],
-    [{ category: 'c'.repeat(41) }, 'Row 1: category is longer than 40 characters'],
-    [{ name: 'n'.repeat(81) }, 'Row 1: name is longer than 80 characters'],
-    [{ nextDate: 20261205 }, 'Row 1: next renewal date "20261205" isn\'t a YYYY-MM-DD date'],
+    [{ name: 42 }, 'Row 1: name must be text in quotes, like "Example Streaming"'],
+    [{ amount: '390' }, 'Row 1: amount must be a number without quotes, like 390'],
+    [{ amount: -5 }, 'Row 1: amount must be 0 or more without a minus sign; use "type": "income" for money coming in'],
+    [{ amount: 1e13 }, 'Row 1: amount is too large; check it against the document'],
+    [{ currency: 901 }, 'Row 1: currency must be a 3-letter code in quotes, like "TWD"'],
+    [{ currency: 'XYZ' }, 'Row 1: currency "XYZ" isn\'t supported; use one of TWD, USD, EUR, GBP, JPY, HKD, CNY, KRW, SGD, AUD, CAD, NZD, CHF, THB, MYR, PHP, IDR, VND, INR, or leave the row out'],
+    [{ type: 'refund' }, 'Row 1: type must be "expense" or "income"'],
+    [{ cycle: 12 }, 'Row 1: cycle must be "monthly", "annual" or "one-off" in quotes'],
+    [{ category: ['x'] }, 'Row 1: category must be text in quotes, or ""'],
+    [{ category: 'c'.repeat(41) }, 'Row 1: category must be at most 40 characters; shorten it or use ""'],
+    [{ name: 'n'.repeat(81) }, 'Row 1: name must be at most 80 characters; shorten it'],
+    [{ nextDate: 20261205 }, 'Row 1: nextDate must be YYYY-MM-DD, like 2026-12-05, not "20261205"'],
   ];
   for (const [over, msg] of cases) assert.deepEqual(messages(checkRow(row(over), 1)), [msg], msg);
 });
@@ -139,13 +143,13 @@ test('values are tidied but not guessed: case, spacing and rounding', () => {
 
 test('missing or unreadable dates are flagged with the app\'s name for the date', () => {
   const cases = [
-    [{ nextDate: undefined }, 'Row 1: next renewal date missing'],
-    [{ nextDate: '' }, 'Row 1: next renewal date missing'],
-    [{ nextDate: null, type: 'income' }, 'Row 1: next payment date missing'],
-    [{ nextDate: '  ', cycle: 'one-off' }, 'Row 1: date missing'],
-    [{ nextDate: '05/12/2026' }, 'Row 1: next renewal date "05/12/2026" isn\'t a YYYY-MM-DD date'],
-    [{ nextDate: '2026-02-30' }, 'Row 1: next renewal date "2026-02-30" isn\'t a YYYY-MM-DD date'],
-    [{ nextDate: '2026-12' }, 'Row 1: next renewal date "2026-12" isn\'t a YYYY-MM-DD date'],
+    [{ nextDate: undefined }, 'Row 1: nextDate is missing; add the next renewal date as YYYY-MM-DD, like 2026-12-05'],
+    [{ nextDate: '' }, 'Row 1: nextDate is missing; add the next renewal date as YYYY-MM-DD, like 2026-12-05'],
+    [{ nextDate: null, type: 'income' }, 'Row 1: nextDate is missing; add the next payment date as YYYY-MM-DD, like 2026-12-05'],
+    [{ nextDate: '  ', cycle: 'one-off' }, 'Row 1: nextDate is missing; add the date as YYYY-MM-DD, like 2026-12-05'],
+    [{ nextDate: '05/12/2026' }, 'Row 1: nextDate must be YYYY-MM-DD, like 2026-12-05, not "05/12/2026"'],
+    [{ nextDate: '2026-02-30' }, 'Row 1: nextDate "2026-02-30" isn\'t a real date; use the next renewal date as a real YYYY-MM-DD date'],
+    [{ nextDate: '2026-12' }, 'Row 1: nextDate must be YYYY-MM-DD, like 2026-12-05, not "2026-12"'],
   ];
   for (const [over, msg] of cases) {
     const [r] = reviewRows([row(over)]);
@@ -163,7 +167,7 @@ test('unsupported cycles are flagged and skipped, never rounded to a supported o
     assert.equal(r.fields.cycle, null, `${c} is not mapped`);
     assert.equal(r.fields.cycleText, c);
     assert.equal(r.include, false);
-    assert.match(messages(r)[0], new RegExp(`^Row 1: unsupported cycle "${c}"`));
+    assert.match(messages(r)[0], new RegExp(`^Row 1: unsupported cycle "${c}"; cycle must be "monthly", "annual" or "one-off", or leave the row out$`));
   }
   assert.equal(checkRow(row({ cycle: 'one-off' }), 1).fields.cycle, 'once');
 });
@@ -179,7 +183,7 @@ test('a fixed row can be checked again: the review is rebuilt from the edited ra
 
 test('the reserved id "settings" is rejected; any other id is ignored', () => {
   const [bad, other] = reviewRows([row({ id: 'settings' }), row({ id: 'existing-item', name: 'Other' })]);
-  assert.deepEqual(messages(bad), ['Row 1: id "settings" is reserved']);
+  assert.deepEqual(messages(bad), ['Row 1: remove "id": "settings"; rows don\'t need an id']);
   assert.equal(bad.include, false);
   assert.equal(other.status, 'ok');
   const backup = backupFromRows([other], { now: NOW, newId });
@@ -288,18 +292,47 @@ test('totals preview: monthly equivalents and one-offs per currency', () => {
 test('the error report lists row problems (not duplicates) and asks for JSON only', () => {
   const rows = reviewRows([row(), row(), row({ currency: '' }), row({ cycle: 'weekly', name: 'W' })]);
   const text = errorReport(rows);
-  assert.match(text, /- Row 3: currency missing\n- Row 4: unsupported cycle "weekly"/);
+  assert.match(text, /- Row 3: currency is missing; add a 3-letter code in quotes, like "TWD"\n- Row 4: unsupported cycle "weekly"/);
   assert.doesNotMatch(text, /Row 2/);
   assert.match(text, /whole corrected JSON only, nothing else/);
   assert.equal(errorReport(reviewRows([row()])), '', 'nothing to report');
-  assert.match(errorReport('"version" missing. It should be 1.'), /- "version" missing/);
+  assert.match(errorReport('"version" is missing; add "version": 1.'), /- "version" is missing/);
+});
+
+test('the error report text, exactly: every line says how to fix it', () => {
+  const rows = reviewRows([
+    row(),
+    row({ amount: '390' }),
+    row(),
+    row({ nextDate: '05/12/2026' }),
+    row({ name: 'Weekly Box', cycle: 'weekly' }),
+    row({ name: 'Pay', type: 'income', nextDate: '' }),
+  ]);
+  const footer = [
+    '',
+    'Please fix these and reply with the whole corrected JSON only, nothing else, in the same shape ({"version": 1, "rows": [...]}).',
+    "If a fix needs a date, an amount or a cycle you can't read from my documents, ask me instead of guessing.",
+  ];
+  assert.equal(errorReport(rows), [
+    'Peek Budget could not import some of your JSON:',
+    '- Row 2: amount must be a number without quotes, like 390',
+    '- Row 4: nextDate must be YYYY-MM-DD, like 2026-12-05, not "05/12/2026"',
+    '- Row 5: unsupported cycle "weekly"; cycle must be "monthly", "annual" or "one-off", or leave the row out',
+    '- Row 6: nextDate is missing; add the next payment date as YYYY-MM-DD, like 2026-12-05',
+    ...footer,
+  ].join('\n'), 'row 3 is a duplicate of row 1 and is not an error');
+  assert.equal(errorReport('"rows" is empty; there is nothing to import.'), [
+    'Peek Budget could not import some of your JSON:',
+    '- "rows" is empty; there is nothing to import.',
+    ...footer,
+  ].join('\n'));
 });
 
 /* ------------------------------------------------------------------ The prompt */
 
 test('the prompt states the schema, allowed values and the rules', () => {
   for (const s of ['"version": 1', '"rows"', '"name"', '"amount"', '"currency"', '"cycle"', '"nextDate"', '"category"', '"type"',
-    '"monthly", "annual" or "one-off"', '"expense"', '"income"', 'YYYY-MM-DD', 'only the JSON, nothing else',
+    '"monthly", "annual" or "one-off"', '"expense"', '"income"', 'YYYY-MM-DD', 'only the JSON, nothing else', "every field must be present on every row; category may be ''", 'leave that item out unless I tell you which currency to use',
     'ask me. Never guess a date', 'account numbers, card numbers', 'any person\'s name', 'TWD, USD, EUR']) {
     assert.ok(AI_IMPORT_PROMPT.includes(s), s);
   }

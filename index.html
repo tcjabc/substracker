@@ -129,6 +129,13 @@
             <button type="button" class="btn" id="btn-import">Import</button>
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </div>
+          <div class="setting-row">
+            <span class="setting-label">
+              Import with AI
+              <span class="setting-hint">Turn statements into items with an AI chat you choose. The app sends nothing.</span>
+            </span>
+            <button type="button" class="btn" id="btn-import-ai">Start</button>
+          </div>
         </div>
         <p class="footnote" id="storage-note" data-native-text="Your data is stored locally on this device. With optional sync, changes are end-to-end encrypted before they leave the device, so the relay can't read them. Logos are loaded from Google's favicon service using only the domain you enter.">Your data is stored locally in this browser (IndexedDB). With optional sync, changes are end-to-end encrypted before they leave the device, so the relay can't read them. Logos are loaded from Google's favicon service using only the domain you enter.</p>
       </div>
@@ -438,6 +445,123 @@
       </div>
 
       <p class="sync-busy" id="sync-busy" role="status" aria-live="polite" hidden></p>
+    </form>
+  </dialog>
+
+  <!-- Import with AI: warning, prompt and reply, review, then Merge / Replace all (js/import-ai-sheet.js).
+       The app never sends anything: the person copies the prompt out and brings the reply back. -->
+  <dialog class="sheet" id="ai-dialog" aria-labelledby="ai-title">
+    <form id="ai-form" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h2 id="ai-title">Import with AI</h2>
+        <button type="button" class="icon-btn" data-ai-close aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- 1. Read and confirm -->
+      <div class="sync-view" data-ai-view="warning" hidden>
+        <div class="sheet-body">
+          <p class="sync-warning" role="note">Peek Budget has no connection to any AI service. The app never sends anything: what you upload is between you and the provider you choose.</p>
+          <ul class="ai-points">
+            <li>Privacy claims belong to each provider and can change. Check them yourself before you upload anything.</li>
+            <li>Remove account numbers, card numbers and names first. The app only needs the merchant, amount and date.</li>
+            <li>AI can misread documents, so check every row before you import.</li>
+            <li>Nothing is imported until you confirm.</li>
+          </ul>
+          <div class="ai-block">
+            <h3 class="sync-heading">Choosing a tool</h3>
+            <p class="sync-text">Look for one that says it keeps no chat logs, doesn't train on your data, and has a temporary or incognito chat mode.</p>
+          </div>
+          <div class="ai-block">
+            <button type="button" class="btn" data-ai-backup>Export a backup first</button>
+            <span class="setting-hint" id="ai-backup-hint"></span>
+          </div>
+          <div class="slide-confirm" id="ai-slide">
+            <div class="slide-track" data-slide-track>
+              <span class="slide-fill" aria-hidden="true"></span>
+              <span class="slide-label" data-slide-label aria-hidden="true">Slide to confirm you've read this</span>
+              <span class="slide-thumb" data-slide-thumb role="slider" tabindex="0"
+                aria-label="Slide to confirm you've read this" aria-describedby="ai-slide-help"
+                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+              </span>
+            </div>
+            <p class="setting-hint" id="ai-slide-help">Drag to the end, or use the arrow keys. It unlocks after a moment.</p>
+            <label class="sync-check-row">
+              <input type="checkbox" class="check" data-slide-check>
+              <span>Or tick: I've read this</span>
+            </label>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="ai-warning-cancel">Cancel</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="ai-continue" disabled>Continue</button>
+        </div>
+      </div>
+
+      <!-- 2. Copy the prompt, bring back the reply -->
+      <div class="sync-view" data-ai-view="prompt" hidden>
+        <div class="sheet-body">
+          <div class="ai-block">
+            <h3 class="sync-heading">1. Copy the prompt</h3>
+            <p class="sync-text">It describes the format the app needs and asks the AI to check unclear dates with you instead of guessing.</p>
+            <button type="button" class="btn btn-primary" id="ai-copy-prompt">Copy prompt</button>
+            <p class="sync-text" id="ai-prompt-fallback" role="status" hidden>Couldn't copy. Select the prompt below and copy it.</p>
+            <details class="ai-details" id="ai-prompt-details">
+              <summary>Show the prompt</summary>
+              <textarea class="input ai-text" id="ai-prompt-text" rows="8" readonly aria-label="The prompt"></textarea>
+            </details>
+          </div>
+          <div class="ai-block">
+            <h3 class="sync-heading">2. Ask your AI chat</h3>
+            <p class="sync-text">Paste the prompt into the AI chat you chose, attach photos or PDFs of your statements, and answer its questions.</p>
+          </div>
+          <div class="ai-block">
+            <h3 class="sync-heading">3. Bring back the reply</h3>
+            <label class="field">
+              <span class="field-label">Paste the reply</span>
+              <textarea class="input ai-text" id="ai-reply" rows="6" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder='{"version": 1, "rows": [...]}'></textarea>
+            </label>
+            <button type="button" class="btn" id="ai-pick-file">Or pick a file</button>
+            <input type="file" id="ai-file" accept="application/json,.json,text/plain,.txt" hidden>
+          </div>
+          <div class="ai-error" id="ai-reply-error" hidden>
+            <ul class="sync-problems" id="ai-reply-problems" role="alert"></ul>
+            <button type="button" class="btn" id="ai-reply-copy-error">Copy error for your AI</button>
+            <textarea class="input ai-text" id="ai-reply-error-text" rows="5" readonly aria-label="Error text to copy" hidden></textarea>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="ai-prompt-back">Back</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="ai-review">Review</button>
+        </div>
+      </div>
+
+      <!-- 3. Review every row -->
+      <div class="sync-view" data-ai-view="review" hidden>
+        <div class="sheet-body">
+          <p class="sync-text" id="ai-review-summary" role="status" aria-live="polite"></p>
+          <div class="ai-error" id="ai-review-error" hidden>
+            <p class="sync-text">Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat.</p>
+            <button type="button" class="btn" id="ai-review-copy-error">Copy error for your AI</button>
+            <textarea class="input ai-text" id="ai-review-error-text" rows="5" readonly aria-label="Error text to copy" hidden></textarea>
+          </div>
+          <ul class="ai-rows" id="ai-rows" aria-label="Rows to import"></ul>
+          <div class="ai-block">
+            <h3 class="sync-heading">Selected totals</h3>
+            <div id="ai-totals"></div>
+            <p class="setting-hint">Nothing is saved until you choose Merge or Replace all.</p>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="ai-review-back">Back</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="ai-import" disabled>Import</button>
+        </div>
+      </div>
     </form>
   </dialog>
 
