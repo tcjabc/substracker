@@ -29,7 +29,7 @@ import {
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.19.0';
 
 // Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
 // colour syncs as { name, swatch } with one of these keys.
