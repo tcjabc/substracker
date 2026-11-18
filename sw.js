@@ -1,6 +1,6 @@
 // Service worker: precaches the app shell so SubsTracker works fully offline.
 // Bump VERSION whenever any shell file changes so clients pick up the update.
-const VERSION = 'v1.18.0';
+const VERSION = 'v1.19.0';
 const SHELL_CACHE = `substracker-shell-${VERSION}`;
 const LOGO_CACHE = 'substracker-logos';
 const LOGO_LIMIT = 200;
@@ -52,6 +52,7 @@ const SHELL = [
   './js/wallet.js',
   './js/csv-export.js',
   './js/due-soon.js',
+  './js/calendar-math.js',
   './js/i18n.js',
   // Locales: English is bundled with js/i18n.js; every other locale file is listed here too, so a
   // language picked on the device works offline (js/i18n.js loads it on first use).
