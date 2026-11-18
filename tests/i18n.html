@@ -27,13 +27,15 @@
   </main>
   <script type="module">
     // Each mode runs in its own frame, one after the other: the app starts once per page.
-    // English at 412px against the recording; the pseudo-locale at 360px (a small phone); zh-TW at
-    // 360px, 393px (a common Android width) and 320px (the narrowest phones still in use).
+    // English at 412px against the recording; the pseudo-locale and zh-TW at 360px (a small phone),
+    // 393px (a common Android width) and 320px (the narrowest phones still in use).
     // ?only=<name or mode> runs just those frames; ?w=<px> sets every frame's width (for measuring
     // English at other widths); ?geom=1 also records where every element is (window.testGeometry).
     const MODES = [
       { name: 'en', mode: 'en', w: 412, h: 900 },
       { name: 'pseudo', mode: 'pseudo', w: 360, h: 780, extra: '&lang=xx' },
+      { name: 'pseudo-320', mode: 'pseudo', w: 320, h: 700, extra: '&lang=xx' },
+      { name: 'pseudo-393', mode: 'pseudo', w: 393, h: 852, extra: '&lang=xx' },
       { name: 'zh-360', mode: 'zh', w: 360, h: 780 },
       { name: 'zh-393', mode: 'zh', w: 393, h: 852 },
       { name: 'zh-320', mode: 'zh', w: 320, h: 700 },

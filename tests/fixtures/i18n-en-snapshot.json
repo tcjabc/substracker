@@ -29,6 +29,20 @@
       "aria-label=Summary",
       "aria-label=Summary period"
     ],
+    "money.banner": [
+      "3 due in the next 7 days NT$889 +1 in USD1 item needs a date",
+      "aria-label=Due soon",
+      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD",
+      "aria-label=Hide until tomorrow",
+      "title=Hide until tomorrow"
+    ],
+    "money.banner.sheet": [
+      "Due soon Today to 25 Nov 🎬 StreamingToday NT$390 P PhoneIn 2 days NT$499 T ToolIn 4 days US$10not in TWD totals Tap an item to edit it.",
+      "aria-label=Close",
+      "aria-label=Streaming, today, NT$390",
+      "aria-label=Phone, in 2 days, NT$499",
+      "aria-label=Tool, in 4 days, US$10"
+    ],
     "wallet.host": [
       "Groups. Arrow keys move between groups, Enter opens one, Escape closes it."
     ],

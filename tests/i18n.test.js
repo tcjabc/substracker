@@ -120,6 +120,7 @@ function grab(root, { skip = [] } = {}) {
   return lines;
 }
 const snap = {};
+let dueSettingsEn = null; // English: Settings → Due soon, checked on its own (not in the recording)
 const overflow = [];
 const geometry = {};
 const put = (key, lines) => {
@@ -185,6 +186,13 @@ async function walk() {
   put('tabbar', grab($('.tabbar')));
   put('fab', grab($('#fab-stack')));
   put('money.strip.monthly', grab($('#money-summary')));
+  // The due-soon banner (new in 1.18.0) and its sheet: recorded on their own keys.
+  put('money.banner', grab($('#due-banner')));
+  $('#due-toggle').click();
+  await until(() => dialogShown('due-dialog'), 'due-soon sheet');
+  put('money.banner.sheet', grab($('#due-dialog')));
+  pressBack();
+  await tick(20);
   put('wallet.host', [$('#wallet').getAttribute('aria-label')]);
   $$('#wallet .w-band').forEach((b, i) => put(`wallet.card.${i}`, grab(b.closest('.w-card') ?? b.parentElement, { skip: ['.w-logos'] })));
   const firstBand = $('#wallet .w-band');
@@ -307,9 +315,10 @@ async function walk() {
   $('#tab-settings').click();
   await tick(20);
   put('doc.settings', [document.title, $('#page-title').textContent]);
-  // The language picker is new since the 1.15.0 recording, so English leaves it out of the screen
-  // (the language test checks it); the other languages walk it with the rest.
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row'] : [])] }));
+  // The language picker and the Due soon settings are new since the 1.15.0 recording, so English
+  // leaves them out of the screen (their own tests check them); the other languages walk them.
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings'] : [])] }));
+  if (MODE === 'en') dueSettingsEn = grab($('#due-settings'));
 
   // Sync sheet: every step's text, then a Join with wrong words.
   $('#btn-sync').click();
@@ -414,6 +423,10 @@ if (MODE === 'en') {
       if (a !== e) diffs.push(`${key}\n    expected ${e}\n    actual   ${a}`);
     }
     assert(!diffs.length, `${diffs.length} screen(s) differ:\n  ${diffs.join('\n  ')}`);
+  });
+
+  test('Settings → Due soon in English: the three settings, with their defaults', async () => {
+    eq(dueSettingsEn, ['Due soon Show due-soon banner A line on the Money tab with what comes due soon. Closing it hides it until tomorrow. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
   });
 
   test("index.html's own English is the dictionary's, so the page reads the same before the script runs", async () => {
@@ -535,8 +548,8 @@ if (MODE === 'pseudo') {
     eq(found, [], 'text that would stay English');
   });
 
-  test('every recorded screen fits a 360px phone in the pseudo-locale (about 30% longer text)', async () => {
-    eq(innerWidth, 360, 'the frame is phone width');
+  test(`every recorded screen fits a ${WIDTH ?? 360}px phone in the pseudo-locale (about 30% longer text)`, async () => {
+    eq(innerWidth, WIDTH ?? 360, 'the frame is the width asked for');
     eq([...new Set(overflow)], [], 'text that runs out of its box');
   });
 }
