@@ -6,7 +6,7 @@ import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
-import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
+import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, WALLET_KEYS, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
@@ -34,8 +34,9 @@ import {
 
 const APP_VERSION = '1.19.0';
 
-// Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
-// colour syncs as { name, swatch } with one of these keys.
+// The old picked colours, g1 … g10 (--group-1 … --group-10 in app.css): still read and drawn exactly
+// as they were picked, but no longer offered. New picks are palette slots (WALLET_KEYS, w1 … w15),
+// saved as { name, swatch: wN, slot: N − 1 }.
 const SWATCHES = [
   { key: 'g1', name: 'colour.g1' }, { key: 'g2', name: 'colour.g2' }, { key: 'g3', name: 'colour.g3' },
   { key: 'g4', name: 'colour.g4' }, { key: 'g5', name: 'colour.g5' }, { key: 'g6', name: 'colour.g6' },
@@ -443,9 +444,14 @@ function bindGroupColors() {
     opener = dot;
     const current = groupSwatch(group);
     $('#swatch-pop-title').textContent = t('money.colour.title', { group: groupLabel(group) });
-    $('#swatch-grid').innerHTML = SWATCHES.map((s) => `
-      <button type="button" class="swatch" data-swatch="${s.key}" style="--swatch: ${swatchVar(s.key)}"
-        aria-label="${esc(t(s.name))}" title="${esc(t(s.name))}" aria-pressed="${s.key === current}"></button>`).join('');
+    // The 15 slot colours; one another group shows already gets a small mark (a duplicate is a choice).
+    const others = new Set([...new Set(state.subs.filter((s) => !isIncome(s)).map(groupOf))].filter((g) => g !== group).map(groupSwatch));
+    $('#swatch-grid').innerHTML = WALLET_KEYS.map((key) => {
+      const label = others.has(key) ? t('money.colour.used', { colour: swatchName(key) }) : swatchName(key);
+      return `
+      <button type="button" class="swatch${others.has(key) ? ' is-used' : ''}" data-swatch="${key}" style="--swatch: ${swatchVar(key)}"
+        aria-label="${esc(label)}" title="${esc(label)}" aria-pressed="${key === current}"></button>`;
+    }).join('');
     pop.hidden = false;
     overlays.open('swatch-pop', { close: () => close(true), isOpen: () => !pop.hidden });
     dot.setAttribute('aria-expanded', 'true');
@@ -473,7 +479,9 @@ function bindGroupColors() {
     close(false);
     renderSubs();
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
-    try { await storage.saveSettings({ groupColors: { [name]: b.dataset.swatch } }); } catch (err) {
+    // A slot colour: its slot goes with it, so every device draws the group in the same slot.
+    const slot = WALLET_KEYS.indexOf(b.dataset.swatch);
+    try { await storage.saveSettings({ groupColors: { [name]: b.dataset.swatch }, ...(slot >= 0 ? { groupSlots: { [name]: slot } } : {}) }); } catch (err) {
       console.error(err);
       toast(t('money.colour.saveFailed'));
     }
@@ -1867,10 +1875,12 @@ async function exportData() {
   try {
     const payload = await storage.exportAll();
     payload.items.sort(byName);
-    // Automatic Wallet colours stay on this device: a backup carries only the swatches the app has
-    // always written, so a restore (and the sync it reaches) never sees a new key.
+    // Automatic colours stay on this device: a backup carries only the colours someone picked (the
+    // household's), old g ones and new slot ones alike, never this device's own automatic picks.
     const colours = payload.settings?.groupColors;
-    if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !isWalletKey(v)));
+    if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([k]) => state.colorPicks.has(k)));
+    const slots = payload.settings?.groupSlots;
+    if (slots) payload.settings.groupSlots = Object.fromEntries(Object.entries(slots).filter(([k]) => state.colorPicks.has(k)));
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const delivered = await deliverFile(blob, `substracker-${todayStamp()}.json`);
     if (delivered) toast(t('settings.export.done', { items: t('common.items', { count: payload.items.length }) }));

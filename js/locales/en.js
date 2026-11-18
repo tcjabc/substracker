@@ -313,6 +313,7 @@ export default {
   'money.colour.title': 'Colour for {group}',
   'money.colour.dot': 'Colour for {group}: {colour}',
   'money.colour.saveFailed': 'Could not save the colour.',
+  'money.colour.used': '{colour}, already used by another group',
   'common.avgPerMonth': 'Avg {amount}/mo',
   'common.moreOutThanIn': 'More going out than coming in',
   'common.excludesUndated.one': 'Excludes {count} undated item',

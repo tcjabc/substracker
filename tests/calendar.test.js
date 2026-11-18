@@ -194,10 +194,10 @@ test('dots: up to three in the group colours, then +N; income in the income colo
   await view('grid');
   $('.group-dot[data-group="House"]').click();
   await tick(30);
-  $('#swatch-pop [data-swatch="g2"]').click();
+  $('#swatch-pop [data-swatch="w4"]').click();
   await tick(60);
   await view('calendar');
-  eq(dots(1), ['var(--group-2)'], 'House picked Steel blue: Rent\'s dot follows');
+  eq(dots(1), ['var(--wallet-4)'], 'House picked Blue: Rent\'s dot follows');
 });
 
 test('light and dark: a dot too close to its cell gets a ring; day text keeps 4.5:1', async () => {

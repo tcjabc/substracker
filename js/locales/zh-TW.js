@@ -305,6 +305,7 @@ export default {
   'money.colour.title': '{group}的顏色',
   'money.colour.dot': '{group}的顏色：{colour}',
   'money.colour.saveFailed': '無法儲存顏色。',
+  'money.colour.used': '{colour}，已有其他群組使用',
   'common.avgPerMonth': '平均 {amount}/月',
   'common.moreOutThanIn': '支出多於收入',
   'common.excludesUndated.other': '不含 {count} 個未設日期的項目',

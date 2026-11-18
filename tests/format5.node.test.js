@@ -289,14 +289,15 @@ test('a version note is written only when due: none yet, another version or form
   assert.ok(!('del' in r.records.get(storage.SETTINGS_ID).fields));
 });
 
-test('nothing in the app writes a version note, a repeat or a slot yet', () => {
+test('nothing in the app writes a version note or a repeat yet; a slot only with a picked colour', () => {
   const dir = new URL('../js/', import.meta.url);
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.js'))) {
     const src = readFileSync(new URL(f, dir), 'utf8');
     if (f !== 'storage.js') assert.ok(!src.includes('versionNoteOps'), `${f} calls versionNoteOps`);
   }
   const app = readFileSync(new URL('app.js', dir), 'utf8');
-  assert.ok(!/repeat\s*:/.test(app) && !/slot\s*:/.test(app), 'the app builds no repeat or slot values');
+  assert.ok(!/repeat\s*:/.test(app), 'the app builds no repeat values');
+  assert.deepEqual([...app.matchAll(/groupSlots:/g)].length, 1, 'one place writes a slot: the colour picker');
 });
 
 /* ------------------------------------------------------------------ Backup format 5 */

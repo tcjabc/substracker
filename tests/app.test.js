@@ -1343,7 +1343,7 @@ test('Wallet: keyboard: Tab reaches each card, arrow keys move between them', as
   await wSettled();
 });
 
-test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; picked colours stay', async () => {
+test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; a picked slot colour stays', async () => {
   const fill = (name) => wCard(name).style.getPropertyValue('--card').toLowerCase();
   for (const theme of ['light', 'dark']) {
     $('#set-theme').value = theme; $('#set-theme').dispatchEvent(new Event('change'));
@@ -1363,11 +1363,13 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; p
   // Pick a colour for Health (from the grid's colour dot): it stays exactly as picked in the wallet.
   viewBtn('grid').click();
   $('#subs-list .group-dot[data-group="Health"]').click();
-  $('#swatch-grid [data-swatch="g6"]').click();
-  await until(async () => (await storage.getSettings()).groupColors.Health === 'g6', 'saved as a pick');
+  eq($$('#swatch-grid [data-swatch]').map((b) => b.dataset.swatch), Array.from({ length: 15 }, (_, i) => `w${i + 1}`), 'the 15 slot colours, no old g ones');
+  $('#swatch-grid [data-swatch="w8"]').click();
+  await until(async () => (await storage.getSettings()).groupColors.Health === 'w8', 'saved as a pick');
+  eq((await storage.getSettings()).groupSlots, { Health: 7 }, 'with its slot');
   viewBtn('wallet').click();
   await wSettled();
-  eq(fill('Health'), cssToken('--group-6'), 'the picked swatch');
+  eq(fill('Health'), cssToken('--wallet-8'), 'the picked slot colour');
   eq(fill('Utilities'), cssToken('--wallet-2'), 'the others keep theirs');
   const fills = wCards().map((c) => c.style.getPropertyValue('--card'));
   assert(fills.every((f, i) => i === 0 || f !== fills[i - 1]), 'no two neighbours alike');
@@ -1380,7 +1382,8 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; p
     await until(() => blobs.length === 1, 'the backup file');
   } finally { URL.createObjectURL = realUrl; }
   const file = JSON.parse(await blobs[0].text());
-  eq(file.settings.groupColors, { Health: 'g6' }, 'only the picked swatch is in the backup');
+  eq(file.settings.groupColors, { Health: 'w8' }, 'only the picked colour is in the backup');
+  eq(file.settings.groupSlots, { Health: 7 }, 'with its slot');
   assert(Object.values((await storage.getSettings()).groupColors).some(isWalletKey), 'the automatic colours are kept on the device');
 });
 

@@ -627,7 +627,8 @@ test('the code the harness follows is still in js/ (update tests/helpers/mixed-s
     'const sub = mergeFormEdit(fromForm);',
     'await storage.save(sub);',
     'payload.items.sort(byName);',
-    "if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !isWalletKey(v)));",
+    'if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([k]) => state.colorPicks.has(k)));',
+    'if (slots) payload.settings.groupSlots = Object.fromEntries(Object.entries(slots).filter(([k]) => state.colorPicks.has(k)));',
     'f.cycle.value = sub.cycle;',
   ]) assert.ok(appSrc.includes(line), `js/app.js: ${line}`);
   const mod = await loadVersion('current');

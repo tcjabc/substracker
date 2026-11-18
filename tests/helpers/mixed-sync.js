@@ -386,7 +386,17 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
       }
       payload.items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
       const colours = payload.settings?.groupColors;
-      if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !mod.walletMath.isWalletKey(v)));
+      if (storage.exportBackupFrom) {
+        // The current app.js exportData: only the colours someone picked (the ones in the settings
+        // record), old g ones and slot ones alike, never this device's automatic picks.
+        const picked = new Set(Object.keys(storage.settingsFromRecord(s.records.get(SETTINGS_ID)).groupColors));
+        if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([k]) => picked.has(k)));
+        const slots = payload.settings?.groupSlots;
+        if (slots) payload.settings.groupSlots = Object.fromEntries(Object.entries(slots).filter(([k]) => picked.has(k)));
+      } else if (colours) {
+        // 1.19.0's exportData: every w key left out.
+        payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !mod.walletMath.isWalletKey(v)));
+      }
       return JSON.stringify(payload, null, 2);
     },
     /** storage.importAll(json, mode) with shared settings: throws ImportError for a bad file. Returns the summary. */

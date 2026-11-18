@@ -672,6 +672,12 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   border: 0; border-radius: var(--radius-full); background: var(--swatch);
 }
 .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+/* A colour another group already has: a small mark in the middle, in the surface colour. */
+.swatch { position: relative; }
+.swatch.is-used::after {
+  content: ''; position: absolute; inset: 0; margin: auto; width: var(--space-2); height: var(--space-2);
+  border-radius: var(--radius-full); background: var(--surface); box-shadow: 0 0 0 1px var(--text);
+}
 
 .subs-grid {
   display: grid; gap: var(--space-3);
