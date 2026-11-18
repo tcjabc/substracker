@@ -18,8 +18,8 @@ import en from './locales/en.js';
 /** The UI locales: tag → { name (in its own language), load }. English is bundled. */
 export const LOCALES = Object.freeze({
   en: Object.freeze({ name: 'English', load: null }),
-  // A new locale is one line here, its file in js/locales/ and its sw.js SHELL entry, e.g.
-  // 'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js') }),
+  // A new locale is one line here, its file in js/locales/ and its sw.js SHELL entry.
+  'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js') }),
 });
 export const FALLBACK = 'en';
 /** The pseudo-locale (dev only, from the address); its document lang is the standard pseudo tag. */

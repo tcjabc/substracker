@@ -143,7 +143,7 @@ export function createWallet(host, opts) {
       <div class="w-detail" inert>
         <div class="w-stats">
           <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidIn' : 'wallet.stat.dueIn', { when: monthName }))}</div><div class="w-stat-v">${esc(money(sum('monthly'), cur))}</div></div>
-          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidIn' : 'wallet.stat.dueIn', { when: y }))}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
+          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidInYear' : 'wallet.stat.dueInYear', { year: y }))}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
         </div>
         <ul class="w-items" aria-label="${esc(t('wallet.itemsLabel', { name: g.label }))}">${rowsHTML}</ul>
       </div>

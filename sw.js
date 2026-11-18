@@ -55,6 +55,7 @@ const SHELL = [
   // Locales: English is bundled with js/i18n.js; every other locale file is listed here too, so a
   // language picked on the device works offline (js/i18n.js loads it on first use).
   './js/locales/en.js',
+  './js/locales/zh-TW.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
