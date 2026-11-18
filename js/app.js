@@ -5,7 +5,7 @@ import { overlays, createBackHandler, setBackHandler, pressBack } from './overla
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
-import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom } from './wallet-math.js';
+import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
@@ -13,7 +13,8 @@ import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
-import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting } from './i18n.js';
+import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays } from './i18n.js';
+import { dueSoon, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -198,6 +199,7 @@ async function init() {
     },
   });
   bindEditTaps();
+  bindDueBanner();
   bindGroupColors();
   bindSortMenu();
   // For tests, like the wallet's host.wallet: the rolling totals, and reading the data again.
@@ -351,7 +353,8 @@ function setTab(tab, { focus = true } = {}) {
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') { if (was !== 'insights') roller.replay(); renderInsights(); }
   // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
-  if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); }
+  // The banner too: the day may have changed while another tab was showing.
+  if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); renderDueBanner(); }
   // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
   if (walletShown()) wallet?.relayout();
 }
@@ -568,6 +571,115 @@ const oneOffTag = () => `<span class="tag tag-once">${esc(t('money.oneOff'))}</s
 let wallet = null;
 let walletHost = null;
 
+/* Due-soon banner ------------------------------------------------------------ */
+/**
+ * A slim line under the Money strip with what comes due in the next N days (js/due-soon.js):
+ * "3 due in the next 7 days · NT$889 due · +1 in USD". Tapping it opens the list in a sheet (on
+ * the overlay stack, so Android Back closes it); a row opens the item's edit sheet. Not shown at
+ * all when nothing is due, when it's turned off in Settings, or for the rest of the day after its
+ * close button (a local date, per device). Plain text: its figures don't roll. Its settings are
+ * per-device preferences, never synced or exported.
+ */
+const dueSettings = () => ({
+  on: bannerOnFrom(storage.getPref('dueSoon')),
+  windowDays: windowFrom(storage.getPref('dueSoonDays')),
+  includeIncome: includeIncomeFrom(storage.getPref('dueSoonIncome')),
+});
+let dueNow = null; // what the banner shows now (dueSoon()'s result), or null when it's hidden
+
+/** "Today", "Tomorrow", "In 3 days" within the week, else the date; `inline` for a sentence. */
+const dueWhen = (r, { inline = false } = {}) => (r.days < 7 ? relativeDays(r.days, undefined, { capital: !inline }) : shortDate(r.date));
+
+function renderDueBanner() {
+  const banner = $('#due-banner');
+  const set = dueSettings();
+  const cur = state.settings.defaultCurrency;
+  const now = new Date();
+  const res = dueSoon(state.subs, now, { windowDays: set.windowDays, includeIncome: set.includeIncome, currency: cur });
+  const show = state.subs.length > 0 && set.on && res.count > 0 && !isDismissed(storage.getPref('dueSoonDismissed'), now);
+  dueNow = show ? res : null;
+  banner.hidden = !show;
+  if (!show) {
+    if (dialogOpen($('#due-dialog'))) closeDialog($('#due-dialog'));
+    return;
+  }
+  // Line 1: how many, and the default currency's total due (never cut short; the sentence gives way
+  // first). Line 2, quiet: income coming in, other currencies (not in any total), undated items.
+  const hasDue = res.rows.some((r) => r.currency === cur && !r.income);
+  const summary = t('dueSoon.summary', { count: res.count, days: res.windowDays });
+  const extra = [res.hasIncome ? t('dueSoon.income', { amount: money(res.incomeTotal, cur) }) : '', othersText(res.others)].filter(Boolean);
+  $('#due-text').textContent = summary;
+  $('#due-sum').textContent = hasDue ? money(res.total, cur) : '';
+  $('#due-toggle').setAttribute('aria-label', [summary, hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '', ...extra].filter(Boolean).join(' · '));
+  $('#due-extra').textContent = extra.join(' · ');
+  const undated = $('#due-undated');
+  undated.hidden = !res.undated.length;
+  if (res.undated.length) {
+    undated.textContent = t('dueSoon.undated', { count: res.undated.length });
+    undated.dataset.id = res.undated[0].id;
+  }
+  $('#due-notes').hidden = !extra.length && !res.undated.length;
+  $('#due-notes').classList.toggle('has-both', extra.length > 0 && res.undated.length > 0);
+  if (dialogOpen($('#due-dialog'))) fillDueList();
+}
+
+function fillDueList() {
+  const res = dueNow;
+  if (!res) return;
+  const cur = state.settings.defaultCurrency;
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  end.setDate(end.getDate() + res.windowDays);
+  $('#due-range').textContent = t('dueSoon.range', { date: shortDate(end) });
+  $('#due-list').innerHTML = res.rows.map((r) => {
+    const s = r.item;
+    const amount = money(r.amount, r.currency);
+    const label = t(r.income ? 'dueSoon.row.income' : 'dueSoon.row', { name: s.name, when: dueWhen(r, { inline: true }), amount });
+    const sub = [dueWhen(r), r.income ? t('group.income') : ''].filter(Boolean).map(esc).join(' · ');
+    const note = r.currency === cur ? '' : `<span class="cycle">${esc(t('wallet.notInTotals', { currency: cur }))}</span>`;
+    return `<li><button type="button" class="sub-row due-row${r.days === 0 ? ' due-today' : ''}" data-id="${esc(s.id)}" aria-label="${esc(label)}">
+      ${logoHTML(s, 'sm')}
+      <span class="sub-text"><span class="sub-name">${esc(s.name)}</span><span class="sub-plan">${sub}</span></span>
+      <span class="sub-row-price"><span class="amount">${esc(amount)}</span>${note}</span>
+    </button></li>`;
+  }).join('');
+}
+
+function bindDueBanner() {
+  const dlg = $('#due-dialog');
+  const toggle = $('#due-toggle');
+  toggle.addEventListener('click', () => {
+    if (!dueNow) return;
+    fillDueList();
+    openDialog(dlg);
+    toggle.setAttribute('aria-expanded', 'true');
+  });
+  dlg.addEventListener('close', () => {
+    toggle.setAttribute('aria-expanded', 'false');
+    // The edit sheet, opened from a row, may be open by now: it keeps the buttons hidden.
+    if (!$$('dialog.sheet').some(dialogOpen)) document.body.classList.remove('sheet-open');
+  });
+  $$('[data-due-close]', dlg).forEach((b) => b.addEventListener('click', () => closeDialog(dlg)));
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) { closeDialog(dlg); return; } // the backdrop
+    const row = e.target.closest('[data-id]');
+    const sub = row && state.subs.find((s) => s.id === row.dataset.id);
+    if (!sub) return;
+    closeDialog(dlg);
+    openForm(sub);
+  });
+  $('#due-undated').addEventListener('click', (e) => {
+    const sub = state.subs.find((s) => s.id === e.currentTarget.dataset.id);
+    if (sub) openForm(sub);
+  });
+  // Close: hidden for the rest of today on this device; back tomorrow, or when the window changes.
+  $('#due-close').addEventListener('click', () => {
+    storage.setPref('dueSoonDismissed', dismissKey());
+    renderSubs(); // the Wallet measures its space again, without the banner
+    $('.seg-btn[data-view][aria-pressed="true"]')?.focus();
+  });
+}
+
 /** Whether the Wallet is what the Money tab shows right now. */
 const walletShown = () => state.tab === 'subs' && state.view === 'wallet' && state.subs.length > 0;
 
@@ -631,6 +743,7 @@ function renderSubs({ reorder = false } = {}) {
   list.hidden = all.length === 0;
   $('#money-summary').hidden = all.length === 0;
   renderMoneySummary();
+  renderDueBanner(); // before the Wallet, which sizes itself from where it sits below the banner
   document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
   if (state.view === 'wallet') {
     if (all.length) renderWallet(list, { reorder }); else { wallet?.close(); list.textContent = ''; }

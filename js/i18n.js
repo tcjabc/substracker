@@ -277,13 +277,18 @@ export function applyI18n(root = document) {
 
 /**
  * "Today", "Tomorrow", "In 3 days", "Yesterday", "3 days ago" for a whole number of days from
- * today, in the formatting locale, starting with a capital where the language has them. Ready for
- * the upcoming-payments banner; nothing uses it yet.
+ * today, starting with a capital where the language has them ({ capital: false } for the middle
+ * of a sentence: "in 3 days"). These are words, so they're in the UI's language (not the
+ * formatting locale: a zh-CN phone in zh-TW still reads 3 天後, English on a Japanese phone "In 3
+ * days"); bracketed in the pseudo-locale. Used by the due-soon banner.
  */
-export function relativeDays(n, locale = formatLocale()) {
-  const s = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(Math.round(n), 'day');
-  return s.charAt(0).toLocaleUpperCase(locale) + s.slice(1);
+export function relativeDays(n, locale, { capital = true } = {}) {
+  const loc = locale ?? wordsLocale();
+  const s = new Intl.RelativeTimeFormat(loc, { numeric: 'auto' }).format(Math.round(n), 'day');
+  const out = capital ? s.charAt(0).toLocaleUpperCase(loc) + s.slice(1) : s;
+  return state.locale === PSEUDO && locale === undefined ? pseudo(out) : out;
 }
+const wordsLocale = () => (state.locale === PSEUDO ? FALLBACK : state.locale);
 
 /* Pseudo-locale --------------------------------------------------------------------------------- */
 

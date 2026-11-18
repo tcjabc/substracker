@@ -60,6 +60,19 @@
     <!-- Money -->
     <section class="tab-panel" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs">
       <section class="money-summary" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
+      <!-- Due soon: what comes due in the next days (js/due-soon.js); hidden when nothing is. -->
+      <section class="due-banner" id="due-banner" aria-label="Due soon" data-i18n-attr="aria-label:dueSoon.label" hidden>
+        <button type="button" class="due-toggle" id="due-toggle" aria-expanded="false" aria-haspopup="dialog" aria-controls="due-dialog">
+          <svg class="icon due-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <span class="due-text" id="due-text"></span>
+          <span class="due-sum" id="due-sum"></span>
+          <svg class="icon due-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <button type="button" class="icon-btn due-close" id="due-close" aria-label="Hide until tomorrow" title="Hide until tomorrow" data-i18n-attr="aria-label:dueSoon.dismiss; title:dueSoon.dismiss">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <p class="due-notes" id="due-notes" hidden><span id="due-extra"></span><button type="button" class="due-undated" id="due-undated" hidden></button></p>
+      </section>
       <div id="subs-list" class="money-groups"></div>
       <div class="empty-state" id="subs-empty" hidden>
         <div class="empty-mark" aria-hidden="true">
@@ -339,6 +352,21 @@
   </dialog>
 
   <!-- Sync: start a household, join one with the 12 recovery words, or manage it (js/sync-sheet.js) -->
+  <!-- Due soon: the banner's list. Tapping a row opens it in the edit sheet. -->
+  <dialog class="sheet" id="due-dialog" aria-labelledby="due-title">
+    <div class="sheet-head">
+      <h2 id="due-title" data-i18n="dueSoon.label">Due soon</h2>
+      <button type="button" class="icon-btn" data-due-close aria-label="Close" data-i18n-attr="aria-label:common.close">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body due-body">
+      <p class="sync-text" id="due-range"></p>
+      <ul class="subs-list due-list" id="due-list"></ul>
+      <p class="footnote" data-i18n="dueSoon.hint">Tap an item to edit it.</p>
+    </div>
+  </dialog>
+
   <dialog class="sheet" id="sync-dialog" aria-labelledby="sync-title">
     <form id="sync-form" method="dialog" novalidate>
       <div class="sheet-head">
