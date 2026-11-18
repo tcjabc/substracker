@@ -79,17 +79,19 @@ function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 /* --------------------------------------------------------------------------
    On-screen error reporter — an installed PWA has no console to look at.
    -------------------------------------------------------------------------- */
+// The error itself (the browser's or the code's message) stays as it is; only the words around it
+// are the app's. These are for reporting a bug, so they're short and plain.
 function reportError(prefix, err) {
-  const msg = (err && (err.message || String(err))) || 'Unknown error';
+  const msg = (err && (err.message || String(err))) || t('error.unknown');
   try {
-    toast(`${prefix}: ${msg}`, { label: 'Dismiss', sticky: true, run: () => {} });
+    toast(t('error.report', { prefix, message: msg }), { label: t('common.dismiss'), sticky: true, run: () => {} });
   } catch { /* toast markup missing — nothing more we can do */ }
 }
 window.addEventListener('error', (e) => {
   const where = e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '';
-  reportError('Error', { message: `${e.message || e.error?.message || 'Script error'}${where}` });
+  reportError(t('error.error'), { message: `${e.message || e.error?.message || t('error.script')}${where}` });
 });
-window.addEventListener('unhandledrejection', (e) => reportError('Unhandled', e.reason));
+window.addEventListener('unhandledrejection', (e) => reportError(t('error.unhandled'), e.reason));
 
 /* --------------------------------------------------------------------------
    Dialog helpers — fall back to a positioned [open] element where
@@ -213,8 +215,8 @@ async function init() {
     renderSubs();
   });
 
-  storage.setBlockedHandler(() => toast('Close other Peek Budget tabs or windows to finish updating.', {
-    label: 'Dismiss', sticky: true, run: () => {},
+  storage.setBlockedHandler(() => toast(t('toast.blocked'), {
+    label: t('common.dismiss'), sticky: true, run: () => {},
   }));
   let syncUnavailable = t('sync.unavailable.storage');
   try {
@@ -223,8 +225,8 @@ async function init() {
     const usingLegacy = (await storage.status()).usingLegacy;
     syncUnavailable = usingLegacy ? t('sync.unavailable.legacy') : '';
     if (usingLegacy) {
-      toast('Storage update could not be verified, so the previous copy of your data is in use.', {
-        label: 'Dismiss', sticky: true, run: () => {},
+      toast(t('toast.legacy'), {
+        label: t('common.dismiss'), sticky: true, run: () => {},
       });
     }
     state.subs = subs;
@@ -242,8 +244,8 @@ async function init() {
   } catch (err) {
     console.error(err);
     toast(isNative()
-      ? 'Could not open local storage. Data will not be saved on this device.'
-      : 'Could not open local storage. Data will not be saved in this browser mode.');
+      ? t('toast.noStorage.native')
+      : t('toast.noStorage.web'));
   }
 
   if (isNative()) {
@@ -258,7 +260,7 @@ async function init() {
   setTab(state.tab, { focus: false });
   render();
   registerSW();
-  $('#app-version').textContent = `Peek Budget ${APP_VERSION}`;
+  $('#app-version').textContent = t('settings.version', { app: t('app.name'), version: APP_VERSION });
   startSync(syncUnavailable).catch((err) => console.error(err));
 }
 
@@ -1519,7 +1521,7 @@ function bindSettings() {
     await storage.saveSettings({ defaultCurrency: e.target.value });
     state.insightsCurrency = null;
     render();
-    toast(`Default currency set to ${e.target.value}`);
+    toast(t('settings.currency.set', { currency: e.target.value }));
   });
 
   $('#set-theme').addEventListener('change', (e) => {
@@ -1632,11 +1634,11 @@ async function exportData() {
     if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !isWalletKey(v)));
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const delivered = await deliverFile(blob, `substracker-${todayStamp()}.json`);
-    if (delivered) toast(`Exported ${plural(payload.items.length, 'item')}`);
+    if (delivered) toast(t('settings.export.done', { items: t('common.items', { count: payload.items.length }) }));
     return delivered === true;
   } catch (err) {
     console.error(err);
-    toast('Export failed.');
+    toast(t('settings.export.failed'));
     return false;
   }
 }
@@ -1647,12 +1649,12 @@ async function exportCsv() {
     const items = await storage.getAll();
     const name = `substracker-${todayStamp()}.csv`;
     const blob = new Blob([itemsCsv(items)], { type: 'text/csv;charset=utf-8' });
-    const delivered = await deliverFile(blob, name, { dialogTitle: 'Save or send the CSV file' });
-    if (delivered) toast(`Saved ${name}`, null, { again: true });
+    const delivered = await deliverFile(blob, name, { dialogTitle: t('settings.csv.dialogTitle') });
+    if (delivered) toast(t('settings.csv.saved', { name }), null, { again: true });
     return delivered === true;
   } catch (err) {
     console.error(err);
-    toast('CSV export failed.');
+    toast(t('settings.csv.failed'));
     return false;
   }
 }
@@ -1671,18 +1673,18 @@ async function copyCsv() {
     const n = csvItems(items).length;
     if (await copyText(text, null)) {
       fallback.hidden = true;
-      toast(`Copied ${plural(n, 'item')}`, null, { again: true });
+      toast(t('settings.csv.copied', { items: t('common.items', { count: n }) }), null, { again: true });
       return true;
     }
     box.value = text;
     fallback.hidden = false;
     box.focus();
     box.select();
-    toast("Couldn't copy: the CSV is selected below", null, { again: true });
+    toast(t('settings.csv.copyBlocked'), null, { again: true });
     return false;
   } catch (err) {
     console.error(err);
-    toast('Copy failed.');
+    toast(t('settings.csv.copyFailed'));
     return false;
   }
 }
@@ -1695,7 +1697,6 @@ async function syncIsSetUp() {
   } catch { return false; } // no sync on a fallback store
 }
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 // A file that can't be imported gets a dialog naming the problem; existing data is never touched.
@@ -1773,8 +1774,8 @@ function registerSW() {
   // through the app store, so a worker would only risk serving a stale cached copy.
   if (isNative() || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker.register('./sw.js').then((reg) => {
-    const offerUpdate = (worker) => toast('A new version is ready.', {
-      label: 'Reload', sticky: true,
+    const offerUpdate = (worker) => toast(t('toast.update'), {
+      label: t('toast.update.reload'), sticky: true,
       run: () => worker.postMessage({ type: 'SKIP_WAITING' }),
     });
     if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);

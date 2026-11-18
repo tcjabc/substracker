@@ -3,13 +3,14 @@
 // a normal browser download.
 
 import { plugin } from './platform.js';
+import { t } from './i18n.js';
 
 /**
  * Hand `blob` (text, e.g. a JSON backup or a CSV file) to the person as a file called `filename`.
  * `dialogTitle` is the native share sheet's title. Resolves to true when it was delivered, false
  * when the person closed the share sheet.
  */
-export async function deliverFile(blob, filename, { dialogTitle = 'Save or send the backup' } = {}) {
+export async function deliverFile(blob, filename, { dialogTitle = t('settings.export.dialogTitle') } = {}) {
   const fs = plugin('Filesystem');
   const share = plugin('Share');
   if (fs && share) return shareNative(fs, share, blob, filename, dialogTitle);
