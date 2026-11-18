@@ -209,6 +209,9 @@ test('readout wording helpers: delta vs the average, names, the above-average ma
   const long = listNames(['YouTube Premium', 'Amazon Prime', 'Loot Studios', 'NYT Games']);
   assert.ok(long.length <= 34 && long.endsWith('…') && !/[,\s]…$/.test(long), long);
   assert.equal(listNames(['Energy', 'Gym', 'Music', 'Phone', 'Rent', 'Video']), 'Energy, Gym, Music, Phone, Rent…');
+  // zh-TW joins with 、 (its common.listSep) and never ends on one before the "…".
+  assert.equal(listNames(['房租', '電信'], undefined, '、'), '房租、電信');
+  assert.equal(listNames(['房租', '電信', '保險', '串流'], 6, '、'), '房租、電信…');
   assert.equal(aboveAverage(1101, 1000), true);
   assert.equal(aboveAverage(1100, 1000), false);
   assert.equal(aboveAverage(5, 0), false);

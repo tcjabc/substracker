@@ -13,49 +13,66 @@
     .t-pass { color: var(--positive); }
     .t-fail { color: var(--danger); }
     .t-detail { color: var(--text-muted); white-space: pre-wrap; }
-    /* Phone width, so the frames lay out as on a phone. */
-    .t-frame { width: 412px; height: 900px; border: 0; display: block; }
-    /* The pseudo-locale runs at 360px, a small phone, to find text that doesn't fit. */
-    .t-frame-pseudo { width: 360px; height: 780px; }
+    /* Phone width, so the frames lay out as on a phone (each frame's size is set from MODES). */
+    .t-frame { border: 0; display: block; }
   </style>
 </head>
 <body>
   <main class="t-wrap">
     <h1>Language tests</h1>
-    <p class="t-detail">Runs the app in a frame with a fixed clock and throwaway <code>substracker-test-i18n-*</code> databases: English against the 1.15.0 recording, then the pseudo-locale (<code>?lang=xx</code>). The app's own data is not touched.</p>
+    <p class="t-detail">Runs the app in a frame with a fixed clock and throwaway <code>substracker-test-i18n-*</code> databases: English against the 1.15.0 recording, the pseudo-locale (<code>?lang=xx</code>), then Traditional Chinese (zh-TW) at 360, 393 and 320px. The app's own data is not touched.</p>
     <p class="t-summary" id="summary">Running…</p>
     <ul class="t-list" id="results"></ul>
     <div id="frames"></div>
   </main>
   <script type="module">
     // Each mode runs in its own frame, one after the other: the app starts once per page.
-    const MODES = [['en', 'i18n-frame.html?mode=en'], ['pseudo', 'i18n-frame.html?mode=pseudo&lang=xx']];
-    const only = new URLSearchParams(location.search).get('only');
+    // English at 412px against the recording; the pseudo-locale at 360px (a small phone); zh-TW at
+    // 360px, 393px (a common Android width) and 320px (the narrowest phones still in use).
+    // ?only=<name or mode> runs just those frames; ?w=<px> sets every frame's width (for measuring
+    // English at other widths); ?geom=1 also records where every element is (window.testGeometry).
+    const MODES = [
+      { name: 'en', mode: 'en', w: 412, h: 900 },
+      { name: 'pseudo', mode: 'pseudo', w: 360, h: 780, extra: '&lang=xx' },
+      { name: 'zh-360', mode: 'zh', w: 360, h: 780 },
+      { name: 'zh-393', mode: 'zh', w: 393, h: 852 },
+      { name: 'zh-320', mode: 'zh', w: 320, h: 700 },
+    ];
+    const q = new URLSearchParams(location.search);
+    const only = q.get('only');
+    const width = Number(q.get('w')) || 0;
+    const geom = q.get('geom') === '1';
     const list = document.getElementById('results');
     const failures = [];
     let total = 0;
     let passed = 0;
     let dump = '';
-    for (const [mode, src] of MODES) {
-      if (only && only !== mode) continue;
+    const geometry = {};
+    for (const { name, mode, w, h, extra = '' } of MODES) {
+      if (only && only !== name && only !== mode) continue;
+      const fw = width || w;
       const frame = document.createElement('iframe');
       frame.className = `t-frame t-frame-${mode}`;
-      frame.src = src;
-      frame.title = `Peek Budget in ${mode}`;
+      frame.style.width = `${fw}px`;
+      frame.style.height = `${h}px`;
+      frame.src = `i18n-frame.html?mode=${mode}&w=${fw}${extra}${geom ? '&geom=1' : ''}${name === 'zh-360' ? '&reload=1' : ''}`;
+      frame.title = `Peek Budget in ${name}`;
       document.getElementById('frames').append(frame);
       let res = null;
       for (let t = 0; t < 110000 && !res; t += 200) {
         await new Promise((r) => setTimeout(r, 200));
         res = frame.contentWindow?.frameResults ?? null;
       }
-      res ??= { total: 1, passed: 0, failures: [{ name: `${mode}: frame`, error: 'timed out' }] };
+      res ??= { total: 1, passed: 0, failures: [{ name: `${name}: frame`, error: 'timed out' }] };
       total += res.total;
       passed += res.passed;
-      failures.push(...res.failures);
+      failures.push(...res.failures.map((f) => ({ ...f, name: `${name}: ${f.name.replace(/^\w+: /, '')}` })));
       if (mode === 'en' && res.snapshot) dump = JSON.stringify(res.snapshot, null, 2);
+      if (res.geometry) geometry[name] = res.geometry;
+      if (res.snapshot && mode !== 'en') window[`testDump_${name.replace('-', '_')}`] = res.snapshot;
       const li = document.createElement('li');
       li.className = res.failures.length ? 't-fail' : 't-pass';
-      li.textContent = `${res.failures.length ? '✗' : '✓'} ${mode}: ${res.passed} of ${res.total} passed`;
+      li.textContent = `${res.failures.length ? '✗' : '✓'} ${name} (${fw}px): ${res.passed} of ${res.total} passed`;
       for (const f of res.failures) {
         const d = document.createElement('div');
         d.className = 't-detail';
@@ -68,6 +85,7 @@
     document.getElementById('summary').textContent = failures.length ? `${failures.length} of ${total} failed` : `All ${total} passed`;
     document.getElementById('summary').className = `t-summary ${failures.length ? 't-fail' : 't-pass'}`;
     window.testDump = dump;
+    window.testGeometry = geometry;
     window.testResults = { total, passed, failures };
   </script>
 </body>

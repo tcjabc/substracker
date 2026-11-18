@@ -8,6 +8,14 @@
 //               setting (per device, never exported or synced) and the document's lang.
 // ?mode=pseudo  (with ?lang=xx) walks the same screens in the pseudo-locale and reports any text or
 //               label that isn't wrapped in [ ], i.e. text that would stay English in a translation.
+// ?mode=zh      picks Traditional Chinese (zh-TW) in Settings → Language, with Chinese item and
+//               category names, and walks the same screens: no raw keys, no English left beyond the
+//               explained list (ZH_LATIN), nothing running out of its box, lang="zh-TW", the
+//               picker per device, and the rolling totals ending on the formatted text. With
+//               &reload=1 it also changes the language back to English through the picker and
+//               checks the app reloads in English.
+// &w=<px> is the frame's width (the overflow checks say so); &geom=1 records every element's box
+// per screen in frameResults.geometry, to compare English layouts before and after a CSS change.
 //
 // To record the snapshot again (only when English wording is meant to change): run tests/i18n.html,
 // then save window.testDump over tests/fixtures/i18n-en-snapshot.json.
@@ -21,9 +29,15 @@ import { wordProblems } from '../js/words.js';
 import { ScanError, notRecoveryMessage } from '../js/qr-scan.js';
 import { keyNeededMessage } from '../js/sync.js';
 import * as i18n from '../js/i18n.js';
+import en from '../js/locales/en.js';
+import { WORDLIST } from '../js/wordlist.js';
 
 const params = new URLSearchParams(location.search);
-const MODE = params.get('mode') === 'pseudo' ? 'pseudo' : 'en';
+const MODE = ['pseudo', 'zh'].includes(params.get('mode')) ? params.get('mode') : 'en';
+const WIDTH = Number(params.get('w')) || null;
+const GEOM = params.get('geom') === '1';
+const RELOAD = MODE === 'zh' && params.get('reload') === '1';
+const RELOAD_KEY = 'substracker-test-i18n-reload';
 const results = [];
 const dbName = `substracker-test-i18n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const PREFS = ['tab', 'catView', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion', 'lang'];
@@ -50,7 +64,7 @@ const base = {
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 };
 // Fixed dates around "today", 18 November 2026. No domains, so no logo requests.
-const SEED = [
+const SEED_EN = [
   { ...base, type: 'income', id: 't-salary', name: 'Salary', emoji: '💼', price: 40000, cycle: 'monthly', nextRenewal: '2026-11-25' },
   { ...base, type: 'income', id: 't-bonus', name: 'Bonus', price: 12000, cycle: 'annual', nextRenewal: '2027-01-10' },
   { ...base, id: 't-rent', name: 'Rent', price: 30000, cycle: 'monthly', nextRenewal: '2026-12-01', category: 'House' },
@@ -62,6 +76,16 @@ const SEED = [
   { ...base, id: 't-misc', name: 'Stamps', price: 60, cycle: 'once', date: '2027-02-02' },
   { ...base, currency: 'USD', id: 't-tool', name: 'Tool', price: 10, cycle: 'monthly', nextRenewal: '2026-11-22', category: 'Utilities' },
 ];
+// zh-TW: the same items as someone in Taiwan would name them, a long name and category included,
+// so Chinese text wraps (no spaces to break at) in the person's data as well as the app's.
+const ZH_NAMES = {
+  't-salary': ['薪水'], 't-bonus': ['年終獎金'], 't-rent': ['房租', '居家'], 't-phone': ['中華電信 5G 行動上網', '水電瓦斯與網路', '吃到飽'],
+  't-cloud': ['雲端儲存空間', '水電瓦斯與網路'], 't-stream': ['串流影音', '娛樂'], 't-concert': ['演唱會門票', '娛樂'],
+  't-gym': ['健身房', '健康'], 't-misc': ['郵票'], 't-tool': ['開發工具', '水電瓦斯與網路'],
+};
+const SEED = MODE === 'zh'
+  ? SEED_EN.map((s) => { const [name, category = s.category, plan = s.plan] = ZH_NAMES[s.id]; return { ...s, name, category, plan }; })
+  : SEED_EN;
 // What the person typed: never translated, so the pseudo-locale check allows it.
 const USER_TEXT = [...new Set(SEED.flatMap((s) => [s.name, s.plan, s.category]).filter(Boolean))];
 
@@ -97,10 +121,30 @@ function grab(root, { skip = [] } = {}) {
 }
 const snap = {};
 const overflow = [];
+const geometry = {};
 const put = (key, lines) => {
   snap[key] = Array.isArray(lines) ? lines.map(norm) : [norm(lines)];
-  if (MODE === 'pseudo') overflow.push(...overflowAt(key));
+  if (MODE !== 'en') overflow.push(...overflowAt(key));
+  if (GEOM) geometry[key] = boxesAt();
 };
+
+/**
+ * Where every shown element is (rounded to half a pixel), to compare a layout before and after.
+ * Anything inside an element that's animating (a sheet sliding in, a menu growing) is left out:
+ * where it is depends on the moment, not the layout.
+ */
+function boxesAt() {
+  const out = [];
+  const moving = document.getAnimations().filter((a) => a.playState === 'running').map((a) => a.effect?.target).filter(Boolean);
+  for (const el of document.querySelectorAll('#app-host *')) {
+    if (el.closest('[hidden]') || !el.getClientRects().length) continue;
+    if (moving.some((m) => m === el || m.contains?.(el))) continue;
+    const r = el.getBoundingClientRect();
+    const h = (v) => Math.round(v * 2) / 2;
+    out.push(`${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${el.classList[0] ? `.${el.classList[0]}` : ''} ${h(r.left)},${h(r.top + scrollY)} ${h(r.width)}x${h(r.height)}`);
+  }
+  return out;
+}
 
 /**
  * Where text doesn't fit at this moment (pseudo-locale, phone width): the page wider than the
@@ -263,8 +307,9 @@ async function walk() {
   $('#tab-settings').click();
   await tick(20);
   put('doc.settings', [document.title, $('#page-title').textContent]);
-  // The language picker is hidden until a second locale exists; hidden, it isn't part of the screen.
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', '#lang-row[hidden]'] }));
+  // The language picker is new since the 1.15.0 recording, so English leaves it out of the screen
+  // (the language test checks it); the other languages walk it with the rest.
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row'] : [])] }));
 
   // Sync sheet: every step's text, then a Join with wrong words.
   $('#btn-sync').click();
@@ -397,21 +442,34 @@ if (MODE === 'en') {
     eq(document.documentElement.lang, 'en', 'document lang');
     eq(i18n.getLocale(), 'en', 'active locale');
     eq(i18n.getLangSetting(), 'auto', 'a fresh device follows the device');
-    assert($('#lang-row').hidden, 'the picker is hidden while English is the only language');
-    eq($$('#set-lang option').map((o) => o.value), ['auto', 'en'], 'Same as device, then each locale');
-    eq($('#set-lang').value, 'auto', 'showing the setting');
-    const opsBefore = await storage.pendingCount();
-    eq(i18n.saveLangSetting('en'), 'en', 'saved');
-    eq(localStorage.getItem('substracker.lang'), 'en', 'kept on this device');
-    const backup = JSON.stringify(await storage.exportAll());
-    assert(!/"lang"|substracker\.lang|"language"/.test(backup), 'not in a backup');
-    const settings = await storage.getSettings();
-    assert(!('lang' in settings) && !('language' in settings), 'not a shared setting');
-    eq(await storage.pendingCount(), opsBefore, 'no op for sync');
-    assert(!/lang/.test(JSON.stringify(await storage.pendingOps())), 'nothing about it queued');
+    await languageIsPerDevice('en');
     eq(i18n.saveLangSetting('auto'), 'auto', 'back to the device');
     eq(localStorage.getItem('substracker.lang'), null, 'auto is not stored');
   });
+}
+
+/**
+ * Settings → Language: shown, Same as device then each language in its own name (never
+ * translated), showing the current setting; the choice kept on this device only, never in a
+ * backup, the shared settings or the sync outbox.
+ */
+async function languageIsPerDevice(pick) {
+  const row = $('#lang-row');
+  assert(!row.hidden && row.getClientRects().length, 'Settings → Language is shown');
+  eq(norm($('.setting-label', row).textContent), i18n.t('settings.language'), 'its label');
+  eq($$('#set-lang option').map((o) => o.value), ['auto', 'en', 'zh-TW'], 'Same as device, then each locale');
+  eq($$('#set-lang option').map((o) => o.textContent), [i18n.t('settings.language.auto'), 'English', '繁體中文'], 'each language named in its own language');
+  eq($$('#set-lang option').slice(1).map((o) => o.lang), ['en', 'zh-TW'], 'and marked with it, for the right glyphs');
+  eq($('#set-lang').value, i18n.getLangSetting(), 'showing the setting');
+  const opsBefore = await storage.pendingCount();
+  eq(i18n.saveLangSetting(pick), pick, 'saved');
+  eq(localStorage.getItem('substracker.lang'), pick, 'kept on this device');
+  const backup = JSON.stringify(await storage.exportAll());
+  assert(!/"lang"|substracker\.lang|"language"|zh-TW/.test(backup), 'not in a backup');
+  const settings = await storage.getSettings();
+  assert(!('lang' in settings) && !('language' in settings), 'not a shared setting');
+  eq(await storage.pendingCount(), opsBefore, 'no op for sync');
+  assert(!/lang|zh-TW/.test(JSON.stringify(await storage.pendingOps())), 'nothing about it queued');
 }
 
 /* ------------------------------------------------------------------ pseudo-locale */
@@ -464,6 +522,7 @@ if (MODE === 'pseudo') {
     months.sort((a, b) => b.length - a.length);
     const allowed = [...USER_TEXT, ...AI_TEXT, ...util.CURRENCIES, 'XYZ', 'Boom', 'Late', // the walk's own inputs
       '{"version": 1, "rows": [...]}', // the reply field's placeholder is JSON for the AI
+      ...Object.values(i18n.LOCALES).map((l) => l.name), // Settings → Language names each language in its own
     ].sort((a, b) => b.length - a.length);
     const found = [];
     for (const [key, lines] of Object.entries(snap)) {
@@ -482,9 +541,147 @@ if (MODE === 'pseudo') {
   });
 }
 
+/* ------------------------------------------------------------------ zh-TW */
+
+// Latin-script words that stay as they are in zh-TW, on purpose: names, codes and the JSON the
+// import messages quote for the AI (the dictionary's own rule, docs/glossary-zh-TW.md).
+const ZH_LATIN = new Set([
+  'Peek', 'Budget', // the app's name
+  'Android', 'Chrome', 'iPhone', 'iPad', 'Safari', 'IndexedDB', 'Google', 'favicon', 'Play', // products and the web storage's name
+  'CSV', 'JSON', 'QR', 'AI', 'PDF', 'App', 'Enter', 'Esc', 'flat', // formats, keys and the ?flat=1 switch
+  'English', // Settings → Language names each language in its own
+  'Netflix', 'example', 'com', // the form's examples
+  'name', 'amount', 'currency', 'cycle', 'nextDate', 'category', 'type', 'id', 'YYYY', 'MM', 'DD', // the AI's JSON names (ai.row.*)
+]);
+const KEYS = new Set(Object.keys(en).flatMap((k) => [k, k.replace(/\.(zero|one|two|few|many|other)$/, '')]));
+
+/** A recorded line as plain text: the wording functions' dialogs are recorded as JSON. */
+function plainLine(line) {
+  const s = String(line).replace(/^[a-z-]+=/, '');
+  if (!/^[{[]/.test(s)) return s;
+  try {
+    const out = [];
+    JSON.parse(s, (k, v) => { if (typeof v === 'string' && k !== 'kind') out.push(v); return v; });
+    return out.join(' | ');
+  } catch { return s; }
+}
+/** Dictionary keys that reached the screen as they are. */
+const rawKeys = (line) => [...String(line).matchAll(/[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+/g)].map((m) => m[0]).filter((k) => KEYS.has(k));
+/**
+ * Latin-script words left in a zh-TW line once the person's data, the walk's inputs, money and
+ * numbers, the straight-quoted JSON names and values, the recovery words and ZH_LATIN are out.
+ */
+function englishLeft(line, allowed) {
+  let s = plainLine(line);
+  for (const a of allowed) s = s.split(a).join(' ');
+  s = s.replace(/"[^"]*"/g, ' ');
+  s = s.replace(/(?:NT|US|HK|A|C|NZ|S)?\$|[€£¥₩฿₫₹₱]|\bRM\b|\bRp\b|\bCHF\b/g, ' ');
+  return (s.match(/[A-Za-z]{2,}/g) || []).filter((w) => !ZH_LATIN.has(w) && !WORDLIST.includes(w.toLowerCase()));
+}
+
+if (MODE === 'zh') {
+  test('zh-TW is on: lang="zh-TW", its words, and its formats', async () => {
+    eq(i18n.getLocale(), 'zh-TW', 'active locale');
+    eq(document.documentElement.lang, 'zh-TW', 'document lang, so Traditional glyphs are used');
+    eq(snap.doc, ['Peek Budget', 'lang=zh-TW'], 'the Money tab: document title (the app\'s name, as in English) and lang');
+    eq(snap['doc.settings'], ['設定 · Peek Budget', '設定'], 'Settings: document and page title');
+    const device = new Intl.DateTimeFormat().resolvedOptions().locale;
+    eq(i18n.formatLocale(), /^zh\b/.test(device) ? undefined : 'zh-TW', `formatting locale on a ${device} browser`);
+    eq(util.money(30000, 'TWD'), /^zh\b/.test(device) ? util.money(30000, 'TWD', device) : '$30,000', 'Taiwan dollars');
+    eq(getComputedStyle(document.body).fontFamily.split(',')[0].trim(), 'system-ui', 'the system UI font first');
+    assert(/JhengHei|PingFang TC|Noto Sans (CJK )?TC/.test(getComputedStyle(document.body).fontFamily), 'a Traditional Chinese UI font in the stack');
+  });
+
+  test('no dictionary key reaches the screen, and no English is left beyond ZH_LATIN', async () => {
+    const allowed = [...new Set([...SEED.flatMap((s) => [s.name, s.plan, s.category]), ...AI_TEXT, ...util.CURRENCIES, 'XYZ', 'Boom', 'Late',
+      '{"version": 1, "rows": [...]}', 'abilty', // the walk's mistyped recovery word
+      'Entertainment', 'Utilities', // the AI reply's own categories (the person's data once imported)
+    ])].filter(Boolean).sort((a, b) => b.length - a.length);
+    const keys = [];
+    const left = [];
+    for (const [key, lines] of Object.entries(snap)) {
+      for (const line of lines) {
+        if (key === 'doc' && line.startsWith('lang=')) continue;
+        const k = rawKeys(line);
+        if (k.length) keys.push(`${key}: ${k.join(' ')}`);
+        const w = englishLeft(line, allowed);
+        if (w.length) left.push(`${key}: ${w.join(' ')}  ←  ${plainLine(line).slice(0, 160)}`);
+      }
+    }
+    eq(keys, [], 'raw keys');
+    eq(left, [], 'English that should be Chinese');
+  });
+
+  test(`every recorded screen fits a ${WIDTH}px phone in zh-TW`, async () => {
+    eq(innerWidth, WIDTH, 'the frame is the width asked for');
+    eq([...new Set(overflow)], [], 'text that runs out of its box, or a sheet that scrolls sideways');
+  });
+
+  test('Settings → Language: shown, per device, never in a backup, the settings or the sync outbox', async () => {
+    eq(i18n.getLangSetting(), 'zh-TW', 'picked here');
+    eq($('#set-lang').value, 'zh-TW', 'showing it');
+    eq($$('#set-lang option')[0].textContent, '與裝置相同', 'Same as device, in Chinese');
+    await languageIsPerDevice('zh-TW');
+  });
+
+  test('the rolling totals end on the formatted text, in place, with no glyph cut off', async () => {
+    // Reduce motion off for this one check, then the Money tab to the front: the strip rolls.
+    $('#tab-settings').click();
+    await tick(20);
+    $('#set-motion').click();
+    await tick(20);
+    $('#tab-subs').click();
+    await until(() => $('#money-summary .odo-roll'), 'the strip rolling');
+    const cur = 'TWD'; // the seeded default currency
+    const rolls = $$('#money-summary [data-roll]').filter((el) => $('.odo-roll', el));
+    assert(rolls.length, 'figures rolling');
+    for (const el of rolls) {
+      const txt = $('.odo-txt', el);
+      const end = [...$('.odo-roll', el).children].map((c) => {
+        if (c.classList.contains('odo-l')) return c.dataset.t;
+        const s = $('.odo-s', c);
+        const cells = s.dataset.s.split('\n');
+        const pct = Number(/translateY\((-?[\d.]+)%\)/.exec(s.style.transform)?.[1] ?? 0);
+        return cells[Math.round((-pct * cells.length) / 100)];
+      }).join('');
+      eq(end, txt.textContent, `${el.dataset.roll}: the roll ends on the text`);
+      eq(txt.textContent, util.money(Number(el.dataset.value), el.dataset.cur || cur), `${el.dataset.roll}: the formatter's text`);
+      const a = $('.odo-roll', el).getBoundingClientRect(), b = txt.getBoundingClientRect();
+      assert(Math.abs(a.width - b.width) <= 1, `${el.dataset.roll}: the digits take the text's width (${a.width} vs ${b.width})`);
+      assert(el.scrollHeight <= el.clientHeight + 1, `${el.dataset.roll}: no digit cut off (${el.scrollHeight} for ${el.clientHeight})`);
+    }
+    $('#tab-settings').click();
+    await tick(20);
+    $('#set-motion').click();
+    $('#tab-subs').click();
+    await tick(20);
+  });
+}
+
+/** After the reload that changing the language causes: the app came back in English. */
+async function afterReload(saved) {
+  const out = { ...saved.result };
+  const check = (name, fn) => { out.total++; try { fn(); out.passed++; } catch (err) { out.failures.push({ name: `zh: ${name}`, error: err.message }); } };
+  check('changing the language reloads the app in the new one', () => {
+    eq(localStorage.getItem('substracker.lang'), 'en', 'the new choice, on this device');
+    eq(i18n.getLocale(), 'en', 'active locale after the reload');
+    eq(document.documentElement.lang, 'en', 'document lang');
+    eq($('#page-title').textContent, 'Money', 'drawn in English');
+    eq($('#set-lang').value, 'en', 'the picker shows it');
+    eq(saved.reloads, 1, 'one reload');
+  });
+  return out;
+}
+
 /* ------------------------------------------------------------------ run */
 
 async function run() {
+  // Back from the reload that the language change caused (?mode=zh&reload=1): check, then report.
+  let reloaded = null;
+  try { reloaded = JSON.parse(sessionStorage.getItem(RELOAD_KEY) ?? 'null'); } catch { /* none */ }
+  sessionStorage.removeItem(RELOAD_KEY);
+  if (reloaded) reloaded.reloads = (reloaded.reloads ?? 0) + 1;
+
   storage.useDatabase(dbName);
   for (const item of SEED) await storage.save(item);
   await storage.saveLocalDefaults({ defaultCurrency: 'TWD' });
@@ -495,7 +692,9 @@ async function run() {
   storage.setPref('yearRange', 'roll');
   storage.setPref('reduceMotion', 'on'); // no animations: every figure is plain text at once
   storage.setPref('theme', 'light');
-  for (const p of ['catView', 'yearStack', 'yearKey', 'groupSort', 'lang']) localStorage.removeItem(`substracker.${p}`);
+  for (const p of ['catView', 'yearStack', 'yearKey', 'groupSort', ...(reloaded ? [] : ['lang'])]) localStorage.removeItem(`substracker.${p}`);
+  // zh-TW is picked in Settings → Language (what the app reads at start-up), on a browser in any language.
+  if (MODE === 'zh' && !reloaded) localStorage.setItem('substracker.lang', 'zh-TW');
 
   const html = await (await fetch('../index.html', { cache: 'no-store' })).text();
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -503,6 +702,14 @@ async function run() {
   $('#app-host').append(...doc.body.childNodes);
   await import('../js/app.js');
   await until(() => $('#wallet .w-band'), 'app drawn');
+
+  if (reloaded) {
+    const res = await afterReload(reloaded);
+    restorePrefs(reloaded.savedPrefs);
+    window.frameResults = res;
+    addEventListener('pagehide', () => indexedDB.deleteDatabase(dbName));
+    return;
+  }
 
   let walkError = null;
   try { await walk(); } catch (err) { walkError = err; }
@@ -513,14 +720,33 @@ async function run() {
   for (const { name, fn } of all) {
     try { await fn(); passed++; } catch (err) { failures.push({ name: `${MODE}: ${name}`, error: err.message }); }
   }
-  for (const [p, v] of Object.entries(savedPrefs)) {
-    if (v === null) localStorage.removeItem(`substracker.${p}`); else storage.setPref(p, v);
-  }
-  window.frameResults = {
+  const result = {
     total: all.length, passed, failures,
-    snapshot: { locale: navigator.language, recordedFrom: 'Peek Budget 1.15.0 (7782895)', screens: snap },
+    snapshot: MODE === 'en' ? { locale: navigator.language, recordedFrom: 'Peek Budget 1.15.0 (7782895)', screens: snap } : { locale: i18n.getLocale(), screens: snap },
+    geometry: GEOM ? geometry : undefined,
   };
   addEventListener('pagehide', () => indexedDB.deleteDatabase(dbName));
+  if (RELOAD && !walkError) {
+    // Change the language back to English through the picker: the app saves it and reloads.
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ result, savedPrefs }));
+    $('#tab-settings').click();
+    await tick(20);
+    const select = $('#set-lang');
+    select.value = 'en';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick(3000); // the reload replaces this page; if it doesn't come, say so
+    sessionStorage.removeItem(RELOAD_KEY);
+    result.total++;
+    result.failures.push({ name: 'zh: changing the language reloads the app in the new one', error: 'no reload within 3 s' });
+  }
+  restorePrefs(savedPrefs);
+  window.frameResults = result;
+}
+
+function restorePrefs(prefs) {
+  for (const [p, v] of Object.entries(prefs)) {
+    if (v === null) localStorage.removeItem(`substracker.${p}`); else storage.setPref(p, v);
+  }
 }
 
 (async () => {
