@@ -7,7 +7,8 @@ import qrcode from './qrcode.js';
 import { generateKey } from './crypto.js';
 import { keyToWords, parseRecovery, wordProblems, WordsError } from './words.js';
 import * as pairing from './pairing.js';
-import { scanSupport, scanNative, createWebScanner, recoveryFromQr, NOT_RECOVERY_CODE, ScanError } from './qr-scan.js';
+import { scanSupport, scanNative, createWebScanner, recoveryFromQr, notRecoveryMessage, ScanError, SCAN_MESSAGES } from './qr-scan.js';
+import { t, formatLocale } from './i18n.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -25,8 +26,8 @@ export function qrSvg(text) {
 }
 
 function when(ms) {
-  if (!ms) return 'Never';
-  return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  if (!ms) return t('sync.never');
+  return new Date(ms).toLocaleString(formatLocale(), { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 /**
@@ -52,7 +53,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   let joinTried = false;
 
   if (!engine) {
-    summary.textContent = unavailable || 'Sync is not available on this device.';
+    summary.textContent = unavailable || t('sync.unavailable');
     openBtn.disabled = true;
     return { refresh() {} };
   }
@@ -63,7 +64,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
 
   const renderSummary = () => {
     summary.textContent = pairing.summaryText(config, status);
-    openBtn.textContent = config?.paired && !config.keyUnavailable ? 'Manage' : 'Set up';
+    openBtn.textContent = config?.paired && !config.keyUnavailable ? t('sync.button.manage') : t('sync.button.setup');
     $('#sync-needs-words').hidden = !(config?.paired && config.keyUnavailable);
   };
 
@@ -112,11 +113,11 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     const words = await recoveryFromQr(text);
     // Left the Join step (Back, or the sheet closed) while the scanner was getting ready.
     if (!dlg.open || view !== 'join') return;
-    if (!words) { scanMessage(NOT_RECOVERY_CODE, true); return; } // nothing is filled in
+    if (!words) { scanMessage(notRecoveryMessage(), true); return; } // nothing is filled in
     joinInput.value = words;
     joinTried = true;
     setProblems(wordProblems(words).map((p) => p.message)); // the same checks as typing
-    scanMessage('Scanned. Check the words, then tap Join.');
+    scanMessage(t('sync.scan.done'));
     $('#sync-join').focus();
   }
   scanBtn.addEventListener('click', async () => {
@@ -138,7 +139,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     } catch (err) {
       stopScan();
       if (err instanceof ScanError && err.code === 'cancelled') { scanMessage(''); return; }
-      scanMessage(err instanceof ScanError ? err.message : "The scan didn't work. Try again, or type the words instead.", true);
+      scanMessage(err instanceof ScanError ? err.message : SCAN_MESSAGES.failed, true);
     }
   });
   $('#sync-scan-stop').addEventListener('click', stopScan);
@@ -169,9 +170,9 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     $('[data-copy-words]', slot).addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(words.join(' '));
-        ui.toast('Copied the 12 words. Paste them somewhere safe.');
+        ui.toast(t('sync.words.copied'));
       } catch {
-        ui.toast("Couldn't copy. Write the words down instead.");
+        ui.toast(t('sync.words.copyFailed'));
       }
     });
     slot.hidden = false;
@@ -210,7 +211,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
 
   const close = () => { if (!busy) ui.closeDialog(dlg); };
 
-  openBtn.addEventListener('click', () => open().catch((err) => { console.error(err); ui.toast('Sync settings could not be opened.'); }));
+  openBtn.addEventListener('click', () => open().catch((err) => { console.error(err); ui.toast(t('sync.openFailed')); }));
   $$('[data-sync-close]', dlg).forEach((b) => b.addEventListener('click', close));
   dlg.addEventListener('cancel', (e) => { if (busy) e.preventDefault(); });
   dlg.addEventListener('close', () => {
@@ -247,7 +248,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
   startDone.addEventListener('click', async () => {
     if (!saved.checked || !pendingKey) return;
     startError.textContent = '';
-    setBusy('Starting sync…');
+    setBusy(t('sync.busy.starting'));
     try {
       await engine.startHousehold(pendingKey);
     } catch (err) {
@@ -259,7 +260,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     clearWords();
     await changed();
     show('active');
-    ui.toast('Sync is on. Add another device with the 12 words.');
+    ui.toast(t('sync.toast.on'));
   });
 
   /* ---------------- join a household ---------------- */
@@ -277,7 +278,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
 
   /** Show the choice for a device with items; resolves 'replace', 'merge', 'export' or null. */
   function askChoice(localItems) {
-    $('#sync-choice-lead').textContent = `This device already has ${localItems} item${localItems === 1 ? '' : 's'}. How should it join the household?`;
+    $('#sync-choice-lead').textContent = t('sync.choice.lead', { count: localItems });
     $('input[name="join-mode"][value="replace"]', dlg).checked = true;
     show('choice');
     return new Promise((resolve) => {
@@ -302,10 +303,10 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
       return;
     }
     setProblems([]);
-    setBusy('Looking for the household…');
+    setBusy(t('sync.busy.looking'));
     try {
       const { exists } = await engine.checkHousehold(key);
-      if (!exists) { setBusy(''); setProblems(['No household found for these words. Check them and try again.']); return; }
+      if (!exists) { setBusy(''); setProblems([t('sync.join.noHousehold')]); return; }
     } catch (err) {
       setBusy('');
       setProblems([err.message]);
@@ -322,7 +323,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     if (!dlg.open) return; // closed while choosing
     if (!mode) { show('join'); return; }
     show('join');
-    setBusy(mode === pairing.JOIN_REPLACE ? "Getting the household's data…" : 'Joining the household…');
+    setBusy(mode === pairing.JOIN_REPLACE ? t('sync.busy.replacing') : t('sync.busy.joining'));
     try {
       await engine.joinHousehold(key, mode);
     } catch (err) {
@@ -335,16 +336,14 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     joinTried = false;
     await changed();
     show('active');
-    ui.toast(mode === pairing.JOIN_MERGE
-      ? "Joined. This device's items are being added to the household."
-      : "Joined. This device now has the household's data.");
+    ui.toast(mode === pairing.JOIN_MERGE ? t('sync.toast.joinedMerge') : t('sync.toast.joinedReplace'));
   });
 
   /* ---------------- set up: status, words, sync now, turn off ---------------- */
   $('#sync-show-words').addEventListener('click', async () => {
     if ((await ui.confirmDialog(pairing.SHOW_WORDS_CONFIRM)) !== true) return;
     let key = '';
-    try { key = await vault.get(); } catch { ui.toast('The recovery words are not available on this device.'); return; }
+    try { key = await vault.get(); } catch { ui.toast(t('sync.words.unavailable')); return; }
     if (!key) return;
     renderWords($('[data-sync-view="active"] [data-words-slot]'), await keyToWords(key));
     key = '';
@@ -361,7 +360,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     await engine.disconnect();
     await changed();
     show('setup');
-    ui.toast('Sync is off on this device. Your items are still here.');
+    ui.toast(t('sync.toast.off'));
   });
 
   engine.onStatus((s) => {
@@ -369,7 +368,7 @@ export function initSyncSheet({ engine, storage, vault, ui, unavailable = '' }) 
     renderStatus();
     loadConfig().then(renderSummary).catch(() => {});
   });
-  loadConfig().then(renderSummary).catch((err) => { console.error(err); summary.textContent = 'Sync settings could not be read.'; });
+  loadConfig().then(renderSummary).catch((err) => { console.error(err); summary.textContent = t('sync.readFailed'); });
 
   return {
     /** Re-read the config (after the developer screen changed it). */

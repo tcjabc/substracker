@@ -4,6 +4,7 @@
 // Nothing here logs keys, tokens or plaintext, and errors never include them.
 
 import { isOp, parseStamp } from './sync-core.js';
+import { t as tr } from './i18n.js'; // `t` is the key text in parseKey
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -53,10 +54,10 @@ export function generateKey() {
 /** The 16 key bytes from its text form. Throws a plain message (without the key) if it isn't one. */
 export function parseKey(text) {
   const t = typeof text === 'string' ? text.trim() : '';
-  if (!/^[A-Za-z0-9_-]{22}$/.test(t)) throw new Error('A household key is 22 characters of letters, digits, - and _.');
+  if (!/^[A-Za-z0-9_-]{22}$/.test(t)) throw new Error(tr('sync.key.format'));
   const bytes = fromBase64(t.replace(/-/g, '+').replace(/_/g, '/') + '==');
   // The last character carries 4 unused bits; insist they're zero so each key has one spelling.
-  if (bytes.length !== KEY_BYTES || toBase64url(bytes) !== t) throw new Error('That household key is not valid.');
+  if (bytes.length !== KEY_BYTES || toBase64url(bytes) !== t) throw new Error(tr('sync.key.invalid'));
   return bytes;
 }
 

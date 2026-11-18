@@ -9,22 +9,25 @@
 import jsQR from './jsqr.js';
 import { isNative, platformName, plugin } from './platform.js';
 import { parseRecovery, splitWords, WORD_COUNT } from './words.js';
+import { t } from './i18n.js';
 
-export const NOT_RECOVERY_CODE = "That QR code isn't a Peek Budget recovery code.";
+/** What a QR code that isn't a recovery code is called (in the language in use). */
+export const notRecoveryMessage = () => t('sync.scan.notRecovery');
 
+// Read when used (getters), in the language in use then.
 export const SCAN_MESSAGES = Object.freeze({
-  denied: 'Camera access was blocked. Allow the camera for this app or site, or type the words instead.',
-  unavailable: 'No camera is available. Type the words instead.',
-  noPlayServices: 'Scanning needs Google Play services. Type the words instead.',
-  installing: 'Getting the scanner ready. This can take a minute the first time…',
-  installFailed: "The scanner couldn't be installed. Try again later, or type the words instead.",
-  failed: "The scan didn't work. Try again, or type the words instead.",
+  get denied() { return t('sync.scan.error.denied'); },
+  get unavailable() { return t('sync.scan.error.unavailable'); },
+  get noPlayServices() { return t('sync.scan.error.noPlayServices'); },
+  get installing() { return t('sync.scan.installing'); },
+  get installFailed() { return t('sync.scan.error.installFailed'); },
+  get failed() { return t('sync.scan.error.failed'); },
 });
 
 /** A scan that didn't produce text. `code` is a key of SCAN_MESSAGES, or 'cancelled'. */
 export class ScanError extends Error {
   constructor(code) {
-    super(SCAN_MESSAGES[code] ?? 'Scanning stopped.');
+    super(Object.hasOwn(SCAN_MESSAGES, code) ? SCAN_MESSAGES[code] : t('sync.scan.stopped'));
     this.code = code;
   }
 }

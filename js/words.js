@@ -8,6 +8,7 @@
 
 import { WORDLIST } from './wordlist.js';
 import { parseKey } from './crypto.js';
+import { t } from './i18n.js';
 
 export const WORD_COUNT = 12;
 const KEY_BYTES = 16;
@@ -99,7 +100,7 @@ export function closestWord(word) {
  */
 export function wordProblems(text) {
   const raw = String(text ?? '').trim();
-  if (!raw) return [{ message: 'Enter the 12 recovery words.' }];
+  if (!raw) return [{ message: t('sync.words.error.empty') }];
   if (/^[A-Za-z0-9_-]{22}$/.test(raw)) return [];
   const words = splitWords(raw);
   const problems = [];
@@ -108,11 +109,11 @@ export function wordProblems(text) {
     const near = closestWord(w);
     problems.push({
       word: i + 1,
-      message: `Word ${i + 1} ("${w}") isn't in the list.${near ? ` Did you mean "${near}"?` : ''}`,
+      message: near ? t('sync.words.error.unknownNear', { n: i + 1, word: w, near }) : t('sync.words.error.unknown', { n: i + 1, word: w }),
     });
   });
   if (words.length !== WORD_COUNT) {
-    problems.unshift({ message: `There are 12 recovery words. You entered ${words.length}.` });
+    problems.unshift({ message: t('sync.words.error.count', { count: words.length }) });
   }
   return problems;
 }
@@ -139,7 +140,7 @@ export async function parseRecovery(text) {
   const bytes = new Uint8Array(KEY_BYTES);
   for (let i = KEY_BYTES - 1; i >= 0; i--) { bytes[i] = Number(big & 0xffn); big >>= 8n; }
   if (check !== await checksumBits(bytes)) {
-    throw new WordsError('checksum', [{ message: 'A word is wrong or out of order. Check them against your copy.' }]);
+    throw new WordsError('checksum', [{ message: t('sync.words.error.checksum') }]);
   }
   return toBase64url(bytes);
 }

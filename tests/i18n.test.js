@@ -18,8 +18,8 @@ import * as util from '../js/util.js';
 import * as pairing from '../js/pairing.js';
 import * as aiImport from '../js/import-ai.js';
 import { wordProblems } from '../js/words.js';
-import { ScanError, NOT_RECOVERY_CODE } from '../js/qr-scan.js';
-import { KEY_NEEDED_MESSAGE } from '../js/sync.js';
+import { ScanError, notRecoveryMessage } from '../js/qr-scan.js';
+import { keyNeededMessage } from '../js/sync.js';
 import * as i18n from '../js/i18n.js';
 
 const params = new URLSearchParams(location.search);
@@ -310,8 +310,8 @@ async function walk() {
   ]);
   put('fn.words', ['', 'abandon', 'abandon abilty able about above absent absorb abstract absurd abuse access accident']
     .flatMap((w) => wordProblems(w).map((p) => p.message)));
-  put('fn.scan', [NOT_RECOVERY_CODE, ...['denied', 'unavailable', 'noPlayServices', 'installing', 'installFailed', 'failed', 'other'].map((c) => new ScanError(c).message)]);
-  put('fn.sync', [KEY_NEEDED_MESSAGE]);
+  put('fn.scan', [notRecoveryMessage(), ...['denied', 'unavailable', 'noPlayServices', 'installing', 'installFailed', 'failed', 'other'].map((c) => new ScanError(c).message)]);
+  put('fn.sync', [keyNeededMessage()]);
   put('fn.importErrors', ['', '[]', '{"app":"x"}', '{"app":"substracker","schemaVersion":4,"items":[]}',
     '{"app":"substracker","schemaVersion":4,"items":[{"id":"a","name":"A","price":-1,"currency":"TWD","cycle":"monthly"}]}']
     .map((j) => { try { storage.parseBackup(j); return 'ok'; } catch (err) { return err.message; } }));

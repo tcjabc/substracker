@@ -7,6 +7,7 @@
 // Nothing here logs keys, tokens or the contents of changes.
 
 import * as box from './crypto.js';
+import { t } from './i18n.js';
 
 const PULL_LIMIT = 500;
 const BACKOFF_BASE_MS = 2000;
@@ -29,7 +30,8 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
  * Status text when this device has a household but can't read its key, e.g. app data restored from
  * a backup to a new phone, where the Keystore/Keychain entry doesn't exist (see js/secure-key.js).
  */
-export const KEY_NEEDED_MESSAGE = 'Sync needs the 12 words on this device. Join again with your recovery words.';
+/** The status message when this device's key can't be read (in the language in use). */
+export const keyNeededMessage = () => t('sync.needsWords');
 
 /**
  * A clean relay base URL, or null. HTTPS only, except plain HTTP to this machine for development,
@@ -47,7 +49,7 @@ export function normalizeRelayUrl(text) {
 /** An HTTP error from the relay. `message` is the relay's text, which never contains secrets. */
 export class RelayHttpError extends Error {
   constructor(status, code, message, retryAfterMs) {
-    super(message || `The relay answered ${status}.`);
+    super(message || t('sync.error.relayAnswered', { status }));
     this.status = status;
     this.code = code;
     this.retryAfterMs = retryAfterMs;
@@ -128,15 +130,15 @@ function randomId() {
 function describe(err) {
   if (err instanceof RelayHttpError) {
     switch (err.status) {
-      case 401: return "The relay didn't accept this household key. Check the key on both devices.";
-      case 413: return 'A change is too large for the relay.';
-      case 429: return 'The relay is busy. Retrying shortly.';
-      case 507: return 'The sync room on the relay is full.';
-      default: return err.status >= 500 ? 'The relay had a problem. Retrying.' : `The relay refused the request (${err.status}).`;
+      case 401: return t('sync.error.401');
+      case 413: return t('sync.error.413');
+      case 429: return t('sync.error.429');
+      case 507: return t('sync.error.507');
+      default: return err.status >= 500 ? t('sync.error.5xx') : t('sync.error.refused', { status: err.status });
     }
   }
-  if (err instanceof TypeError) return "Can't reach the relay.";
-  return err?.message ? String(err.message) : 'Sync failed.';
+  if (err instanceof TypeError) return t('sync.error.unreachable');
+  return err?.message ? String(err.message) : t('sync.error.failed');
 }
 
 /**
@@ -150,12 +152,11 @@ export class JoinError extends Error {
   }
 }
 
-const NO_HOUSEHOLD = 'No household found for these words. Check them and try again.';
 
 function joinError(err) {
   if (err instanceof JoinError) return err;
-  if (err instanceof RelayHttpError && err.status === 404) return new JoinError('no_household', NO_HOUSEHOLD);
-  if (err instanceof TypeError) return new JoinError('offline', "Can't reach the sync service. Check your connection and try again.");
+  if (err instanceof RelayHttpError && err.status === 404) return new JoinError('no_household', t('sync.join.noHousehold'));
+  if (err instanceof TypeError) return new JoinError('offline', t('sync.join.offline'));
   return new JoinError('relay', describe(err));
 }
 
@@ -276,7 +277,7 @@ export function createSyncEngine(opts) {
       let last = cursor;
       const ops = [];
       for (const e of entries) {
-        if (!Number.isSafeInteger(e?.seq) || e.seq <= last) throw new Error('The relay sent entries out of order.');
+        if (!Number.isSafeInteger(e?.seq) || e.seq <= last) throw new Error(t('sync.error.order'));
         last = e.seq;
         try { ops.push(await crypto.open(keys.aesKey, e)); } catch { bad++; }
       }
@@ -300,10 +301,10 @@ export function createSyncEngine(opts) {
       closeSocket();
       stopInterval();
       // No retry timer either way: an unreadable key waits for Join (a config change), never loops.
-      if (config?.keyUnavailable) setStatus('error', KEY_NEEDED_MESSAGE); else setStatus('off', '');
+      if (config?.keyUnavailable) setStatus('error', keyNeededMessage()); else setStatus('off', '');
       return;
     }
-    if (!env.isOnline()) { closeSocket(); setStatus('offline', "This device is offline. Changes are kept and sent later."); return; }
+    if (!env.isOnline()) { closeSocket(); setStatus('offline', t('sync.offline')); return; }
     setStatus('syncing');
     try {
       const { clockAhead } = await pushAll();
@@ -315,7 +316,7 @@ export function createSyncEngine(opts) {
       status.lastSyncedAt = now();
       try { await store.setLastSynced(status.lastSyncedAt); } catch { /* not important */ }
       await refreshPending();
-      setStatus('ok', clockAhead ? "Some changes are waiting: this device's clock is more than a day ahead." : '');
+      setStatus('ok', clockAhead ? t('sync.clockAhead') : '');
       if (changed) for (const fn of remoteListeners) { try { await fn(); } catch (err) { log.error(err); } }
       ensureSocket();
       ensureInterval();
@@ -408,7 +409,7 @@ export function createSyncEngine(opts) {
   async function target(keyText) {
     const cfg = await store.getConfig();
     const base = normalizeRelayUrl(cfg.relayUrl || DEFAULT_RELAY_URL);
-    if (!base) throw new JoinError('relay', 'The relay address on this device is not valid.');
+    if (!base) throw new JoinError('relay', t('sync.error.relayAddress'));
     let k;
     try { k = await crypto.deriveKeys(keyText); } catch (err) { throw new JoinError('key', err.message); }
     return { base, k };
@@ -433,7 +434,7 @@ export function createSyncEngine(opts) {
         if (visible) { request('visible'); } else { stopInterval(); closeSocket(); }
       });
       env.onOnline(() => request('online'));
-      env.onOffline?.(() => { closeSocket(); if (status.state !== 'off') setStatus('offline', 'This device is offline. Changes are kept and sent later.'); });
+      env.onOffline?.(() => { closeSocket(); if (status.state !== 'off') setStatus('offline', t('sync.offline')); });
       await refreshPending();
       await request('start');
     },
@@ -490,7 +491,7 @@ export function createSyncEngine(opts) {
       const { base, k } = await target(keyText);
       try {
         const res = await transport.push(base, k.roomId, k.token, [], clientId);
-        if (Number.isSafeInteger(res?.head) && res.head > 0) throw new JoinError('relay', 'That key is already in use. Start again.');
+        if (Number.isSafeInteger(res?.head) && res.head > 0) throw new JoinError('relay', t('sync.error.keyInUse'));
       } catch (err) { throw joinError(err); }
       await this.configure({ householdKey: keyText, enabled: true });
     },
@@ -505,7 +506,7 @@ export function createSyncEngine(opts) {
     async joinHousehold(keyText, mode) {
       if (mode !== 'replace' && mode !== 'merge') throw new Error('Join mode must be replace or merge.');
       const { exists } = await this.checkHousehold(keyText);
-      if (!exists) throw new JoinError('no_household', NO_HOUSEHOLD);
+      if (!exists) throw new JoinError('no_household', t('sync.join.noHousehold'));
       if (mode === 'merge') { await this.configure({ householdKey: keyText, enabled: true }); return { mode }; }
 
       const { base, k } = await target(keyText);
@@ -518,12 +519,12 @@ export function createSyncEngine(opts) {
           const entries = Array.isArray(res?.entries) ? res.entries : [];
           const head = Number.isSafeInteger(res?.head) ? res.head : 0;
           for (const e of entries) {
-            if (!Number.isSafeInteger(e?.seq) || e.seq <= cursor) throw new Error('The relay sent entries out of order.');
+            if (!Number.isSafeInteger(e?.seq) || e.seq <= cursor) throw new Error(t('sync.error.order'));
             cursor = e.seq;
             try { ops.push(await crypto.open(k.aesKey, e)); } catch { bad++; }
           }
           if (cursor >= head) break;
-          if (!entries.length) throw new Error('The relay stopped before sending everything. Try again.');
+          if (!entries.length) throw new Error(t('sync.error.stopped'));
         }
       } catch (err) { throw joinError(err); }
       if (bad) log.warn(`Sync: ignored ${bad} change(s) that could not be verified.`);

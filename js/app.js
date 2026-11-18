@@ -216,12 +216,12 @@ async function init() {
   storage.setBlockedHandler(() => toast('Close other Peek Budget tabs or windows to finish updating.', {
     label: 'Dismiss', sticky: true, run: () => {},
   }));
-  let syncUnavailable = 'Local storage could not be opened.';
+  let syncUnavailable = t('sync.unavailable.storage');
   try {
     const [subs, settings, picks] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors()]);
     state.colorPicks = new Set(Object.keys(picks));
     const usingLegacy = (await storage.status()).usingLegacy;
-    syncUnavailable = usingLegacy ? 'Sync needs the storage update to finish first.' : '';
+    syncUnavailable = usingLegacy ? t('sync.unavailable.legacy') : '';
     if (usingLegacy) {
       toast('Storage update could not be verified, so the previous copy of your data is in use.', {
         label: 'Dismiss', sticky: true, run: () => {},

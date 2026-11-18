@@ -8,6 +8,7 @@
 // screen). Nothing here logs the key or puts it in an error message.
 
 import { plugin } from './platform.js';
+import { t } from './i18n.js';
 
 /** The secure-storage entry name. */
 export const SECURE_KEY_ID = 'peek-budget.household-key';
@@ -19,7 +20,7 @@ const IOS_WHEN_UNLOCKED_THIS_DEVICE_ONLY = 1;
 /** The key should be in secure storage but can't be read (e.g. app data restored to a new phone). */
 export class KeyUnavailableError extends Error {
   constructor() {
-    super('The household key is not available on this device.');
+    super(t('sync.keyUnavailable'));
     this.code = 'key_unavailable';
   }
 }

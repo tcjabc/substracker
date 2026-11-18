@@ -7,7 +7,7 @@
 import * as storage from '../js/storage.js';
 import * as syncCore from '../js/sync-core.js';
 import { chooseImportMode } from '../js/util.js';
-import { createSyncEngine, RelayHttpError, JoinError, KEY_NEEDED_MESSAGE } from '../js/sync.js';
+import { createSyncEngine, RelayHttpError, JoinError, keyNeededMessage } from '../js/sync.js';
 import { createKeyVault } from '../js/secure-key.js';
 import { generateKey } from '../js/crypto.js';
 import { keyToWords, parseRecovery } from '../js/words.js';
@@ -965,7 +965,7 @@ test('phone: an unreadable key shows "Sync needs the 12 words", leaves the items
   vault = createKeyVault({ store: storage, secure, log: quiet });
   eq(await vault.migrate(), 'already', 'no migration attempt');
   engine = await vaultEngine(relay, vault);
-  eq([engine.getStatus().state, engine.getStatus().lastError], ['error', KEY_NEEDED_MESSAGE], 'status');
+  eq([engine.getStatus().state, engine.getStatus().lastError], ['error', keyNeededMessage()], 'status');
   eq((await vault.status()).keyUnavailable, true, 'the sheet offers Join');
   eq(await ids(), ['h1'], 'items untouched');
   await engine.joinHousehold(key, 'merge');

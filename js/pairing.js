@@ -1,10 +1,10 @@
 // Decisions and wording for starting, joining and leaving a household, with no DOM, so Node tests
 // cover them. js/sync-sheet.js draws the screens and passes in the dialogs.
 
+import { t } from './i18n.js';
+
 export const JOIN_REPLACE = 'replace';
 export const JOIN_MERGE = 'merge';
-
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * Which screen the Sync sheet opens on, from the key-free summary (js/secure-key.js status()):
@@ -34,9 +34,9 @@ export async function chooseJoinMode({ localItems, ask, confirm, exportBackup })
 
 export function replaceConfirm(localItems) {
   return {
-    title: "Replace this device's items?",
-    message: `The ${plural(localItems, 'item')} on this device will be replaced by the household's. Items that are only on this device will be lost. This can't be undone.`,
-    actions: [{ label: 'Cancel', value: false }, { label: 'Replace', value: true, kind: 'danger' }],
+    title: t('sync.replace.title'),
+    message: t('sync.replace.message', { count: localItems }),
+    actions: [{ label: t('common.cancel'), value: false }, { label: t('sync.replace.confirm'), value: true, kind: 'danger' }],
   };
 }
 
@@ -47,38 +47,40 @@ export function replaceConfirm(localItems) {
 export async function confirmStart(config, confirm) {
   if (!config?.wasPaired) return true;
   return (await confirm({
-    title: 'Start a new household?',
-    message: "This device was synced with a household before. Your other devices stay on that household and won't see this one. To sync with them again, join with that household's 12 words instead.",
-    actions: [{ label: 'Cancel', value: false }, { label: 'Start new', value: true, kind: 'primary' }],
+    title: t('sync.startNew.title'),
+    message: t('sync.startNew.message'),
+    actions: [{ label: t('common.cancel'), value: false }, { label: t('sync.startNew.confirm'), value: true, kind: 'primary' }],
   })) === true;
 }
 
+// The two confirmations' wording is read when they're shown (getters), in the language in use then.
 export const TURN_OFF_CONFIRM = Object.freeze({
-  title: 'Turn off sync on this device?',
-  message: 'This device stops syncing and forgets the recovery words. Your items stay here, and your other devices keep syncing. To sync again, join with the 12 words.',
-  actions: [{ label: 'Cancel', value: false }, { label: 'Turn off', value: true, kind: 'danger' }],
+  get title() { return t('sync.turnOff.title'); },
+  get message() { return t('sync.turnOff.message'); },
+  get actions() { return [{ label: t('common.cancel'), value: false }, { label: t('sync.turnOff.confirm'), value: true, kind: 'danger' }]; },
 });
 
 export const SHOW_WORDS_CONFIRM = Object.freeze({
-  title: 'Show the recovery words?',
-  message: 'Anyone who sees them can read your data. Make sure no one is looking at your screen.',
-  actions: [{ label: 'Cancel', value: false }, { label: 'Show', value: true, kind: 'primary' }],
+  get title() { return t('sync.showWords.title'); },
+  get message() { return t('sync.showWords.message'); },
+  get actions() { return [{ label: t('common.cancel'), value: false }, { label: t('sync.showWords.confirm'), value: true, kind: 'primary' }]; },
 });
 
-const STATE_TEXT = { off: 'Off', syncing: 'Syncing…', ok: 'Up to date', offline: 'Offline', error: 'Error' };
+const STATE_KEYS = { off: 'sync.state.off', syncing: 'sync.state.syncing', ok: 'sync.state.ok', offline: 'sync.state.offline', error: 'sync.state.error' };
+const stateText = (state) => t(STATE_KEYS[state] ?? 'sync.state.off');
 
 /** The status line for a status from the engine: "Up to date", "Offline", "Error: …". */
 export function statusText(status) {
-  const text = STATE_TEXT[status?.state] ?? 'Off';
-  if (status?.state === 'error' && status.lastError) return `${text}: ${status.lastError}`;
-  if (status?.state === 'ok' && status.lastError) return `${text}. ${status.lastError}`;
+  const text = stateText(status?.state);
+  if (status?.state === 'error' && status.lastError) return t('sync.status.withError', { state: text, error: status.lastError });
+  if (status?.state === 'ok' && status.lastError) return t('sync.status.withNote', { state: text, note: status.lastError });
   return text;
 }
 
 /** The hint under "Sync between devices" in Settings. */
 export function summaryText(info, status) {
-  if (info?.paired && info.keyUnavailable) return 'Needs the 12 words on this device';
-  if (!info?.paired) return 'Off';
-  if (!info.enabled) return 'Paused on this device';
-  return `On · ${STATE_TEXT[status?.state] ?? 'Off'}`;
+  if (info?.paired && info.keyUnavailable) return t('sync.summary.needsWords');
+  if (!info?.paired) return t('sync.summary.off');
+  if (!info.enabled) return t('sync.summary.paused');
+  return t('sync.summary.on', { state: stateText(status?.state) });
 }

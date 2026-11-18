@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as box from '../js/crypto.js';
 import { applyRemoteOps, requeueOps, toItem, settingsOps, effectiveSettings, SETTINGS_ID } from '../js/storage.js';
-import { createSyncEngine, RelayHttpError, JoinError, normalizeRelayUrl, DEFAULT_RELAY_URL, KEY_NEEDED_MESSAGE } from '../js/sync.js';
+import { createSyncEngine, RelayHttpError, JoinError, normalizeRelayUrl, DEFAULT_RELAY_URL, keyNeededMessage } from '../js/sync.js';
 import { RoomCore, memoryStore } from '../relay/src/room-logic.js';
 
 const RELAY = 'https://relay.example';
@@ -748,8 +748,8 @@ test('a key that cannot be read (backup restored to a new phone): a clear status
   const calls = relay.calls.length;
   await b.engine.start();
   assert.equal(b.engine.getStatus().state, 'error');
-  assert.equal(b.engine.getStatus().lastError, KEY_NEEDED_MESSAGE);
-  assert.equal(KEY_NEEDED_MESSAGE, 'Sync needs the 12 words on this device. Join again with your recovery words.');
+  assert.equal(b.engine.getStatus().lastError, keyNeededMessage());
+  assert.equal(keyNeededMessage(), 'Sync needs the 12 words on this device. Join again with your recovery words.');
   assert.deepEqual(b.timers.delays(), [], 'no retry timer');
   await b.timers.tickIntervals();
   await b.engine.syncNow();

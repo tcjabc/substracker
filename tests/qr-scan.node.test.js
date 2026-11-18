@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import qrcode from '../js/qrcode.js';
 import { qrSvg } from '../js/sync-sheet.js';
-import { recoveryFromQr, decodeImage, createWebScanner, scanNative, ScanError, NOT_RECOVERY_CODE, SCAN_MESSAGES } from '../js/qr-scan.js';
+import { recoveryFromQr, decodeImage, createWebScanner, scanNative, ScanError, notRecoveryMessage, SCAN_MESSAGES } from '../js/qr-scan.js';
 import { keyToWords } from '../js/words.js';
 import { generateKey } from '../js/crypto.js';
 
@@ -44,7 +44,7 @@ test('QR text: garbage, wrong counts and bad checksums are refused', async () =>
     `${'abandon '.repeat(60)}`, null, undefined, 42,
   ];
   for (const t of bad) assert.equal(await recoveryFromQr(t), null, JSON.stringify(t));
-  assert.equal(NOT_RECOVERY_CODE, "That QR code isn't a Peek Budget recovery code.");
+  assert.equal(notRecoveryMessage(), "That QR code isn't a Peek Budget recovery code.");
 });
 
 test('round trip: our generator → pixels → jsQR gives back the same words', async () => {
