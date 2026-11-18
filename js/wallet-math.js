@@ -3,7 +3,8 @@
 // assignment, the automatic text colour with its contrast fitting, and the stack's geometry and
 // fling maths. See js/wallet.js for the view itself.
 
-import { dueInMonth, incomeInMonth, groupOf, byGroupName } from './insights-calc.js';
+import { dueInMonth, incomeInMonth, groupOf, byGroupName, groupLabel } from './insights-calc.js';
+import { t } from './i18n.js';
 import { isIncome } from './util.js';
 
 /* Palette --------------------------------------------------------------------------------------
@@ -188,7 +189,8 @@ export function walletGroups(items, { currency, period, year, month }) {
     const ranked = sorted.slice().sort((a, b) =>
       (b.currency === currency) - (a.currency === currency) || cash.get(b) - cash.get(a) || (b.price || 0) - (a.price || 0) || byName(a, b));
     return {
-      key, name, income: isInc, items: sorted, total, ranked,
+      // `name` is the group's key (its category, or Uncategorised / Income); `label` is what shows.
+      key, name, label: isInc ? t('group.income') : groupLabel(name), income: isInc, items: sorted, total, ranked,
       cash: (s) => cash.get(s) ?? 0,
       others: [...others.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([cur, count]) => ({ currency: cur, count })),
     };
@@ -229,7 +231,7 @@ export function sortGroups(groups, sort, currency) {
 }
 
 /** "+1 in USD", "+2 in USD · +1 in JPY", or ''. */
-export const othersText = (others) => others.map((o) => `+${o.count} in ${o.currency}`).join(' · ');
+export const othersText = (others) => others.map((o) => t('wallet.others', { count: o.count, currency: o.currency })).join(' · ');
 
 /* Stack geometry and motion --------------------------------------------------------------------- */
 /** Band height, front-card reveal, room for the pile above the front card (px). */

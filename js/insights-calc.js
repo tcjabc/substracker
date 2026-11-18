@@ -19,8 +19,14 @@
 // amounts are never converted between currencies.
 
 import { isIncome, isOnce, parseDate, amountInYear } from './util.js';
+import { t } from './i18n.js';
 
 export const UNCATEGORISED = 'Uncategorised';
+/**
+ * A group's name as shown. "Uncategorised" stays the stored key (group colours are keyed by it,
+ * and synced), so only its label is translated; every other group name is the person's own.
+ */
+export const groupLabel = (name) => (name === UNCATEGORISED ? t('group.uncategorised') : name);
 export const TYPE_ORDER = ['monthly', 'annual', 'once'];
 
 /** The group an expense is shown under: its category, or "Uncategorised". */

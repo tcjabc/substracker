@@ -196,12 +196,18 @@ async function sources() {
   return Promise.all(files.filter((f) => !skip.has(f)).map(async (f) => [f, await readFile(new URL(f, root), 'utf8')]));
 }
 
-/** Every key the source uses: t('…') and tHTML('…') calls and the data-i18n attributes. */
+/**
+ * Every key the source uses: t('…') and tHTML('…') calls and the data-i18n attributes (`used`),
+ * plus keys written as plain strings elsewhere, such as a map of keys passed to t() later
+ * (`mentioned`). Every used key must exist; every English key must be used or mentioned.
+ */
 async function usedKeys() {
   const used = new Map();
+  const mentioned = new Set();
   const add = (k, f) => { if (!used.has(k)) used.set(k, f); };
   const dynamic = [];
   for (const [f, src] of await sources()) {
+    for (const m of src.matchAll(/(['"])([a-z][\w-]*(?:\.[\w-]+)+)\1/g)) mentioned.add(m[2]);
     for (const m of src.matchAll(/\b(?:t|tHTML)\(\s*(['"])([^'"]+)\1/g)) add(m[2], f);
     for (const m of src.matchAll(/\b(?:t|tHTML)\(\s*`/g)) dynamic.push(`${f}: ${src.slice(m.index, m.index + 40)}`);
     for (const m of src.matchAll(/data-i18n(?:-html|-native)?="([^"]+)"/g)) add(m[1], f);
@@ -209,7 +215,7 @@ async function usedKeys() {
       for (const pair of m[1].split(';')) { const k = pair.split(':')[1]?.trim(); if (k) add(k, f); }
     }
   }
-  return { used, dynamic };
+  return { used, mentioned, dynamic };
 }
 
 test('every key the source uses is in en.js, and keys are never built at run time', async () => {
@@ -220,8 +226,9 @@ test('every key the source uses is in en.js, and keys are never built at run tim
 });
 
 test('every key in en.js is used somewhere', async () => {
-  const { used } = await usedKeys();
-  const unused = Object.keys(en).filter((k) => !used.has(k) && !used.has(pluralBase(k)));
+  const { used, mentioned } = await usedKeys();
+  const seen = (k) => k && (used.has(k) || mentioned.has(k));
+  const unused = Object.keys(en).filter((k) => !seen(k) && !seen(pluralBase(k)));
   assert.deepEqual(unused, [], 'keys in js/locales/en.js that nothing uses');
 });
 

@@ -12,12 +12,12 @@ import {
   fitCard, parseColour, hexOf, othersText, periodCash,
 } from './wallet-math.js';
 import { esc, money, isIncome, isOnce, nextRenewal, renewalText, parseDate, shortDate, daysUntil } from './util.js';
+import { t, formatLocale } from './i18n.js';
 
 const CHEVRON = '<svg class="w-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ease = (t) => t * t * (3 - 2 * t);
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const css = (rgb, a) => (a == null ? `rgb(${rgb.join(' ')})` : `rgb(${rgb.join(' ')} / ${a})`);
 
 /**
@@ -36,7 +36,7 @@ const css = (rgb, a) => (a == null ? `rgb(${rgb.join(' ')})` : `rgb(${rgb.join('
 export function createWallet(host, opts) {
   host.classList.add('wallet');
   host.setAttribute('role', 'group');
-  host.setAttribute('aria-label', 'Groups. Arrow keys move between groups, Enter opens one, Escape closes it.');
+  host.setAttribute('aria-label', t('wallet.label'));
   const live = document.createElement('p');
   live.className = 'sr-only';
   live.setAttribute('aria-live', 'polite');
@@ -52,33 +52,54 @@ export function createWallet(host, opts) {
   const reduced = () => !!opts.reduced?.();
 
   /* Cards ---------------------------------------------------------------------------------- */
-  const periodWord = () => (data?.period === 'annual' ? 'this year' : 'this month');
-  const verb = (g) => (g.income ? 'paid' : 'due');
+  // Wording by period ("this month" or "this year") and by group type (income is paid, the rest due).
+  const yearly = () => data?.period === 'annual';
+  const items = (n) => t('common.items', { count: n });
+  const periodWord = () => (yearly() ? t('wallet.period.year') : t('wallet.period.month'));
+  const dueWord = (g) => (g.income
+    ? (yearly() ? t('wallet.paid.year') : t('wallet.paid.month'))
+    : (yearly() ? t('wallet.due.year') : t('wallet.due.month')));
+  const nothingWord = (g) => (g.income
+    ? (yearly() ? t('wallet.nothingPaid.year') : t('wallet.nothingPaid.month'))
+    : (yearly() ? t('wallet.nothingDue.year') : t('wallet.nothingDue.month')));
+  const notWord = (g) => (g.income
+    ? (yearly() ? t('wallet.notPaid.year') : t('wallet.notPaid.month'))
+    : (yearly() ? t('wallet.notDue.year') : t('wallet.notDue.month')));
+  // In sentences read aloud: "NT$30,000 this month" (a group), "NT$40,000 paid this month" (income).
+  const amountWord = (g, { due = false } = {}) => {
+    const amount = money(g.total, data.currency);
+    if (g.income) return yearly() ? t('wallet.amount.paid.year', { amount }) : t('wallet.amount.paid.month', { amount });
+    if (due) return yearly() ? t('wallet.amount.due.year', { amount }) : t('wallet.amount.due.month', { amount });
+    return yearly() ? t('wallet.amount.year', { amount }) : t('wallet.amount.month', { amount });
+  };
+  const nothingLower = (g) => (g.income
+    ? (yearly() ? t('wallet.band.nothingPaid.year') : t('wallet.band.nothingPaid.month'))
+    : (yearly() ? t('wallet.band.nothingDue.year') : t('wallet.band.nothingDue.month')));
 
   function totalLine(g) {
     const others = othersText(g.others);
-    if (g.total > 0) return { total: money(g.total, data.currency), sub: [`${verb(g)} ${periodWord()}`, others].filter(Boolean).join(' · ') };
-    if (others) return { total: others, sub: `${verb(g)} ${periodWord()}` };
-    return { total: g.income ? 'Nothing paid' : 'Nothing due', sub: periodWord() };
+    if (g.total > 0) return { total: money(g.total, data.currency), sub: [dueWord(g), others].filter(Boolean).join(' · ') };
+    if (others) return { total: others, sub: dueWord(g) };
+    return { total: g.income ? t('wallet.nothingPaid') : t('wallet.nothingDue'), sub: periodWord() };
   }
   function bandLabel(g) {
-    const n = plural(g.items.length, 'item');
-    const amount = g.total > 0 ? `${money(g.total, data.currency)} ${g.income ? 'paid ' : ''}${periodWord()}`
-      : `${g.income ? 'nothing paid' : 'nothing due'} ${periodWord()}`;
-    const others = g.others.map((o) => `plus ${o.count} in ${o.currency}`).join(', ');
-    return `${g.name}, ${n}, ${amount}${others ? `, ${others}` : ''}`;
+    const amount = g.total > 0 ? amountWord(g) : nothingLower(g);
+    const others = g.others.map((o) => t('wallet.band.otherCurrency', { count: o.count, currency: o.currency })).join(t('common.listSep'));
+    return others
+      ? t('wallet.band.withOthers', { name: g.label, items: items(g.items.length), amount, others })
+      : t('wallet.band', { name: g.label, items: items(g.items.length), amount });
   }
   function dueText(s) {
     if (isOnce(s)) { const d = parseDate(s.date); return d ? shortDate(d) : ''; }
     const d = nextRenewal(s);
-    return d ? renewalText(d, isIncome(s)) : 'No date';
+    return d ? renewalText(d, isIncome(s)) : t('wallet.noDate');
   }
   const soon = (s) => { const d = !isOnce(s) && nextRenewal(s); return d ? daysUntil(d) <= 7 : false; };
-  const cycleWord = (s) => (isOnce(s) ? 'One-off' : s.cycle === 'annual' ? 'Yearly' : 'Monthly');
-  const per = (s) => (isOnce(s) ? '' : s.cycle === 'annual' ? '/yr' : '/mo');
+  const cycleWord = (s) => (isOnce(s) ? t('wallet.cycle.once') : s.cycle === 'annual' ? t('wallet.cycle.annual') : t('wallet.cycle.monthly'));
+  const per = (s) => (isOnce(s) ? '' : s.cycle === 'annual' ? t('wallet.per.year') : t('wallet.per.month'));
 
   function cardHTML(g) {
-    const t = totalLine(g);
+    const line = totalLine(g);
     const top = g.ranked.slice(0, 3);
     const more = g.items.length - top.length;
     const chip = `<span class="w-logos" aria-hidden="true">${top.map((s) => opts.logo(s, 'xs')).join('')}${more ? `<span class="w-logos-more">+${more}</span>` : ''}</span>`;
@@ -88,43 +109,43 @@ export function createWallet(host, opts) {
     let rows;
     if (!dueNow.length && !g.others.length) {
       const next = g.items.map((s) => ({ s, d: isOnce(s) ? parseDate(s.date) : nextRenewal(s) })).filter((x) => x.d).sort((a, b) => a.d - b.d)[0];
-      rows = `<div class="w-pv-row"><span>${g.income ? 'Nothing paid' : 'Nothing due'} ${periodWord()}</span><span></span></div>`
-        + (next ? `<div class="w-pv-row"><span>Next: ${esc(next.s.name)}</span><span>${esc(shortDate(next.d))}</span></div>` : '');
+      rows = `<div class="w-pv-row"><span>${esc(nothingWord(g))}</span><span></span></div>`
+        + (next ? `<div class="w-pv-row"><span>${esc(t('wallet.next', { name: next.s.name }))}</span><span>${esc(shortDate(next.d))}</span></div>` : '');
     } else {
       rows = g.ranked.slice(0, 2).map((s) => {
         const c = g.cash(s);
         return `<div class="w-pv-row"><span>${esc(s.name)}</span><span>${esc(c > 0 ? money(c, s.currency) : dueText(s))}</span></div>`;
       }).join('');
-      if (g.items.length === 1) { const s = g.items[0]; rows += `<div class="w-pv-row"><span>${cycleWord(s)}</span><span>${esc(dueText(s))}</span></div>`; }
+      if (g.items.length === 1) { const s = g.items[0]; rows += `<div class="w-pv-row"><span>${esc(cycleWord(s))}</span><span>${esc(dueText(s))}</span></div>`; }
     }
-    const moreText = g.items.length > 2 ? `<span class="w-bar-more">+${g.items.length - 2} more</span>` : '';
+    const moreText = g.items.length > 2 ? `<span class="w-bar-more">${esc(t('wallet.more', { count: g.items.length - 2 }))}</span>` : '';
     // Open: this month's and this year's cash, then every item.
     const y = data.year, m = data.month, cur = data.currency;
     const sum = (period) => g.items.filter((s) => s.currency === cur).reduce((a, s) => a + periodCash(s, period, y, m), 0);
-    const monthName = new Date(y, m, 1).toLocaleDateString(undefined, { month: 'long' });
-    const items = g.ranked.map((s) => {
+    const monthName = new Date(y, m, 1).toLocaleDateString(formatLocale(), { month: 'long' });
+    const rowsHTML = g.ranked.map((s) => {
       const c = g.cash(s);
-      const notes = [cycleWord(s), s.plan && !isIncome(s) ? s.plan : '', s.currency !== cur ? `not in ${cur} totals` : '', c > 0 ? '' : `not ${verb(g)} ${periodWord()}`].filter(Boolean);
-      return `<li><button type="button" class="w-item" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
+      const notes = [cycleWord(s), s.plan && !isIncome(s) ? s.plan : '', s.currency !== cur ? t('wallet.notInTotals', { currency: cur }) : '', c > 0 ? '' : notWord(g)].filter(Boolean);
+      return `<li><button type="button" class="w-item" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
         ${opts.logo(s, 'sm')}
         <span class="w-i-name">${esc(s.name)}</span>
-        <span class="w-i-amt">${esc(money(s.price, s.currency))}${per(s) ? `<span class="w-i-meta"> ${per(s)}</span>` : ''}</span>
+        <span class="w-i-amt">${esc(money(s.price, s.currency))}${per(s) ? `<span class="w-i-meta"> ${esc(per(s))}</span>` : ''}</span>
         <span class="w-i-meta">${esc(notes.join(' · '))}</span>
         <span class="w-i-due${soon(s) ? ' w-soon' : ''}">${esc(dueText(s))}</span>
       </button></li>`;
     }).join('');
     return `
       <button type="button" class="w-band" aria-expanded="false" aria-label="${esc(bandLabel(g))}">
-        <span class="w-name"><span>${esc(g.name)}</span>${CHEVRON}</span>${chip}<span class="w-total">${esc(t.total)}</span>
-        <span class="w-meta">${plural(g.items.length, 'item')}</span><span class="w-sub">${esc(t.sub)}</span>
+        <span class="w-name"><span>${esc(g.label)}</span>${CHEVRON}</span>${chip}<span class="w-total">${esc(line.total)}</span>
+        <span class="w-meta">${esc(items(g.items.length))}</span><span class="w-sub">${esc(line.sub)}</span>
       </button>
       <div class="w-preview" aria-hidden="true"><div class="w-bar"><div class="w-bar-track">${shares}</div>${moreText}</div>${rows}</div>
       <div class="w-detail" inert>
         <div class="w-stats">
-          <div><div class="w-stat-k">${g.income ? 'Paid' : 'Due'} in ${esc(monthName)}</div><div class="w-stat-v">${esc(money(sum('monthly'), cur))}</div></div>
-          <div><div class="w-stat-k">${g.income ? 'Paid' : 'Due'} in ${y}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
+          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidIn' : 'wallet.stat.dueIn', { when: monthName }))}</div><div class="w-stat-v">${esc(money(sum('monthly'), cur))}</div></div>
+          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidIn' : 'wallet.stat.dueIn', { when: y }))}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
         </div>
-        <ul class="w-items" aria-label="${esc(g.name)} items">${items}</ul>
+        <ul class="w-items" aria-label="${esc(t('wallet.itemsLabel', { name: g.label }))}">${rowsHTML}</ul>
       </div>
       <div class="w-sheen" aria-hidden="true"></div>`;
   }
@@ -405,8 +426,8 @@ export function createWallet(host, opts) {
   function announce(msg) { live.textContent = ''; setTimeout(() => { live.textContent = msg; }, 30); }
   function openedText(c) {
     const g = c.g;
-    const amount = g.total > 0 ? `${money(g.total, data.currency)} ${verb(g)} ${periodWord()}` : `nothing ${verb(g)} ${periodWord()}`;
-    return `${g.name} opened. ${plural(g.items.length, 'item')}, ${amount}.`;
+    const amount = g.total > 0 ? amountWord(g, { due: true }) : nothingLower(g);
+    return t('wallet.opened', { name: g.label, items: items(g.items.length), amount });
   }
   function markOpen(c, on) {
     c.el.classList.toggle('is-open', on);
@@ -451,7 +472,7 @@ export function createWallet(host, opts) {
     opts.overlays?.remove(OVERLAY);
     markOpen(c, false);
     c.detail.inert = true;
-    if (!quiet) announce(`${c.g.name} closed.`);
+    if (!quiet) announce(t('wallet.closed', { name: c.g.label }));
     if (document.activeElement && c.detail.contains(document.activeElement)) c.band.focus({ preventScroll: true });
     if (reduced()) {
       S.p = S.pT = 0;
@@ -538,7 +559,7 @@ export function createWallet(host, opts) {
       const again = openKey ? cards.findIndex((c) => c.g.key === openKey) : -1;
       if (reorder && !reduced()) { S.f = again >= 0 ? clamp(again, 0, maxF) : 0; S.target = S.f; }
       if (again >= 0) expand(again, { instant: true, quiet: true });
-      else if (openKey) announce('Closed: that group is gone.');
+      else if (openKey) announce(t('wallet.gone'));
       render();
       // Card totals: the app's rolling totals (js/count-anim.js), told which cards can be seen.
       if (opts.total) cards.forEach((c, i) => opts.total(c.band.querySelector('.w-total'), c.g, nearScreen(i)));

@@ -25,7 +25,7 @@ import {
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
-  stripSummary, undatedItems,
+  stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
 const APP_VERSION = '1.16.0';
@@ -33,11 +33,14 @@ const APP_VERSION = '1.16.0';
 // Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
 // colour syncs as { name, swatch } with one of these keys.
 const SWATCHES = [
-  { key: 'g1', name: 'Gold' }, { key: 'g2', name: 'Steel blue' }, { key: 'g3', name: 'Terracotta' },
-  { key: 'g4', name: 'Sky' }, { key: 'g5', name: 'Rose' }, { key: 'g6', name: 'Plum' },
-  { key: 'g7', name: 'Olive' }, { key: 'g8', name: 'Brown' }, { key: 'g9', name: 'Teal' },
-  { key: 'g10', name: 'Brick' },
-];
+  { key: 'g1', name: 'colour.g1' }, { key: 'g2', name: 'colour.g2' }, { key: 'g3', name: 'colour.g3' },
+  { key: 'g4', name: 'colour.g4' }, { key: 'g5', name: 'colour.g5' }, { key: 'g6', name: 'colour.g6' },
+  { key: 'g7', name: 'colour.g7' }, { key: 'g8', name: 'colour.g8' }, { key: 'g9', name: 'colour.g9' },
+  { key: 'g10', name: 'colour.g10' },
+]; // `name` is the colour's key in js/locales/
+// The automatic Wallet colours' names, in palette order (js/wallet-math.js WALLET_NAMES is English).
+const WALLET_COLOUR_KEYS = ['colour.w1', 'colour.w2', 'colour.w3', 'colour.w4', 'colour.w5', 'colour.w6', 'colour.w7',
+  'colour.w8', 'colour.w9', 'colour.w10', 'colour.w11', 'colour.w12', 'colour.w13', 'colour.w14', 'colour.w15'];
 const SWATCH_KEYS = new Set(SWATCHES.map((s) => s.key));
 // Automatic colours come from the Wallet palette instead (w1 … w15, --wallet-1 … --wallet-15; see
 // js/wallet-math.js). They stay on this device: never synced, and left out of exports.
@@ -307,7 +310,7 @@ async function reloadData({ remote = false } = {}) {
    Tabs
    -------------------------------------------------------------------------- */
 // The first tab keeps its internal id `subs` so a saved tab choice still restores.
-const TAB_TITLES = { subs: 'Money', insights: 'Insights', settings: 'Settings' };
+const TAB_TITLES = { subs: 'tab.money', insights: 'tab.insights', settings: 'tab.settings' };
 
 // The pill behind the active tab (js/tab-pill.js): it slides with every tab change, Back included.
 let tabPill = null;
@@ -341,8 +344,8 @@ function setTab(tab, { focus = true } = {}) {
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
   $('#fab-stack').hidden = tab === 'settings';
-  $('#page-title').textContent = TAB_TITLES[tab];
-  document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
+  $('#page-title').textContent = t(TAB_TITLES[tab]);
+  document.title = tab === 'subs' ? t('app.name') : t('app.title', { tab: t(TAB_TITLES[tab]), app: t('app.name') });
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') { if (was !== 'insights') roller.replay(); renderInsights(); }
   // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
@@ -398,7 +401,10 @@ function ensureGroupColors() {
 }
 
 const groupSwatch = (name) => (validSwatch(state.settings.groupColors[name]) ? state.settings.groupColors[name] : 'w1');
-const swatchName = (key) => (isWalletKey(key) ? WALLET_NAMES[Number(key.slice(1)) - 1] : SWATCHES.find((s) => s.key === key)?.name ?? '');
+const swatchName = (key) => {
+  const k = isWalletKey(key) ? WALLET_COLOUR_KEYS[Number(key.slice(1)) - 1] : SWATCHES.find((s) => s.key === key)?.name;
+  return k ? t(k) : WALLET_NAMES[Number(String(key).slice(1)) - 1] ?? '';
+};
 
 /** Keep only valid `name → swatch key` pairs (picked swatches and automatic Wallet colours). */
 function sanitizeGroupColors(raw) {
@@ -427,10 +433,10 @@ function bindGroupColors() {
     group = dot.dataset.group;
     opener = dot;
     const current = groupSwatch(group);
-    $('#swatch-pop-title').textContent = `Colour for ${group}`;
+    $('#swatch-pop-title').textContent = t('money.colour.title', { group: groupLabel(group) });
     $('#swatch-grid').innerHTML = SWATCHES.map((s) => `
       <button type="button" class="swatch" data-swatch="${s.key}" style="--swatch: ${swatchVar(s.key)}"
-        aria-label="${esc(s.name)}" title="${esc(s.name)}" aria-pressed="${s.key === current}"></button>`).join('');
+        aria-label="${esc(t(s.name))}" title="${esc(t(s.name))}" aria-pressed="${s.key === current}"></button>`).join('');
     pop.hidden = false;
     overlays.open('swatch-pop', { close: () => close(true), isOpen: () => !pop.hidden });
     dot.setAttribute('aria-expanded', 'true');
@@ -460,7 +466,7 @@ function bindGroupColors() {
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
     try { await storage.saveSettings({ groupColors: { [name]: b.dataset.swatch } }); } catch (err) {
       console.error(err);
-      toast('Could not save the colour.');
+      toast(t('money.colour.saveFailed'));
     }
   });
 
@@ -472,13 +478,13 @@ function bindGroupColors() {
 }
 
 /* Sort groups --------------------------------------------------------------- */
-const SORT_NAMES = { az: 'A to Z', total: 'Total, high to low', items: 'Items, most first' };
+const SORT_NAMES = { az: 'sort.name.az', total: 'sort.name.total', items: 'sort.name.items' };
 
 /** The Sort button shows the order in use (its label, and its colour when it isn't A–Z). */
 function renderSortButton() {
   const btn = $('#sort-btn');
   btn.dataset.sort = state.groupSort;
-  btn.setAttribute('aria-label', `Sort groups: ${SORT_NAMES[state.groupSort]}`);
+  btn.setAttribute('aria-label', t('sort.button', { order: t(SORT_NAMES[state.groupSort]) }));
   $$('#sort-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
 }
 
@@ -554,7 +560,7 @@ function renewalTag(sub) {
   return `<span class="tag${soon ? ' tag-soon' : ''}">${esc(renewalText(d, isIncome(sub)))}</span>`;
 }
 
-const ONE_OFF_TAG = '<span class="tag tag-once">One-off</span>';
+const oneOffTag = () => `<span class="tag tag-once">${esc(t('money.oneOff'))}</span>`;
 
 /* Wallet view (js/wallet.js) ------------------------------------------------ */
 let wallet = null;
@@ -632,16 +638,16 @@ function renderSubs({ reorder = false } = {}) {
 
   // Income first (an implicit section, no categories), then expenses grouped by category, in the
   // order Sort asks for (items A–Z within each group).
-  const groups = moneyGroups().map((g) => ({ name: g.name, items: g.items, colour: !g.income }));
+  const groups = moneyGroups().map((g) => ({ name: g.name, label: g.label, items: g.items, colour: !g.income }));
 
   const isList = state.view === 'list';
   list.innerHTML = groups.map((g, i) => {
     const key = g.colour ? groupSwatch(g.name) : null;
     const dot = key ? `<button type="button" class="group-dot" data-group="${esc(g.name)}" style="--swatch: ${swatchVar(key)}"
-      aria-label="Colour for ${esc(g.name)}: ${esc(swatchName(key))}" aria-haspopup="dialog" aria-expanded="false"></button>` : '';
+      aria-label="${esc(t('money.colour.dot', { group: g.label, colour: swatchName(key) }))}" aria-haspopup="dialog" aria-expanded="false"></button>` : '';
     return `
     <section class="money-group" aria-labelledby="group-${i}">
-      <h2 class="section-title${dot ? ' group-head' : ''}" id="group-${i}">${dot}<span>${esc(g.name)} <span class="optional">${g.items.length}</span></span></h2>
+      <h2 class="section-title${dot ? ' group-head' : ''}" id="group-${i}">${dot}<span>${esc(g.label)} <span class="optional">${g.items.length}</span></span></h2>
       <div class="${isList ? 'subs-list' : 'subs-grid'}">${g.items.map(isList ? rowHTML : cardHTML).join('')}</div>
     </section>`;
   }).join('');
@@ -654,33 +660,34 @@ function renderMoneySummary() {
   const now = new Date();
   // This month or year on the same cash basis as Insights (see stripSummary); undated items are
   // left out and counted on one line that opens the first of them.
-  const t = stripSummary(inCur, state.period, now.getFullYear(), now.getMonth());
+  const sum = stripSummary(inCur, state.period, now.getFullYear(), now.getMonth());
   const undated = undatedItems(inCur);
   const when = state.period === 'annual'
     ? String(now.getFullYear())
-    : now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const cell = (label, value, cls = '', sub = '') => `
+    : now.toLocaleDateString(formatLocale(), { month: 'long', year: 'numeric' });
+  // `id` names the figure for the rolling totals (stable in every language); `label` is shown.
+  const cell = (id, label, value, cls = '', sub = '') => `
     <div class="summary-cell${cls}">
-      <div class="stat-label">${label}</div>
-      <div class="summary-value" data-roll="${label}" data-value="${value}">${esc(money(value, cur))}</div>
-      ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
+      <div class="stat-label">${esc(label)}</div>
+      <div class="summary-value" data-roll="${id}" data-value="${value}">${esc(money(value, cur))}</div>
+      ${sub ? `<div class="stat-sub">${esc(sub)}</div>` : ''}
     </div>`;
 
   $('#money-summary').innerHTML = `
     <div class="summary-head">
       <span class="summary-when">${esc(when)}</span>
-      <div class="segmented" role="group" aria-label="Summary period">
-        <button type="button" class="seg-btn seg-btn-text" data-period="monthly" aria-pressed="${state.period === 'monthly'}">Monthly</button>
-        <button type="button" class="seg-btn seg-btn-text" data-period="annual" aria-pressed="${state.period === 'annual'}">Annual</button>
+      <div class="segmented" role="group" aria-label="${esc(t('money.period.label'))}">
+        <button type="button" class="seg-btn seg-btn-text" data-period="monthly" aria-pressed="${state.period === 'monthly'}">${esc(t('money.period.monthly'))}</button>
+        <button type="button" class="seg-btn seg-btn-text" data-period="annual" aria-pressed="${state.period === 'annual'}">${esc(t('money.period.annual'))}</button>
       </div>
     </div>
     <div class="summary-cells">
-      ${cell('Income', t.income, ' summary-income')}
-      ${cell('Outgoings', t.outgoings, '', state.period === 'annual' ? '' : `Avg ${esc(money(t.average, cur))}/mo`)}
-      ${cell('Left over', t.leftOver, t.leftOver < 0 ? ' summary-short' : '', t.leftOver < 0 ? 'More going out than coming in' : '')}
+      ${cell('Income', t('money.income'), sum.income, ' summary-income')}
+      ${cell('Outgoings', t('money.outgoings'), sum.outgoings, '', state.period === 'annual' ? '' : t('common.avgPerMonth', { amount: money(sum.average, cur) }))}
+      ${cell('Left over', t('money.leftOver'), sum.leftOver, sum.leftOver < 0 ? ' summary-short' : '', sum.leftOver < 0 ? t('common.moreOutThanIn') : '')}
     </div>
-    ${undated.length ? `<button type="button" class="summary-note summary-note-action" data-id="${esc(undated[0].id)}">Excludes ${plural(undated.length, 'undated item')}</button>` : ''}
-    ${others ? `<p class="summary-note">${esc(cur)} only. ${plural(others, 'item')} in other currencies ${others === 1 ? "isn't" : "aren't"} included.</p>` : ''}`;
+    ${undated.length ? `<button type="button" class="summary-note summary-note-action" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
+    ${others ? `<p class="summary-note">${esc(t('money.otherCurrencies', { currency: cur, count: others }))}</p>` : ''}`;
   // The three figures roll when they change, when the tab comes to the front and when the app comes back.
   $$('#money-summary [data-roll]').forEach((el) => roller.show(el, `strip:${el.dataset.roll}`, Number(el.dataset.value), cur, { visible: moneyOnScreen() }));
 }
@@ -721,16 +728,16 @@ function onceDate(s) {
 
 function cardHTML(s) {
   const meta = isOnce(s)
-    ? [ONE_OFF_TAG, onceDate(s) ? `<span class="tag">${esc(onceDate(s))}</span>` : ''].join('')
+    ? [oneOffTag(), onceDate(s) ? `<span class="tag">${esc(onceDate(s))}</span>` : ''].join('')
     : renewalTag(s);
   return `
-    <button type="button" class="sub-card" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
+    <button type="button" class="sub-card" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
       ${logoHTML(s, 'md')}
       <span class="sub-text">
         <span class="sub-name">${esc(s.name)}</span>
         ${s.plan && !isIncome(s) ? `<span class="sub-plan">${esc(s.plan)}</span>` : ''}
       </span>
-      <span class="sub-price"><span class="amount">${esc(money(s.price, s.currency))}</span><span class="cycle">${cycleLabel(s.cycle)}</span></span>
+      <span class="sub-price"><span class="amount">${esc(money(s.price, s.currency))}</span><span class="cycle">${esc(cycleLabel(s.cycle))}</span></span>
       ${meta ? `<span class="sub-meta">${meta}</span>` : ''}
     </button>`;
 }
@@ -740,7 +747,7 @@ function rowHTML(s) {
   const parts = [isIncome(s) ? '' : s.plan, isOnce(s) ? onceDate(s) : d ? renewalText(d, isIncome(s)) : ''];
   const sub = parts.filter(Boolean).map(esc).join(' · ');
   return `
-    <button type="button" class="sub-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
+    <button type="button" class="sub-row" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
       ${logoHTML(s, 'sm')}
       <span class="sub-text">
         <span class="sub-name">${esc(s.name)}</span>
@@ -748,7 +755,7 @@ function rowHTML(s) {
       </span>
       <span class="sub-row-price">
         <span class="amount">${esc(money(s.price, s.currency))}</span>
-        ${isOnce(s) ? ONE_OFF_TAG : `<span class="cycle">${s.cycle === 'annual' ? 'yearly' : 'monthly'}</span>`}
+        ${isOnce(s) ? oneOffTag() : `<span class="cycle">${esc(s.cycle === 'annual' ? t('money.row.yearly') : t('money.row.monthly'))}</span>`}
       </span>
     </button>`;
 }
@@ -1278,7 +1285,7 @@ function openForm(sub = null, type = 'expense') {
     if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
   } catch (err) {
     console.error(err);
-    reportError('Could not open the form', err);
+    reportError(t('form.error.open'), err);
   }
 }
 
@@ -1287,22 +1294,24 @@ function syncFormMode() {
   const f = form.elements;
   const income = state.formType === 'income';
   const once = f.cycle.value === 'once';
-  $('#sub-dialog-title').textContent = `${state.editingId ? 'Edit' : 'New'} ${income ? 'income' : 'expense'}`;
+  $('#sub-dialog-title').textContent = state.editingId
+    ? t(income ? 'form.title.editIncome' : 'form.title.editExpense')
+    : t(income ? 'form.title.newIncome' : 'form.title.newExpense');
   $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
   $('#field-renewal').hidden = once;
-  $('#label-renewal').textContent = income ? 'Next payment' : 'Next renewal';
+  $('#label-renewal').textContent = t(income ? 'form.renewal.income' : 'form.renewal.expense');
   $('#field-date').hidden = !once;
   $('#field-row-dates').hidden = $$('#field-row-dates > .field', form).every((el) => el.hidden);
   if (once && !f.date.value) f.date.value = todayStamp();
   if (!once) clearErrors('date');
   if (once) clearErrors('nextRenewal');
 
-  f.name.placeholder = income ? 'e.g. My salary' : 'e.g. Netflix';
+  f.name.placeholder = t(income ? 'form.name.placeholder.income' : 'form.name.placeholder.expense');
   // Service suggestions only make sense for expenses.
   if (income) f.name.removeAttribute('list'); else f.name.setAttribute('list', 'service-names');
-  f.notes.placeholder = income ? 'e.g. Paid on the 5th, after tax' : 'Shared with family, billed to card ending 1234…';
-  $('#label-price').textContent = income ? 'Amount' : 'Price';
-  $('#label-cycle').textContent = income ? 'How often' : 'Billing cycle';
+  f.notes.placeholder = t(income ? 'form.notes.placeholder.income' : 'form.notes.placeholder.expense');
+  $('#label-price').textContent = t(income ? 'form.price.income' : 'form.price.expense');
+  $('#label-cycle').textContent = t(income ? 'form.cycle.income' : 'form.cycle.expense');
 }
 
 function updateFormLogo() {
@@ -1372,11 +1381,11 @@ function bindForm() {
       if (i >= 0) state.subs[i] = sub; else state.subs.push(sub);
       closeDialog(dialog);
       render();
-      toast(i >= 0 ? `Saved ${sub.name}` : `Added ${sub.name}`);
+      toast(t(i >= 0 ? 'form.toast.saved' : 'form.toast.added', { name: sub.name }));
       storage.requestPersistence();
     } catch (err) {
       console.error(err);
-      toast('Could not save. Is storage full or disabled?');
+      toast(t('form.toast.saveFailed'));
     }
   });
 
@@ -1384,22 +1393,22 @@ function bindForm() {
     const sub = state.subs.find((s) => s.id === state.editingId);
     if (!sub) return;
     const ok = await confirmDialog({
-      title: `Delete ${sub.name}?`,
-      message: 'This deletes it here and on any devices you sync with. Export a backup first if you might want it back.',
-      actions: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger' }],
+      title: t('form.delete.title', { name: sub.name }),
+      message: t('form.delete.message'),
+      actions: [{ label: t('common.cancel'), value: false }, { label: t('form.delete'), value: true, kind: 'danger' }],
     });
     if (!ok) return;
     try {
       await storage.remove(sub.id);
     } catch (err) {
       console.error(err);
-      toast('Could not delete. Is storage full or disabled?');
+      toast(t('form.toast.deleteFailed'));
       return;
     }
     state.subs = state.subs.filter((s) => s.id !== sub.id);
     closeDialog(dialog);
     render();
-    toast(`Deleted ${sub.name}`);
+    toast(t('form.toast.deleted', { name: sub.name }));
   });
 }
 
@@ -1413,16 +1422,16 @@ function readForm() {
   const income = state.formType === 'income';
   const cycle = ['annual', 'once'].includes(f.cycle.value) ? f.cycle.value : 'monthly';
 
-  if (!name) { setError('name', 'Enter a name.'); valid = false; }
+  if (!name) { setError('name', t('form.error.name')); valid = false; }
   if (priceRaw === '' || !Number.isFinite(price) || price < 0) {
-    setError('price', `Enter ${income ? 'an amount' : 'a price'} of 0 or more.`); valid = false;
+    setError('price', t(income ? 'form.error.price.income' : 'form.error.price.expense')); valid = false;
   }
-  if (cycle === 'once' && !isDay(f.date.value)) { setError('date', 'Pick the date it happens.'); valid = false; }
+  if (cycle === 'once' && !isDay(f.date.value)) { setError('date', t('form.error.date')); valid = false; }
   // Recurring items need a date to show in a month: a renewal for an expense, a payment for income
   // (both kept in nextRenewal). An item saved before this was required keeps working without one
   // until it's edited; then the date has to be picked.
   if (cycle !== 'once' && !isDay(f.nextRenewal.value)) {
-    setError('nextRenewal', income ? 'Pick a payment date.' : 'Pick a renewal date.'); valid = false;
+    setError('nextRenewal', t(income ? 'form.error.renewal.income' : 'form.error.renewal.expense')); valid = false;
   }
   if (!valid) {
     const bad = form.querySelector('[aria-invalid="true"]');
