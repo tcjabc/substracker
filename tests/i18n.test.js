@@ -20,6 +20,7 @@ import * as aiImport from '../js/import-ai.js';
 import { wordProblems } from '../js/words.js';
 import { ScanError, NOT_RECOVERY_CODE } from '../js/qr-scan.js';
 import { KEY_NEEDED_MESSAGE } from '../js/sync.js';
+import * as i18n from '../js/i18n.js';
 
 const params = new URLSearchParams(location.search);
 const MODE = params.get('mode') === 'pseudo' ? 'pseudo' : 'en';
@@ -227,7 +228,8 @@ async function walk() {
   $('#tab-settings').click();
   await tick(20);
   put('doc.settings', [document.title, $('#page-title').textContent]);
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version'] }));
+  // The language picker is hidden until a second locale exists; hidden, it isn't part of the screen.
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', '#lang-row[hidden]'] }));
 
   // Sync sheet: every step's text, then a Join with wrong words.
   $('#btn-sync').click();
@@ -332,6 +334,48 @@ if (MODE === 'en') {
       if (a !== e) diffs.push(`${key}\n    expected ${e}\n    actual   ${a}`);
     }
     assert(!diffs.length, `${diffs.length} screen(s) differ:\n  ${diffs.join('\n  ')}`);
+  });
+
+  test("index.html's own English is the dictionary's, so the page reads the same before the script runs", async () => {
+    const html = await (await fetch('../index.html', { cache: 'no-store' })).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const roots = [doc, ...[...doc.querySelectorAll('template')].map((tpl) => tpl.content)];
+    const own = (el) => norm(el.children.length ? [...el.childNodes].find((n) => n.nodeType === 3 && n.nodeValue.trim())?.nodeValue : el.textContent);
+    const bad = [];
+    let n = 0;
+    for (const r of roots) {
+      for (const el of r.querySelectorAll('[data-i18n]')) { n++; if (own(el) !== i18n.t(el.dataset.i18n)) bad.push(`${el.dataset.i18n}: "${own(el)}" vs "${i18n.t(el.dataset.i18n)}"`); }
+      for (const el of r.querySelectorAll('[data-i18n-html]')) { n++; if (norm(el.innerHTML) !== norm(i18n.tHTML(el.dataset.i18nHtml))) bad.push(el.dataset.i18nHtml); }
+      for (const el of r.querySelectorAll('[data-i18n-attr]')) {
+        for (const pair of el.dataset.i18nAttr.split(';')) {
+          const [a, k] = pair.split(':').map((x) => x.trim());
+          n++;
+          if (el.getAttribute(a) !== i18n.t(k)) bad.push(`${k} (${a}): "${el.getAttribute(a)}" vs "${i18n.t(k)}"`);
+        }
+      }
+    }
+    assert(n > 150, `found the markup keys (${n})`);
+    eq(bad, [], 'markup text that differs from js/locales/en.js');
+  });
+
+  test('the language: English, lang="en", per device, never in a backup, the settings or the sync outbox', async () => {
+    eq(document.documentElement.lang, 'en', 'document lang');
+    eq(i18n.getLocale(), 'en', 'active locale');
+    eq(i18n.getLangSetting(), 'auto', 'a fresh device follows the device');
+    assert($('#lang-row').hidden, 'the picker is hidden while English is the only language');
+    eq($$('#set-lang option').map((o) => o.value), ['auto', 'en'], 'Same as device, then each locale');
+    eq($('#set-lang').value, 'auto', 'showing the setting');
+    const opsBefore = await storage.pendingCount();
+    eq(i18n.saveLangSetting('en'), 'en', 'saved');
+    eq(localStorage.getItem('substracker.lang'), 'en', 'kept on this device');
+    const backup = JSON.stringify(await storage.exportAll());
+    assert(!/"lang"|substracker\.lang|"language"/.test(backup), 'not in a backup');
+    const settings = await storage.getSettings();
+    assert(!('lang' in settings) && !('language' in settings), 'not a shared setting');
+    eq(await storage.pendingCount(), opsBefore, 'no op for sync');
+    assert(!/lang/.test(JSON.stringify(await storage.pendingOps())), 'nothing about it queued');
+    eq(i18n.saveLangSetting('auto'), 'auto', 'back to the device');
+    eq(localStorage.getItem('substracker.lang'), null, 'auto is not stored');
   });
 }
 

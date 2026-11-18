@@ -13,7 +13,7 @@ import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
-import { initLanguage, applyI18n, formatLocale } from './i18n.js';
+import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting } from './i18n.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -246,8 +246,8 @@ async function init() {
   if (isNative()) {
     // The native app has no install step and no use for the PWA install instructions.
     $$('[data-web-only]').forEach((el) => { el.hidden = true; });
-    // App wording where the web copy talks about the browser or downloads (data-native-text).
-    $$('[data-native-text]').forEach((el) => { el.textContent = el.dataset.nativeText; });
+    // App wording where the web copy talks about the browser or downloads (data-i18n-native).
+    $$('[data-i18n-native]').forEach((el) => { el.textContent = t(el.dataset.i18nNative); });
   }
   fillStaticLists();
   applyTheme(storage.getPref('theme') || 'system');
@@ -1513,6 +1513,8 @@ function bindSettings() {
     applyTheme(e.target.value);
   });
 
+  bindLanguage();
+
   // Per device, like the theme: a localStorage preference, never synced or exported.
   $('#set-motion').addEventListener('change', (e) => {
     storage.setPref('reduceMotion', e.target.checked ? 'on' : 'off');
@@ -1542,6 +1544,25 @@ function bindSettings() {
     await deferredPrompt.userChoice;
     deferredPrompt = null;
     $('#btn-install').hidden = true;
+  });
+}
+
+/**
+ * Settings → Language: Same as device, or one of the locales (each named in its own language).
+ * Per device, like the theme (localStorage, js/i18n.js), never synced or exported. Hidden while
+ * English is the only locale. A change reloads the app, so every screen is drawn in the new one.
+ */
+function bindLanguage() {
+  const row = $('#lang-row');
+  const select = $('#set-lang');
+  const tags = Object.keys(LOCALES);
+  row.hidden = tags.length < 2;
+  select.innerHTML = [`<option value="auto">${esc(t('settings.language.auto'))}</option>`,
+    ...tags.map((tag) => `<option value="${esc(tag)}" lang="${esc(tag)}">${esc(LOCALES[tag].name)}</option>`)].join('');
+  select.value = getLangSetting();
+  select.addEventListener('change', () => {
+    saveLangSetting(select.value);
+    location.reload();
   });
 }
 

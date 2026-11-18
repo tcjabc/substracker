@@ -204,7 +204,7 @@ async function usedKeys() {
   for (const [f, src] of await sources()) {
     for (const m of src.matchAll(/\b(?:t|tHTML)\(\s*(['"])([^'"]+)\1/g)) add(m[2], f);
     for (const m of src.matchAll(/\b(?:t|tHTML)\(\s*`/g)) dynamic.push(`${f}: ${src.slice(m.index, m.index + 40)}`);
-    for (const m of src.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)) add(m[1], f);
+    for (const m of src.matchAll(/data-i18n(?:-html|-native)?="([^"]+)"/g)) add(m[1], f);
     for (const m of src.matchAll(/data-i18n-attr="([^"]+)"/g)) {
       for (const pair of m[1].split(';')) { const k = pair.split(':')[1]?.trim(); if (k) add(k, f); }
     }

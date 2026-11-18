@@ -31,25 +31,25 @@
 <body>
   <header class="app-header">
     <div class="container header-inner">
-      <h1 class="page-title" id="page-title">Money</h1>
+      <h1 class="page-title" id="page-title" data-i18n="tab.money">Money</h1>
       <div class="header-actions" id="subs-actions">
         <div class="segmented">
-          <button type="button" class="seg-btn sort-btn" id="sort-btn" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="sort-menu" aria-label="Sort groups: A to Z" title="Sort groups">
+          <button type="button" class="seg-btn sort-btn" id="sort-btn" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="sort-menu" aria-label="Sort groups: A to Z" title="Sort groups" data-i18n-attr="title:sort.title">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h5"/></svg>
           </button>
         </div>
-        <div class="segmented" role="group" aria-label="View">
-          <button type="button" class="seg-btn" data-view="wallet" aria-pressed="true" title="Wallet view">
+        <div class="segmented" role="group" aria-label="View" data-i18n-attr="aria-label:money.view.label">
+          <button type="button" class="seg-btn" data-view="wallet" aria-pressed="true" title="Wallet view" data-i18n-attr="title:money.view.wallet.title">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
-            <span class="sr-only">Wallet</span>
+            <span class="sr-only" data-i18n="money.view.wallet">Wallet</span>
           </button>
-          <button type="button" class="seg-btn" data-view="grid" aria-pressed="false" title="Card view">
+          <button type="button" class="seg-btn" data-view="grid" aria-pressed="false" title="Card view" data-i18n-attr="title:money.view.grid.title">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-            <span class="sr-only">Cards</span>
+            <span class="sr-only" data-i18n="money.view.grid">Cards</span>
           </button>
-          <button type="button" class="seg-btn" data-view="list" aria-pressed="false" title="List view">
+          <button type="button" class="seg-btn" data-view="list" aria-pressed="false" title="List view" data-i18n-attr="title:money.view.list.title">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
-            <span class="sr-only">List</span>
+            <span class="sr-only" data-i18n="money.view.list">List</span>
           </button>
         </div>
       </div>
@@ -59,48 +59,52 @@
   <main class="container" id="main">
     <!-- Money -->
     <section class="tab-panel" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs">
-      <section class="money-summary" id="money-summary" aria-label="Summary"></section>
+      <section class="money-summary" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
       <div id="subs-list" class="money-groups"></div>
       <div class="empty-state" id="subs-empty" hidden>
         <div class="empty-mark" aria-hidden="true">
           <svg class="icon icon-lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/></svg>
         </div>
-        <h2>Nothing here yet</h2>
-        <p>Add your income and the things you pay for. It's stored on this device, with optional end-to-end encrypted sync between your devices.</p>
+        <h2 data-i18n="money.empty.title">Nothing here yet</h2>
+        <p data-i18n="money.empty.text">Add your income and the things you pay for. It's stored on this device, with optional end-to-end encrypted sync between your devices.</p>
         <div class="empty-actions">
-          <button type="button" class="btn" data-action="add-income">Add income</button>
-          <button type="button" class="btn btn-primary" data-action="add">Add expense</button>
+          <button type="button" class="btn" data-action="add-income" data-i18n="money.addIncome">Add income</button>
+          <button type="button" class="btn btn-primary" data-action="add" data-i18n="money.addExpense">Add expense</button>
         </div>
       </div>
     </section>
 
     <!-- Insights -->
     <section class="tab-panel" id="panel-insights" role="tabpanel" aria-labelledby="tab-insights" hidden>
-      <div class="chips" id="currency-chips" role="group" aria-label="Currency"></div>
+      <div class="chips" id="currency-chips" role="group" aria-label="Currency" data-i18n-attr="aria-label:insights.currency.label"></div>
       <div id="insights"></div>
     </section>
 
     <!-- Settings -->
     <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
       <div class="settings-group">
-        <h2 class="group-title">Preferences</h2>
+        <h2 class="group-title" data-i18n="settings.preferences">Preferences</h2>
         <div class="panel">
           <label class="setting-row">
-            <span class="setting-label">Default currency</span>
+            <span class="setting-label" data-i18n="settings.currency">Default currency</span>
             <select id="set-currency" class="input input-compact"></select>
           </label>
+          <label class="setting-row" id="lang-row" hidden>
+            <span class="setting-label" data-i18n="settings.language">Language</span>
+            <select id="set-lang" class="input input-compact"></select>
+          </label>
           <label class="setting-row">
-            <span class="setting-label">Appearance</span>
+            <span class="setting-label" data-i18n="settings.theme">Appearance</span>
             <select id="set-theme" class="input input-compact">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="system" data-i18n="settings.theme.system">System</option>
+              <option value="light" data-i18n="settings.theme.light">Light</option>
+              <option value="dark" data-i18n="settings.theme.dark">Dark</option>
             </select>
           </label>
           <label class="setting-row">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.motion">
               Reduce motion and effects
-              <span class="setting-hint">Flat charts and no animation. Follows your device until you change it.</span>
+              <span class="setting-hint" data-i18n="settings.motion.hint">Flat charts and no animation. Follows your device until you change it.</span>
             </span>
             <input type="checkbox" class="check" id="set-motion">
           </label>
@@ -108,59 +112,59 @@
       </div>
 
       <div class="settings-group">
-        <h2 class="group-title">Sync</h2>
+        <h2 class="group-title" data-i18n="settings.sync.title">Sync</h2>
         <div class="panel">
           <div class="setting-row">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.sync.label">
               Sync between devices
-              <span class="setting-hint" id="sync-summary">Off</span>
+              <span class="setting-hint" id="sync-summary" data-i18n="sync.summary.off">Off</span>
             </span>
-            <button type="button" class="btn" id="btn-sync">Set up</button>
+            <button type="button" class="btn" id="btn-sync" data-i18n="sync.button.setup">Set up</button>
           </div>
         </div>
       </div>
 
       <div class="settings-group">
-        <h2 class="group-title">Data</h2>
+        <h2 class="group-title" data-i18n="settings.data">Data</h2>
         <div class="panel">
           <div class="setting-row">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.export">
               Export
-              <span class="setting-hint" data-native-text="Save or share a backup file of all items and settings.">Download all items and settings as JSON.</span>
+              <span class="setting-hint" data-i18n-native="settings.export.hint.native" data-i18n="settings.export.hint">Download all items and settings as JSON.</span>
             </span>
-            <button type="button" class="btn" id="btn-export">Export</button>
+            <button type="button" class="btn" id="btn-export" data-i18n="settings.export.button">Export</button>
           </div>
           <div class="setting-row setting-row-wrap">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.csv">
               Export as CSV
-              <span class="setting-hint">For spreadsheets, not a backup: items only, and it can't be imported.</span>
+              <span class="setting-hint" data-i18n="settings.csv.hint">For spreadsheets, not a backup: items only, and it can't be imported.</span>
             </span>
             <span class="setting-actions">
-              <button type="button" class="btn" id="btn-export-csv" aria-label="Download CSV, for spreadsheets, not a backup">Download CSV</button>
-              <button type="button" class="btn" id="btn-copy-csv" aria-label="Copy CSV, for spreadsheets, not a backup">Copy CSV</button>
+              <button type="button" class="btn" id="btn-export-csv" aria-label="Download CSV, for spreadsheets, not a backup" data-i18n-attr="aria-label:settings.csv.download.label" data-i18n="settings.csv.download">Download CSV</button>
+              <button type="button" class="btn" id="btn-copy-csv" aria-label="Copy CSV, for spreadsheets, not a backup" data-i18n-attr="aria-label:settings.csv.copy.label" data-i18n="settings.csv.copy">Copy CSV</button>
             </span>
           </div>
           <div class="setting-fallback" id="csv-fallback" hidden>
-            <p class="setting-hint" id="csv-fallback-text" role="status">Couldn't copy. Select the CSV below and copy it.</p>
+            <p class="setting-hint" id="csv-fallback-text" role="status" data-i18n="settings.csv.fallback">Couldn't copy. Select the CSV below and copy it.</p>
             <textarea class="input ai-text" id="csv-copy-text" rows="6" readonly aria-labelledby="csv-fallback-text"></textarea>
           </div>
           <div class="setting-row">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.import">
               Import
-              <span class="setting-hint">Load a JSON backup, then choose merge or replace.</span>
+              <span class="setting-hint" data-i18n="settings.import.hint">Load a JSON backup, then choose merge or replace.</span>
             </span>
-            <button type="button" class="btn" id="btn-import">Import</button>
+            <button type="button" class="btn" id="btn-import" data-i18n="settings.import.button">Import</button>
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </div>
           <div class="setting-row">
-            <span class="setting-label">
+            <span class="setting-label" data-i18n="settings.ai">
               Import with AI
-              <span class="setting-hint">Turn statements into items with an AI chat you choose. The app sends nothing.</span>
+              <span class="setting-hint" data-i18n="settings.ai.hint">Turn statements into items with an AI chat you choose. The app sends nothing.</span>
             </span>
-            <button type="button" class="btn" id="btn-import-ai">Start</button>
+            <button type="button" class="btn" id="btn-import-ai" data-i18n="settings.ai.button">Start</button>
           </div>
         </div>
-        <p class="footnote" id="storage-note" data-native-text="Your data is stored locally on this device. With optional sync, changes are end-to-end encrypted before they leave the device, so the relay can't read them. Logos are loaded from Google's favicon service using only the domain you enter.">Your data is stored locally in this browser (IndexedDB). With optional sync, changes are end-to-end encrypted before they leave the device, so the relay can't read them. Logos are loaded from Google's favicon service using only the domain you enter.</p>
+        <p class="footnote" id="storage-note" data-i18n="settings.storageNote" data-i18n-native="settings.storageNote.native">Your data is stored locally in this browser (IndexedDB). With optional sync, changes are end-to-end encrypted before they leave the device, so the relay can't read them. Logos are loaded from Google's favicon service using only the domain you enter.</p>
       </div>
 
       <!-- Developer sync screen: hidden unless opened with ?dev=1 or 7 taps on the version line. -->
@@ -211,11 +215,11 @@
       </div>
 
       <div class="settings-group">
-        <h2 class="group-title" data-web-only>Install</h2>
+        <h2 class="group-title" data-web-only data-i18n="settings.install">Install</h2>
         <div class="panel panel-text" data-web-only>
-          <p><strong>iPhone / iPad:</strong> open in Safari, tap Share, then <em>Add to Home Screen</em>.</p>
-          <p><strong>Android:</strong> open in Chrome, tap the menu, then <em>Install app</em>.</p>
-          <button type="button" class="btn btn-primary" id="btn-install" hidden>Install app</button>
+          <p data-i18n-html="settings.install.iosHtml"><strong>iPhone / iPad:</strong> open in Safari, tap Share, then <em>Add to Home Screen</em>.</p>
+          <p data-i18n-html="settings.install.androidHtml"><strong>Android:</strong> open in Chrome, tap the menu, then <em>Install app</em>.</p>
+          <button type="button" class="btn btn-primary" id="btn-install" hidden data-i18n="settings.install.button">Install app</button>
         </div>
         <p class="footnote" id="app-version"></p>
       </div>
@@ -224,26 +228,26 @@
 
   <!-- Expense sits at the bottom, nearest the thumb: it's the most-used action. -->
   <div class="fab-stack" id="fab-stack">
-    <button type="button" class="fab fab-sm fab-income" data-action="add-income" aria-label="Add income">
+    <button type="button" class="fab fab-sm fab-income" data-action="add-income" aria-label="Add income" data-i18n-attr="aria-label:money.addIncome">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
     </button>
-    <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense">
+    <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense" data-i18n-attr="aria-label:money.addExpense">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
     </button>
   </div>
 
-  <nav class="tabbar" role="tablist" aria-label="Sections">
+  <nav class="tabbar" role="tablist" aria-label="Sections" data-i18n-attr="aria-label:tab.sections">
     <button type="button" class="tab" role="tab" id="tab-subs" data-tab="subs" aria-controls="panel-subs" aria-selected="true">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>
-      <span>Money</span>
+      <span data-i18n="tab.money">Money</span>
     </button>
     <button type="button" class="tab" role="tab" id="tab-insights" data-tab="insights" aria-controls="panel-insights" aria-selected="false" tabindex="-1">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Insights</span>
+      <span data-i18n="tab.insights">Insights</span>
     </button>
     <button type="button" class="tab" role="tab" id="tab-settings" data-tab="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      <span>Settings</span>
+      <span data-i18n="tab.settings">Settings</span>
     </button>
   </nav>
 
@@ -252,84 +256,84 @@
     <form id="sub-form" method="dialog" novalidate>
       <div class="sheet-head">
         <span id="form-logo"></span>
-        <h2 id="sub-dialog-title">New expense</h2>
-        <button type="button" class="icon-btn" data-close aria-label="Close">
+        <h2 id="sub-dialog-title" data-i18n="form.title.newExpense">New expense</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close" data-i18n-attr="aria-label:common.close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
       <div class="sheet-body">
         <fieldset class="field">
-          <legend class="sr-only">Type</legend>
+          <legend class="sr-only" data-i18n="form.type">Type</legend>
           <div class="segmented segmented-wide">
-            <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span>Expense</span></label>
-            <label class="seg-option"><input type="radio" name="kind" value="income"><span>Income</span></label>
+            <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span data-i18n="form.kind.expense">Expense</span></label>
+            <label class="seg-option"><input type="radio" name="kind" value="income"><span data-i18n="form.kind.income">Income</span></label>
           </div>
         </fieldset>
         <label class="field">
-          <span class="field-label">Name</span>
-          <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix">
+          <span class="field-label" data-i18n="form.name">Name</span>
+          <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix" data-i18n-attr="placeholder:form.name.placeholder.expense">
           <span class="field-error" data-error-for="name"></span>
         </label>
         <div class="field-row">
           <label class="field field-grow" data-expense-only>
-            <span class="field-label">Website domain <span class="optional">for logo</span></span>
-            <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com">
+            <span class="field-label" data-i18n="form.domain">Website domain <span class="optional" data-i18n="form.domain.hint">for logo</span></span>
+            <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com" data-i18n-attr="placeholder:form.domain.placeholder">
           </label>
           <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
           <label class="field">
-            <span class="field-label">Emoji <span class="optional">optional</span></span>
-            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜">
+            <span class="field-label" data-i18n="form.emoji">Emoji <span class="optional" data-i18n="form.optional">optional</span></span>
+            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜" data-i18n-attr="placeholder:form.emoji.placeholder">
           </label>
         </div>
         <label class="field" data-expense-only>
-          <span class="field-label">Plan <span class="optional">optional</span></span>
-          <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium">
+          <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
+          <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
         </label>
         <div class="field-row">
           <label class="field field-grow">
-            <span class="field-label" id="label-price">Price</span>
+            <span class="field-label" id="label-price" data-i18n="form.price.expense">Price</span>
             <input class="input" name="price" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0">
             <span class="field-error" data-error-for="price"></span>
           </label>
           <label class="field">
-            <span class="field-label">Currency</span>
+            <span class="field-label" data-i18n="form.currency">Currency</span>
             <select class="input" name="currency"></select>
           </label>
         </div>
         <fieldset class="field">
-          <legend class="field-label" id="label-cycle">Billing cycle</legend>
+          <legend class="field-label" id="label-cycle" data-i18n="form.cycle.expense">Billing cycle</legend>
           <div class="segmented segmented-wide">
-            <label class="seg-option"><input type="radio" name="cycle" value="monthly" checked><span>Monthly</span></label>
-            <label class="seg-option"><input type="radio" name="cycle" value="annual"><span>Annual</span></label>
-            <label class="seg-option"><input type="radio" name="cycle" value="once"><span>Once</span></label>
+            <label class="seg-option"><input type="radio" name="cycle" value="monthly" checked><span data-i18n="form.cycle.monthly">Monthly</span></label>
+            <label class="seg-option"><input type="radio" name="cycle" value="annual"><span data-i18n="form.cycle.annual">Annual</span></label>
+            <label class="seg-option"><input type="radio" name="cycle" value="once"><span data-i18n="form.cycle.once">Once</span></label>
           </div>
         </fieldset>
         <div class="field-row" id="field-row-dates">
           <label class="field field-grow" id="field-renewal">
-            <span class="field-label" id="label-renewal">Next renewal</span>
+            <span class="field-label" id="label-renewal" data-i18n="form.renewal.expense">Next renewal</span>
             <input class="input" name="nextRenewal" type="date">
             <span class="field-error" data-error-for="nextRenewal"></span>
           </label>
           <label class="field field-grow" id="field-date" hidden>
-            <span class="field-label">Date</span>
+            <span class="field-label" data-i18n="form.date">Date</span>
             <input class="input" name="date" type="date">
             <span class="field-error" data-error-for="date"></span>
           </label>
           <label class="field field-grow" data-expense-only>
-            <span class="field-label">Category <span class="optional">optional</span></span>
-            <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music">
+            <span class="field-label" data-i18n="form.category">Category <span class="optional" data-i18n="form.optional">optional</span></span>
+            <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music" data-i18n-attr="placeholder:form.category.placeholder">
           </label>
         </div>
         <label class="field">
-          <span class="field-label">Notes <span class="optional">optional</span></span>
-          <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…"></textarea>
+          <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
+          <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
         </label>
       </div>
       <div class="sheet-foot">
-        <button type="button" class="btn btn-danger-text" id="btn-delete" hidden>Delete</button>
+        <button type="button" class="btn btn-danger-text" id="btn-delete" hidden data-i18n="form.delete">Delete</button>
         <span class="spacer"></span>
-        <button type="button" class="btn" data-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn" data-close data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-i18n="common.save">Save</button>
       </div>
     </form>
   </dialog>
@@ -338,8 +342,8 @@
   <dialog class="sheet" id="sync-dialog" aria-labelledby="sync-title">
     <form id="sync-form" method="dialog" novalidate>
       <div class="sheet-head">
-        <h2 id="sync-title">Sync</h2>
-        <button type="button" class="icon-btn" data-sync-close aria-label="Close">
+        <h2 id="sync-title" data-i18n="sync.title">Sync</h2>
+        <button type="button" class="icon-btn" data-sync-close aria-label="Close" data-i18n-attr="aria-label:common.close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
@@ -347,32 +351,32 @@
       <!-- Not set up -->
       <div class="sync-view" data-sync-view="setup" hidden>
         <div class="sheet-body">
-          <p class="sync-warning" id="sync-needs-words" role="note" hidden>Sync needs the 12 words on this device. Join again with your recovery words.</p>
-          <p class="sync-text">Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them.</p>
+          <p class="sync-warning" id="sync-needs-words" role="note" hidden data-i18n="sync.needsWords">Sync needs the 12 words on this device. Join again with your recovery words.</p>
+          <p class="sync-text" data-i18n="sync.setup.text">Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them.</p>
         </div>
         <div class="sheet-foot">
           <span class="spacer"></span>
-          <button type="button" class="btn" id="sync-join-open">Join with 12 words</button>
-          <button type="button" class="btn btn-primary" id="sync-start">Start sync</button>
+          <button type="button" class="btn" id="sync-join-open" data-i18n="sync.joinOpen">Join with 12 words</button>
+          <button type="button" class="btn btn-primary" id="sync-start" data-i18n="sync.start">Start sync</button>
         </div>
       </div>
 
       <!-- Start: the required recovery step -->
       <div class="sync-view" data-sync-view="recovery" hidden>
         <div class="sheet-body">
-          <h3 class="sync-heading">Your 12 recovery words</h3>
-          <p class="sync-warning" role="note">Write these down. Anyone with them can read your data; if you lose every device and the words, the synced copy can't be recovered.</p>
+          <h3 class="sync-heading" data-i18n="sync.recovery.title">Your 12 recovery words</h3>
+          <p class="sync-warning" role="note" data-i18n="sync.recovery.warning">Write these down. Anyone with them can read your data; if you lose every device and the words, the synced copy can't be recovered.</p>
           <div class="sync-words-block" data-words-slot></div>
           <label class="sync-check-row">
             <input type="checkbox" class="check" id="sync-saved">
-            <span>I've saved these words</span>
+            <span data-i18n="sync.recovery.saved">I've saved these words</span>
           </label>
           <span class="field-error" id="sync-start-error" role="alert"></span>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" data-sync-back>Cancel</button>
+          <button type="button" class="btn" data-sync-back data-i18n="common.cancel">Cancel</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="sync-start-done" disabled>Start sync</button>
+          <button type="button" class="btn btn-primary" id="sync-start-done" disabled data-i18n="sync.start">Start sync</button>
         </div>
       </div>
 
@@ -380,25 +384,25 @@
       <div class="sync-view" data-sync-view="join" hidden>
         <div class="sheet-body">
           <div class="sync-scan" id="sync-scan" hidden>
-            <button type="button" class="btn" id="sync-scan-start">Scan QR code</button>
+            <button type="button" class="btn" id="sync-scan-start" data-i18n="sync.scan.start">Scan QR code</button>
             <div class="scan-view" id="sync-scan-view" hidden>
-              <video class="scan-video" id="sync-scan-video" playsinline muted aria-label="Camera"></video>
-              <p class="setting-hint">Point the camera at the QR code under Show recovery words on the other device. The camera picture stays on this device.</p>
-              <div><button type="button" class="btn" id="sync-scan-stop">Stop scanning</button></div>
+              <video class="scan-video" id="sync-scan-video" playsinline muted aria-label="Camera" data-i18n-attr="aria-label:sync.scan.camera"></video>
+              <p class="setting-hint" data-i18n="sync.scan.hint">Point the camera at the QR code under Show recovery words on the other device. The camera picture stays on this device.</p>
+              <div><button type="button" class="btn" id="sync-scan-stop" data-i18n="sync.scan.stop">Stop scanning</button></div>
             </div>
             <p class="sync-scan-msg" id="sync-scan-msg" role="status" aria-live="polite"></p>
           </div>
           <label class="field">
-            <span class="field-label">Recovery words</span>
-            <textarea class="input sync-words-input" id="sync-join-words" rows="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12 words, separated by spaces"></textarea>
-            <span class="setting-hint">On a device that already syncs, open Settings → Sync → Show recovery words.</span>
+            <span class="field-label" data-i18n="sync.join.words">Recovery words</span>
+            <textarea class="input sync-words-input" id="sync-join-words" rows="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12 words, separated by spaces" data-i18n-attr="placeholder:sync.join.placeholder"></textarea>
+            <span class="setting-hint" data-i18n="sync.join.hint">On a device that already syncs, open Settings → Sync → Show recovery words.</span>
           </label>
           <ul class="sync-problems" id="sync-join-problems" role="alert"></ul>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" data-sync-back>Back</button>
+          <button type="button" class="btn" data-sync-back data-i18n="common.back">Back</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="sync-join">Join</button>
+          <button type="button" class="btn btn-primary" id="sync-join" data-i18n="sync.join">Join</button>
         </div>
       </div>
 
@@ -407,28 +411,28 @@
         <div class="sheet-body">
           <p class="sync-text" id="sync-choice-lead"></p>
           <fieldset class="field sync-choices">
-            <legend class="sr-only">How to join</legend>
+            <legend class="sr-only" data-i18n="sync.choice.legend">How to join</legend>
             <label class="choice">
               <input type="radio" name="join-mode" value="replace" checked>
               <span class="choice-body">
-                <span class="choice-title">Use the household's data</span>
-                <span class="choice-hint">This device's items are replaced by the household's. Items that are only on this device will be lost, so export a backup first if you might want them.</span>
+                <span class="choice-title" data-i18n="sync.choice.replace">Use the household's data</span>
+                <span class="choice-hint" data-i18n="sync.choice.replace.hint">This device's items are replaced by the household's. Items that are only on this device will be lost, so export a backup first if you might want them.</span>
               </span>
             </label>
             <label class="choice">
               <input type="radio" name="join-mode" value="merge">
               <span class="choice-body">
-                <span class="choice-title">Merge this device's data into the household</span>
-                <span class="choice-hint">This device's items are sent to every device in the household. Where an item was edited in both places, the later edit wins, so changes from this device can overwrite newer ones made on other devices.</span>
+                <span class="choice-title" data-i18n="sync.choice.merge">Merge this device's data into the household</span>
+                <span class="choice-hint" data-i18n="sync.choice.merge.hint">This device's items are sent to every device in the household. Where an item was edited in both places, the later edit wins, so changes from this device can overwrite newer ones made on other devices.</span>
               </span>
             </label>
           </fieldset>
-          <div><button type="button" class="btn" id="sync-choice-export">Export a backup first</button></div>
+          <div><button type="button" class="btn" id="sync-choice-export" data-i18n="common.exportBackupFirst">Export a backup first</button></div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" id="sync-choice-cancel">Cancel</button>
+          <button type="button" class="btn" id="sync-choice-cancel" data-i18n="common.cancel">Cancel</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="sync-choice-go">Continue</button>
+          <button type="button" class="btn btn-primary" id="sync-choice-go" data-i18n="common.continue">Continue</button>
         </div>
       </div>
 
@@ -437,33 +441,33 @@
         <div class="sheet-body">
           <div class="panel">
             <div class="setting-row">
-              <span class="setting-label">Status</span>
-              <span class="setting-hint sync-value" id="sync-status" role="status" aria-live="polite">Off</span>
+              <span class="setting-label" data-i18n="sync.status">Status</span>
+              <span class="setting-hint sync-value" id="sync-status" role="status" aria-live="polite" data-i18n="sync.state.off">Off</span>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Last sync</span>
-              <span class="setting-hint sync-value" id="sync-last">Never</span>
+              <span class="setting-label" data-i18n="sync.last">Last sync</span>
+              <span class="setting-hint sync-value" id="sync-last" data-i18n="sync.never">Never</span>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Changes waiting to send</span>
+              <span class="setting-label" data-i18n="sync.pending">Changes waiting to send</span>
               <span class="setting-hint sync-value" id="sync-pending">0</span>
             </div>
           </div>
           <div class="sync-reveal">
-            <button type="button" class="btn" id="sync-show-words">Show recovery words</button>
+            <button type="button" class="btn" id="sync-show-words" data-i18n="sync.words.show">Show recovery words</button>
             <div class="sync-words-block" data-words-slot hidden></div>
-            <button type="button" class="btn" id="sync-hide-words" hidden>Hide recovery words</button>
+            <button type="button" class="btn" id="sync-hide-words" hidden data-i18n="sync.words.hide">Hide recovery words</button>
           </div>
           <div class="sync-devices">
-            <h3 class="sync-heading">Devices</h3>
+            <h3 class="sync-heading" data-i18n="sync.devices">Devices</h3>
             <!-- TODO(sync-devices): a list of this household's devices needs relay support (see README roadmap). -->
-            <p class="sync-text">Use the 12 words to add a device: on it, open Settings → Sync → Join with 12 words.</p>
+            <p class="sync-text" data-i18n="sync.devices.text">Use the 12 words to add a device: on it, open Settings → Sync → Join with 12 words.</p>
           </div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn btn-danger-text" id="sync-turn-off">Turn off sync on this device</button>
+          <button type="button" class="btn btn-danger-text" id="sync-turn-off" data-i18n="sync.turnOff">Turn off sync on this device</button>
           <span class="spacer"></span>
-          <button type="button" class="btn" id="sync-now">Sync now</button>
+          <button type="button" class="btn" id="sync-now" data-i18n="sync.now">Sync now</button>
         </div>
       </div>
 
@@ -476,8 +480,8 @@
   <dialog class="sheet" id="ai-dialog" aria-labelledby="ai-title">
     <form id="ai-form" method="dialog" novalidate>
       <div class="sheet-head">
-        <h2 id="ai-title">Import with AI</h2>
-        <button type="button" class="icon-btn" data-ai-close aria-label="Close">
+        <h2 id="ai-title" data-i18n="settings.ai">Import with AI</h2>
+        <button type="button" class="icon-btn" data-ai-close aria-label="Close" data-i18n-attr="aria-label:common.close">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
@@ -485,42 +489,42 @@
       <!-- 1. Read and confirm -->
       <div class="sync-view" data-ai-view="warning" hidden>
         <div class="sheet-body">
-          <p class="sync-warning" role="note">Peek Budget has no connection to any AI service. The app never sends anything: what you upload is between you and the provider you choose.</p>
+          <p class="sync-warning" role="note" data-i18n="ai.warning.lead">Peek Budget has no connection to any AI service. The app never sends anything: what you upload is between you and the provider you choose.</p>
           <ul class="ai-points">
-            <li>Privacy claims belong to each provider and can change. Check them yourself before you upload anything.</li>
-            <li>Remove account numbers, card numbers and names first. The app only needs the merchant, amount and date.</li>
-            <li>AI can misread documents, so check every row before you import.</li>
-            <li>Nothing is imported until you confirm.</li>
+            <li data-i18n="ai.warning.point1">Privacy claims belong to each provider and can change. Check them yourself before you upload anything.</li>
+            <li data-i18n="ai.warning.point2">Remove account numbers, card numbers and names first. The app only needs the merchant, amount and date.</li>
+            <li data-i18n="ai.warning.point3">AI can misread documents, so check every row before you import.</li>
+            <li data-i18n="ai.warning.point4">Nothing is imported until you confirm.</li>
           </ul>
           <div class="ai-block">
-            <h3 class="sync-heading">Choosing a tool</h3>
-            <p class="sync-text">Look for one that says it keeps no chat logs, doesn't train on your data, and has a temporary or incognito chat mode.</p>
+            <h3 class="sync-heading" data-i18n="ai.tool.title">Choosing a tool</h3>
+            <p class="sync-text" data-i18n="ai.tool.text">Look for one that says it keeps no chat logs, doesn't train on your data, and has a temporary or incognito chat mode.</p>
           </div>
           <div class="ai-block">
-            <button type="button" class="btn" data-ai-backup>Export a backup first</button>
+            <button type="button" class="btn" data-ai-backup data-i18n="common.exportBackupFirst">Export a backup first</button>
             <span class="setting-hint" id="ai-backup-hint"></span>
           </div>
           <div class="slide-confirm" id="ai-slide">
             <div class="slide-track" data-slide-track>
               <span class="slide-fill" aria-hidden="true"></span>
-              <span class="slide-label" data-slide-label aria-hidden="true">Slide to confirm you've read this</span>
+              <span class="slide-label" data-slide-label aria-hidden="true" data-i18n="ai.slide.label">Slide to confirm you've read this</span>
               <span class="slide-thumb" data-slide-thumb role="slider" tabindex="0"
                 aria-label="Slide to confirm you've read this" aria-describedby="ai-slide-help"
-                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-attr="aria-label:ai.slide.label">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
               </span>
             </div>
-            <p class="setting-hint" id="ai-slide-help">Drag to the end, or use the arrow keys. It unlocks after a moment.</p>
+            <p class="setting-hint" id="ai-slide-help" data-i18n="ai.slide.help">Drag to the end, or use the arrow keys. It unlocks after a moment.</p>
             <label class="sync-check-row">
               <input type="checkbox" class="check" data-slide-check>
-              <span>Or tick: I've read this</span>
+              <span data-i18n="ai.slide.tick">Or tick: I've read this</span>
             </label>
           </div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" id="ai-warning-cancel">Cancel</button>
+          <button type="button" class="btn" id="ai-warning-cancel" data-i18n="common.cancel">Cancel</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="ai-continue" disabled>Continue</button>
+          <button type="button" class="btn btn-primary" id="ai-continue" disabled data-i18n="common.continue">Continue</button>
         </div>
       </div>
 
@@ -528,38 +532,38 @@
       <div class="sync-view" data-ai-view="prompt" hidden>
         <div class="sheet-body">
           <div class="ai-block">
-            <h3 class="sync-heading">1. Copy the prompt</h3>
-            <p class="sync-text">It describes the format the app needs and asks the AI to check unclear dates with you instead of guessing.</p>
-            <button type="button" class="btn btn-primary" id="ai-copy-prompt">Copy prompt</button>
-            <p class="sync-text" id="ai-prompt-fallback" role="status" hidden>Couldn't copy. Select the prompt below and copy it.</p>
+            <h3 class="sync-heading" data-i18n="ai.prompt.step1">1. Copy the prompt</h3>
+            <p class="sync-text" data-i18n="ai.prompt.step1.text">It describes the format the app needs and asks the AI to check unclear dates with you instead of guessing.</p>
+            <button type="button" class="btn btn-primary" id="ai-copy-prompt" data-i18n="ai.prompt.copy">Copy prompt</button>
+            <p class="sync-text" id="ai-prompt-fallback" role="status" hidden data-i18n="ai.prompt.fallback">Couldn't copy. Select the prompt below and copy it.</p>
             <details class="ai-details" id="ai-prompt-details">
-              <summary>Show the prompt</summary>
-              <textarea class="input ai-text" id="ai-prompt-text" rows="8" readonly aria-label="The prompt"></textarea>
+              <summary data-i18n="ai.prompt.show">Show the prompt</summary>
+              <textarea class="input ai-text" id="ai-prompt-text" rows="8" readonly aria-label="The prompt" data-i18n-attr="aria-label:ai.prompt.label"></textarea>
             </details>
           </div>
           <div class="ai-block">
-            <h3 class="sync-heading">2. Ask your AI chat</h3>
-            <p class="sync-text">Paste the prompt into the AI chat you chose, attach photos or PDFs of your statements, and answer its questions.</p>
+            <h3 class="sync-heading" data-i18n="ai.prompt.step2">2. Ask your AI chat</h3>
+            <p class="sync-text" data-i18n="ai.prompt.step2.text">Paste the prompt into the AI chat you chose, attach photos or PDFs of your statements, and answer its questions.</p>
           </div>
           <div class="ai-block">
-            <h3 class="sync-heading">3. Bring back the reply</h3>
+            <h3 class="sync-heading" data-i18n="ai.prompt.step3">3. Bring back the reply</h3>
             <label class="field">
-              <span class="field-label">Paste the reply</span>
+              <span class="field-label" data-i18n="ai.reply.label">Paste the reply</span>
               <textarea class="input ai-text" id="ai-reply" rows="6" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder='{"version": 1, "rows": [...]}'></textarea>
             </label>
-            <button type="button" class="btn" id="ai-pick-file">Or pick a file</button>
+            <button type="button" class="btn" id="ai-pick-file" data-i18n="ai.reply.pickFile">Or pick a file</button>
             <input type="file" id="ai-file" accept="application/json,.json,text/plain,.txt" hidden>
           </div>
           <div class="ai-error" id="ai-reply-error" hidden>
             <ul class="sync-problems" id="ai-reply-problems" role="alert"></ul>
-            <button type="button" class="btn" id="ai-reply-copy-error">Copy error for your AI</button>
-            <textarea class="input ai-text" id="ai-reply-error-text" rows="5" readonly aria-label="Error text to copy" hidden></textarea>
+            <button type="button" class="btn" id="ai-reply-copy-error" data-i18n="ai.error.copy">Copy error for your AI</button>
+            <textarea class="input ai-text" id="ai-reply-error-text" rows="5" readonly aria-label="Error text to copy" hidden data-i18n-attr="aria-label:ai.error.textLabel"></textarea>
           </div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" id="ai-prompt-back">Back</button>
+          <button type="button" class="btn" id="ai-prompt-back" data-i18n="common.back">Back</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="ai-review">Review</button>
+          <button type="button" class="btn btn-primary" id="ai-review" data-i18n="ai.review">Review</button>
         </div>
       </div>
 
@@ -568,21 +572,21 @@
         <div class="sheet-body">
           <p class="sync-text" id="ai-review-summary" role="status" aria-live="polite"></p>
           <div class="ai-error" id="ai-review-error" hidden>
-            <p class="sync-text">Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat.</p>
-            <button type="button" class="btn" id="ai-review-copy-error">Copy error for your AI</button>
-            <textarea class="input ai-text" id="ai-review-error-text" rows="5" readonly aria-label="Error text to copy" hidden></textarea>
+            <p class="sync-text" data-i18n="ai.review.errorText">Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat.</p>
+            <button type="button" class="btn" id="ai-review-copy-error" data-i18n="ai.error.copy">Copy error for your AI</button>
+            <textarea class="input ai-text" id="ai-review-error-text" rows="5" readonly aria-label="Error text to copy" hidden data-i18n-attr="aria-label:ai.error.textLabel"></textarea>
           </div>
-          <ul class="ai-rows" id="ai-rows" aria-label="Rows to import"></ul>
+          <ul class="ai-rows" id="ai-rows" aria-label="Rows to import" data-i18n-attr="aria-label:ai.review.rows"></ul>
           <div class="ai-block">
-            <h3 class="sync-heading">Selected totals</h3>
+            <h3 class="sync-heading" data-i18n="ai.totals.title">Selected totals</h3>
             <div id="ai-totals"></div>
-            <p class="setting-hint">Nothing is saved until you choose Merge or Replace all.</p>
+            <p class="setting-hint" data-i18n="ai.totals.hint">Nothing is saved until you choose Merge or Replace all.</p>
           </div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn" id="ai-review-back">Back</button>
+          <button type="button" class="btn" id="ai-review-back" data-i18n="common.back">Back</button>
           <span class="spacer"></span>
-          <button type="button" class="btn btn-primary" id="ai-import" disabled>Import</button>
+          <button type="button" class="btn btn-primary" id="ai-import" disabled data-i18n="ai.import">Import</button>
         </div>
       </div>
     </form>
@@ -590,13 +594,13 @@
 
   <!-- The 12 words as shown in the recovery step and under "Show recovery words" -->
   <template id="sync-words-template">
-    <ol class="word-grid" aria-label="Recovery words"></ol>
+    <ol class="word-grid" aria-label="Recovery words" data-i18n-attr="aria-label:sync.words.label"></ol>
     <div class="sync-word-actions">
-      <button type="button" class="btn" data-copy-words>Copy words</button>
+      <button type="button" class="btn" data-copy-words data-i18n="sync.words.copy">Copy words</button>
     </div>
     <figure class="qr-figure">
-      <div class="qr" role="img" aria-label="QR code of the 12 recovery words"></div>
-      <figcaption class="setting-hint">The same 12 words as a QR code, to photograph or read with another device's camera app.</figcaption>
+      <div class="qr" role="img" aria-label="QR code of the 12 recovery words" data-i18n-attr="aria-label:sync.words.qr"></div>
+      <figcaption class="setting-hint" data-i18n="sync.words.qrCaption">The same 12 words as a QR code, to photograph or read with another device's camera app.</figcaption>
     </figure>
   </template>
 
@@ -617,10 +621,10 @@
 
   <!-- Money tab: Sort groups (per device). Items: role menuitemradio; js/app.js bindSortMenu. -->
   <div class="pop menu-pop" id="sort-menu" role="menu" aria-labelledby="sort-menu-title" hidden>
-    <p class="pop-title" id="sort-menu-title">Sort groups</p>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1">A to Z</button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1">Total <span class="menu-hint">high to low</span></button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1">Items <span class="menu-hint">most first</span></button>
+    <p class="pop-title" id="sort-menu-title" data-i18n="sort.title">Sort groups</p>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1" data-i18n="sort.az">A to Z</button>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1" data-i18n="sort.total">Total <span class="menu-hint" data-i18n="sort.total.hint">high to low</span></button>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1" data-i18n="sort.items">Items <span class="menu-hint" data-i18n="sort.items.hint">most first</span></button>
   </div>
 
   <datalist id="service-names"></datalist>

@@ -226,9 +226,12 @@ function setOwnText(el, text) {
  *   data-i18n="key"            the element's own text (child elements such as hints are kept)
  *   data-i18n-html="key"       the element's markup, from an "...Html" key
  *   data-i18n-attr="aria-label:key; title:key"   attributes
- * index.html keeps its English text too, so the page reads the same before this runs.
+ *   data-i18n-native="key"     the native app's wording instead (js/app.js applies it there)
+ * index.html keeps its English text too, so the page reads the same before this runs. The
+ * contents of <template> elements are filled in as well.
  */
 export function applyI18n(root = document) {
+  for (const tpl of root.querySelectorAll('template')) applyI18n(tpl.content);
   for (const el of root.querySelectorAll('[data-i18n]')) setOwnText(el, t(el.dataset.i18n));
   for (const el of root.querySelectorAll('[data-i18n-html]')) {
     const html = tHTML(el.dataset.i18nHtml);
