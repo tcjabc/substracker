@@ -8,21 +8,22 @@ import en from './locales/en.js';
  * They are never forced: no group is created, renamed or deleted for anyone. Choosing one simply
  * writes its name as text, in the language of the moment, and from then on it is the person's own
  * group like any other (the group-name hash, colorField, sees only that text). Names are in
- * js/locales/ (`key`); `aliases` are the group names, in lower case, that the merge helper
+ * js/locales/ (`key`; `names` repeats the English and Chinese ones for matching, and a test keeps
+ * them equal); `aliases` are the group names, in lower case, that the merge helper
  * (js/group-merge.js) suggests moving into the preset. Nothing matches names across languages.
  */
 export const DEFAULT_GROUPS = Object.freeze([
-  { id: 'housing', key: 'group.preset.housing', aliases: ['housing', 'house', 'home', 'mortgage', 'rent', '居住'] },
-  { id: 'utilities', key: 'group.preset.utilities', aliases: ['utilities', 'bills', 'internet', 'broadband', 'phone', 'mobile', 'electricity', 'water', 'gas', '生活帳單', '水電瓦斯'] },
-  { id: 'food', key: 'group.preset.food', aliases: ['food', 'groceries', 'coffee', 'dining', 'restaurants', '餐飲'] },
-  { id: 'transport', key: 'group.preset.transport', aliases: ['transport', 'fuel', 'petrol', 'car', 'parking', 'travel', '交通'] },
-  { id: 'software', key: 'group.preset.software', aliases: ['software & cloud', 'software', 'cloud storage', 'cloud', 'ai', 'productivity', 'apps', '軟體與雲端'] },
-  { id: 'entertainment', key: 'group.preset.entertainment', aliases: ['entertainment', 'streaming', 'gaming', 'games', 'news', 'tv', 'video', '娛樂'] },
-  { id: 'hobbies', key: 'group.preset.hobbies', aliases: ['hobbies', 'hobby', 'music', 'crafts', '嗜好'] },
-  { id: 'education', key: 'group.preset.education', aliases: ['education', 'courses', 'school', 'learning', 'books', '教育'] },
-  { id: 'shopping', key: 'group.preset.shopping', aliases: ['shopping', 'retail', '購物'] },
-  { id: 'health', key: 'group.preset.health', aliases: ['health & fitness', 'health', 'fitness', 'gym', 'medical', '健康與運動'] },
-  { id: 'insurance', key: 'group.preset.insurance', aliases: ['insurance & finance', 'insurance', 'finance', 'bank', 'fees', 'loans', '保險與金融'] },
+  { id: 'housing', key: 'group.preset.housing', names: ['Housing', '居住'], aliases: ['housing', 'house', 'home', 'mortgage', 'rent', '居住'] },
+  { id: 'utilities', key: 'group.preset.utilities', names: ['Utilities', '生活帳單'], aliases: ['utilities', 'bills', 'internet', 'broadband', 'phone', 'mobile', 'electricity', 'water', 'gas', '生活帳單', '水電瓦斯'] },
+  { id: 'food', key: 'group.preset.food', names: ['Food', '餐飲'], aliases: ['food', 'groceries', 'coffee', 'dining', 'restaurants', '餐飲'] },
+  { id: 'transport', key: 'group.preset.transport', names: ['Transport', '交通'], aliases: ['transport', 'fuel', 'petrol', 'car', 'parking', 'travel', '交通'] },
+  { id: 'software', key: 'group.preset.software', names: ['Software & cloud', '軟體與雲端'], aliases: ['software & cloud', 'software', 'cloud storage', 'cloud', 'ai', 'productivity', 'apps', '軟體與雲端'] },
+  { id: 'entertainment', key: 'group.preset.entertainment', names: ['Entertainment', '娛樂'], aliases: ['entertainment', 'streaming', 'gaming', 'games', 'news', 'tv', 'video', '娛樂'] },
+  { id: 'hobbies', key: 'group.preset.hobbies', names: ['Hobbies', '嗜好'], aliases: ['hobbies', 'hobby', 'music', 'crafts', '嗜好'] },
+  { id: 'education', key: 'group.preset.education', names: ['Education', '教育'], aliases: ['education', 'courses', 'school', 'learning', 'books', '教育'] },
+  { id: 'shopping', key: 'group.preset.shopping', names: ['Shopping', '購物'], aliases: ['shopping', 'retail', '購物'] },
+  { id: 'health', key: 'group.preset.health', names: ['Health & fitness', '健康與運動'], aliases: ['health & fitness', 'health', 'fitness', 'gym', 'medical', '健康與運動'] },
+  { id: 'insurance', key: 'group.preset.insurance', names: ['Insurance & finance', '保險與金融'], aliases: ['insurance & finance', 'insurance', 'finance', 'bank', 'fees', 'loans', '保險與金融'] },
 ]);
 
 const BY_ID = new Map(DEFAULT_GROUPS.map((g) => [g.id, g]));

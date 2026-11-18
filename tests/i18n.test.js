@@ -121,6 +121,7 @@ function grab(root, { skip = [] } = {}) {
 }
 const snap = {};
 let dueSettingsEn = null; // English: Settings → Due soon, checked on its own (not in the recording)
+let groupSettingsEn = null; // English: Settings → Groups (new with the default groups), checked on its own
 const overflow = [];
 const geometry = {};
 const put = (key, lines) => {
@@ -338,8 +339,9 @@ async function walk() {
   // The language picker and the Due soon and Calendar settings are new since the 1.15.0 recording,
   // so English leaves them out of the screen (their own tests and keys check them); the other
   // languages walk them.
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings', '#calendar-settings'] : [])] }));
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings', '#calendar-settings', '#group-settings'] : [])] }));
   if (MODE === 'en') dueSettingsEn = grab($('#due-settings'));
+  if (MODE === 'en') groupSettingsEn = grab($('#group-settings'));
   put('settings.calendar', grab($('#calendar-settings')));
 
   // Sync sheet: every step's text, then a Join with wrong words.
@@ -449,6 +451,10 @@ if (MODE === 'en') {
 
   test('Settings → Due soon in English: the three settings, with their defaults', async () => {
     eq(dueSettingsEn, ['Due soon Show due-soon banner A line on the Money tab with what comes due soon. Closing it hides it until tomorrow. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
+  });
+
+  test('Settings → Groups in English: Tidy up groups and its button', async () => {
+    eq(groupSettingsEn, ['Groups Tidy up groups Suggests moving groups that mean the same into one default group. Nothing changes until you choose Merge. Suggest'], 'the words');
   });
 
   test("index.html's own English is the dictionary's, so the page reads the same before the script runs", async () => {

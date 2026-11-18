@@ -3,6 +3,7 @@ import { deliverFile } from './files.js';
 import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js';
 import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
 import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
+import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
 import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
@@ -13,7 +14,7 @@ import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
-import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays, dateWords } from './i18n.js';
+import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays, dateWords, compareNames } from './i18n.js';
 import { dueSoon, WINDOWS, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
 import { createCalendar } from './calendar.js';
 import { WEEK_STARTS, weekStartFrom, resolveWeekStart, localeWeekStart } from './calendar-math.js';
@@ -193,6 +194,7 @@ async function init() {
   bindViewToggle();
   bindForm();
   bindSettings();
+  bindGroupMerge();
   initImportAiSheet({
     storage,
     ui: {
@@ -1706,6 +1708,47 @@ function confirmDialog({ title, message, actions, stacked = false }) {
 /* --------------------------------------------------------------------------
    Settings: currency, theme, export, import
    -------------------------------------------------------------------------- */
+/**
+ * Settings → Groups → Tidy up groups (js/group-merge.js): show the suggested merges and, on Merge,
+ * apply them as ordinary category edits (they sync like any edit). Undo saves the old categories back.
+ */
+function bindGroupMerge() {
+  $('#btn-group-merge').addEventListener('click', async () => {
+    const suggestions = suggestMerges(state.subs, { nameOf: t, compare: compareNames });
+    if (!suggestions.length) { toast(t('groups.merge.none')); return; }
+    const { before, after } = groupCounts(state.subs, suggestions);
+    const lines = suggestions.map((s) => t('groups.merge.line', { from: s.from.join(t('common.listSep')), to: s.to }));
+    const ok = await confirmDialog({
+      title: t('groups.merge.title'),
+      message: [...lines, t('groups.merge.summary', { before, after })].join('\n'),
+      actions: [{ label: t('common.cancel'), value: false }, { label: t('groups.merge.confirm'), value: true, kind: 'primary' }],
+    });
+    if (!ok) return;
+    const changes = mergeChanges(state.subs, suggestions);
+    const saveAll = async (list) => {
+      const now = new Date().toISOString();
+      for (const item of list) await storage.save({ ...item, updatedAt: now });
+    };
+    try {
+      await saveAll(changes.map(({ item, category }) => ({ ...item, category })));
+    } catch (err) {
+      console.error(err);
+      await reloadData();
+      toast(t('groups.merge.failed'));
+      return;
+    }
+    await reloadData();
+    toast(t('groups.merge.done', { count: changes.length }), {
+      label: t('groups.merge.undo'),
+      run: async () => {
+        try { await saveAll(changes.map(({ item }) => item)); } catch (err) { console.error(err); }
+        await reloadData();
+        toast(t('groups.merge.undone'));
+      },
+    });
+  });
+}
+
 function bindSettings() {
   $('#set-currency').addEventListener('change', async (e) => {
     state.settings.defaultCurrency = e.target.value;
