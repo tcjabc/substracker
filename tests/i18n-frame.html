@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek Budget i18n test frame</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <script>
+    // A fixed clock (18 November 2026, 10:00 local time) so every date, month name and "Renews in
+    // N days" is the same on every run. Only `new Date()` and Date.now() change; dates built from
+    // parts, parsing and formatting are the real ones. Classic script: it runs before the modules.
+    (() => {
+      const RealDate = Date;
+      const FIXED = new RealDate(2026, 10, 18, 10, 0, 0).getTime();
+      class FixedDate extends RealDate {
+        constructor(...args) { if (args.length) super(...args); else super(FIXED); }
+        static now() { return FIXED; }
+      }
+      window.Date = FixedDate;
+    })();
+  </script>
+</head>
+<body>
+  <div id="app-host"></div>
+  <script type="module" src="i18n.test.js"></script>
+</body>
+</html>

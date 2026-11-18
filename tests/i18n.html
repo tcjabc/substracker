@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek Budget language tests</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>
+    /* Test page only; colours and spacing come from the app's tokens. */
+    .t-wrap { padding: var(--space-4); max-width: 48rem; margin: 0 auto; }
+    .t-summary { font-size: var(--text-md); margin: var(--space-3) 0; }
+    .t-list { list-style: none; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
+    .t-pass { color: var(--positive); }
+    .t-fail { color: var(--danger); }
+    .t-detail { color: var(--text-muted); white-space: pre-wrap; }
+    /* Phone width, so the frames lay out as on a phone. */
+    .t-frame { width: 412px; height: 900px; border: 1px solid var(--border); display: block; }
+  </style>
+</head>
+<body>
+  <main class="t-wrap">
+    <h1>Language tests</h1>
+    <p class="t-detail">Runs the app in a frame with a fixed clock and throwaway <code>substracker-test-i18n-*</code> databases: English against the 1.15.0 recording, then the pseudo-locale (<code>?lang=xx</code>). The app's own data is not touched.</p>
+    <p class="t-summary" id="summary">Running…</p>
+    <ul class="t-list" id="results"></ul>
+    <div id="frames"></div>
+  </main>
+  <script type="module">
+    // Each mode runs in its own frame, one after the other: the app starts once per page.
+    const MODES = [['en', 'i18n-frame.html?mode=en'], ['pseudo', 'i18n-frame.html?mode=pseudo&lang=xx']];
+    const only = new URLSearchParams(location.search).get('only');
+    const list = document.getElementById('results');
+    const failures = [];
+    let total = 0;
+    let passed = 0;
+    let dump = '';
+    for (const [mode, src] of MODES) {
+      if (only && only !== mode) continue;
+      const frame = document.createElement('iframe');
+      frame.className = 't-frame';
+      frame.src = src;
+      frame.title = `Peek Budget in ${mode}`;
+      document.getElementById('frames').append(frame);
+      let res = null;
+      for (let t = 0; t < 110000 && !res; t += 200) {
+        await new Promise((r) => setTimeout(r, 200));
+        res = frame.contentWindow?.frameResults ?? null;
+      }
+      res ??= { total: 1, passed: 0, failures: [{ name: `${mode}: frame`, error: 'timed out' }] };
+      total += res.total;
+      passed += res.passed;
+      failures.push(...res.failures);
+      if (mode === 'en' && res.snapshot) dump = JSON.stringify(res.snapshot, null, 2);
+      const li = document.createElement('li');
+      li.className = res.failures.length ? 't-fail' : 't-pass';
+      li.textContent = `${res.failures.length ? '✗' : '✓'} ${mode}: ${res.passed} of ${res.total} passed`;
+      for (const f of res.failures) {
+        const d = document.createElement('div');
+        d.className = 't-detail';
+        d.textContent = `${f.name}: ${f.error}`;
+        li.append(d);
+      }
+      list.append(li);
+      frame.remove();
+    }
+    document.getElementById('summary').textContent = failures.length ? `${failures.length} of ${total} failed` : `All ${total} passed`;
+    document.getElementById('summary').className = `t-summary ${failures.length ? 't-fail' : 't-pass'}`;
+    window.testDump = dump;
+    window.testResults = { total, passed, failures };
+  </script>
+</body>
+</html>
