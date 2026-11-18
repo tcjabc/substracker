@@ -282,6 +282,9 @@ export function pseudo(s) {
     return p.replace(/[A-Za-z]/g, (c) => ACCENTED[c] ?? c);
   }).join('');
   if (!letters) return s; // nothing to translate ("·", "/", a lone placeholder)
-  return `[${body} ${'~'.repeat(Math.max(1, Math.round(letters * 0.3)))}]`;
+  // The padding comes in words of up to five, so it wraps like real text (one long run of tildes
+  // would be an unbreakable word no translation has, and would only test that).
+  const pad = '~'.repeat(Math.max(1, Math.round(letters * 0.3))).match(/~{1,5}/g).join(' ');
+  return `[${body} ${pad}]`;
 }
 export const pseudoDict = (dict) => Object.fromEntries(Object.entries(dict).map(([k, v]) => [k, pseudo(v)]));

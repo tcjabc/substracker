@@ -96,7 +96,40 @@ function grab(root, { skip = [] } = {}) {
   return lines;
 }
 const snap = {};
-const put = (key, lines) => { snap[key] = Array.isArray(lines) ? lines.map(norm) : [norm(lines)]; };
+const overflow = [];
+const put = (key, lines) => {
+  snap[key] = Array.isArray(lines) ? lines.map(norm) : [norm(lines)];
+  if (MODE === 'pseudo') overflow.push(...overflowAt(key));
+};
+
+/**
+ * Where text doesn't fit at this moment (pseudo-locale, phone width): the page wider than the
+ * screen, or a shown element whose content is wider than its box. Boxes meant to scroll or to cut
+ * text on purpose (overflow auto or scroll, text-overflow: ellipsis, the screen-reader-only text,
+ * the year chart's SVG, the Wallet stack's own clipping) don't count.
+ */
+function overflowAt(key) {
+  const out = [];
+  const root = document.documentElement;
+  if (root.scrollWidth > innerWidth + 1) out.push(`${key}: the page is ${root.scrollWidth}px wide on a ${innerWidth}px screen`);
+  for (const el of document.querySelectorAll('#app-host *')) {
+    if (el.closest('[hidden], .sr-only, svg, #dev-sync, .odo-roll') || !el.getClientRects().length) continue;
+    const cs = getComputedStyle(el);
+    // A box that scrolls (a sheet's body) should only ever scroll up and down.
+    if (/auto|scroll/.test(cs.overflowX) && el.clientWidth && el.scrollWidth > el.clientWidth + 1) {
+      out.push(`${key}: ${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]} scrolls sideways (${el.scrollWidth}px for ${el.clientWidth}px)`);
+      continue;
+    }
+    // Otherwise only elements holding words of their own: a container wider than its box because of
+    // a decoration it clips on purpose (the Wallet card's sheen) isn't text running out.
+    if (![...el.childNodes].some((n) => n.nodeType === 3 && /\p{L}/u.test(n.nodeValue))) continue;
+    if (cs.display === 'contents' || /auto|scroll/.test(cs.overflowX) || cs.textOverflow === 'ellipsis') continue;
+    if (el.clientWidth && el.scrollWidth > el.clientWidth + 1) {
+      out.push(`${key}: ${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}.${String(el.className).split(' ')[0]} is ${el.scrollWidth}px for ${el.clientWidth}px ("${norm(el.textContent).slice(0, 50)}")`);
+    }
+  }
+  return out;
+}
 const dialogShown = (id) => { const d = $(`#${id}`); return d.open || d.hasAttribute('open'); };
 
 async function walk() {
@@ -121,7 +154,9 @@ async function walk() {
   $('#money-summary [data-period="annual"]').click();
   await tick(20);
   put('money.strip.annual', grab($('#money-summary')));
-  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i}`, [b.getAttribute('aria-label'), norm(b.textContent)]));
+  // (In the pseudo-locale, without the logo initials, which are the items' own first letters.)
+  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i}`, [b.getAttribute('aria-label'),
+    MODE === 'pseudo' ? grab(b, { skip: ['.w-logos'] })[0] : norm(b.textContent)]));
   $('#money-summary [data-period="monthly"]').click();
 
   // Sort.
@@ -376,6 +411,74 @@ if (MODE === 'en') {
     assert(!/lang/.test(JSON.stringify(await storage.pendingOps())), 'nothing about it queued');
     eq(i18n.saveLangSetting('auto'), 'auto', 'back to the device');
     eq(localStorage.getItem('substracker.lang'), null, 'auto is not stored');
+  });
+}
+
+/* ------------------------------------------------------------------ pseudo-locale */
+
+/**
+ * Text left over in `line` once everything that may stand as it is has been taken out: whatever
+ * is inside [ ] (the pseudo-locale's words, with anything filled into them), money and other
+ * numbers, currency codes, the person's own data, month names from the formatter, and
+ * punctuation. Anything with two or more letters that's left would stay English in a translation.
+ *
+ * What this heuristic can't see, so it doesn't vouch for:
+ * - screens and states the walk doesn't open (each is listed in walk(); a rare error message may
+ *   never be shown there),
+ * - text drawn into the WebGL Ring (the walk runs with Reduce motion, so the flat donut shows) and
+ *   CSS generated content (the rolling digits),
+ * - English hidden inside the person's data or formatter output (an item called "Monthly" passes),
+ * - text built by joining two translated pieces in an English order: each piece is bracketed, so
+ *   the order isn't checked (whole sentences are keys to avoid this, but it isn't proven here),
+ * - one-letter words, and wording that reads oddly but is wrapped.
+ */
+function leftovers(line, allowed, months) {
+  let s = String(line).replace(/^[a-z-]+=/, ''); // the label lines' "aria-label=" prefix is the test's own
+  for (const a of allowed) s = s.split(a).join(' ');
+  // The wording functions' dialogs are recorded as JSON: their property names and kinds are the test's.
+  s = s.replace(/"(title|message|actions|label|value|kind)":/g, ' ').replace(/"(danger|primary)"/g, ' ');
+  for (let prev = ''; prev !== s;) { prev = s; s = s.replace(/\[[^[\]]*\]/g, ' '); }
+  // The year chart cuts long names to 17 characters with "…" (by design): a bracket opened and cut.
+  s = s.replace(/\[[^[\]]*…/g, ' ');
+  for (const m of months) s = s.split(m).join(' ');
+  s = s.replace(/(?:NT|US|HK|A|C|NZ|S)?\$|[€£¥₩฿₫₹₱]|\bRM\b|\bRp\b|\bCHF\b/g, ' ');
+  s = s.replace(/\d[\d.,]*\s?[KkMBT]?/g, ' ');
+  return (s.match(/\p{L}{2,}/gu) || []);
+}
+
+if (MODE === 'pseudo') {
+  test('the pseudo-locale is on: lang en-XA, the words in brackets', async () => {
+    eq(i18n.getLocale(), 'xx', 'active locale');
+    eq(document.documentElement.lang, 'en-XA', 'document lang');
+    assert(/^\[.+\]$/.test($('#page-title').textContent), `page title "${$('#page-title').textContent}"`);
+    eq(localStorage.getItem('substracker.lang'), null, 'never saved');
+  });
+
+  test('no text or label outside the dictionary on the key screens (see leftovers() for what this can miss)', async () => {
+    const months = [];
+    for (let m = 0; m < 12; m++) {
+      for (const month of ['long', 'short']) months.push(new Date(2026, m, 1).toLocaleDateString(i18n.formatLocale(), { month }));
+    }
+    // The carousel's labels: three letters, or two where it's tight.
+    months.push(...months.flatMap((m) => [m.replace('.', '').slice(0, 3), m.replace('.', '').slice(0, 2)]));
+    months.sort((a, b) => b.length - a.length);
+    const allowed = [...USER_TEXT, ...AI_TEXT, ...util.CURRENCIES, 'XYZ', 'Boom', 'Late', // the walk's own inputs
+      '{"version": 1, "rows": [...]}', // the reply field's placeholder is JSON for the AI
+    ].sort((a, b) => b.length - a.length);
+    const found = [];
+    for (const [key, lines] of Object.entries(snap)) {
+      for (const line of lines) {
+        if (key === 'doc' && line.startsWith('lang=')) continue;
+        const left = leftovers(line, allowed, months);
+        if (left.length) found.push(`${key}: ${left.join(' ')}  ←  ${line.slice(0, 160)}`);
+      }
+    }
+    eq(found, [], 'text that would stay English');
+  });
+
+  test('every recorded screen fits a 360px phone in the pseudo-locale (about 30% longer text)', async () => {
+    eq(innerWidth, 360, 'the frame is phone width');
+    eq([...new Set(overflow)], [], 'text that runs out of its box');
   });
 }
 

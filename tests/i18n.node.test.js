@@ -173,8 +173,9 @@ test('the pseudo-locale brackets, accents and lengthens, keeping {params} and ta
   assert.equal(i18n.pseudo('·'), '·', 'nothing to translate');
   assert.equal(i18n.pseudo('{count}'), '{count}');
   const long = 'Outgoings are more than income this month';
-  const tildes = i18n.pseudo(long).match(/~+/)[0].length;
+  const tildes = (i18n.pseudo(long).match(/~/g) || []).length;
   assert.ok(tildes >= 0.25 * long.replace(/\W/g, '').length, 'about 30% longer');
+  assert.ok(i18n.pseudo(long).match(/~+/g).every((run) => run.length <= 5), 'in short words, so it wraps like text');
   const d = i18n.pseudoDict(en);
   assert.deepEqual(Object.keys(d), Object.keys(en));
 });

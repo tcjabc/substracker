@@ -358,7 +358,12 @@ button { cursor: pointer; }
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   min-height: var(--header-h);
 }
-.page-title { font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: -0.01em; line-height: var(--leading-tight); }
+.page-title {
+  font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: -0.01em; line-height: var(--leading-tight);
+  /* A long one-word title in another language breaks (hyphenated where the language allows)
+     instead of pushing the header's buttons off screen. */
+  min-width: 0; overflow-wrap: break-word; hyphens: auto;
+}
 .header-actions { display: flex; gap: var(--space-2); }
 
 /* ==========================================================================
@@ -371,7 +376,10 @@ button { cursor: pointer; }
   background: var(--surface); color: var(--text);
   font-weight: var(--weight-semibold); font-size: var(--text-base);
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-  white-space: nowrap;
+  /* A label that fits stays on one line, exactly as before; a longer one (a long translation,
+     "Export a backup first (12 items)") wraps inside the button instead of pushing it past its
+     container. flex-shrink: 0 keeps buttons in a row at their full width, as nowrap did. */
+  white-space: normal; max-width: 100%; flex-shrink: 0; overflow-wrap: anywhere;
 }
 .btn:hover { background: var(--surface-hover); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
