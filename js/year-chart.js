@@ -234,8 +234,8 @@ export function createYearChart(host, opts) {
     b.pill = el('rect', { class: 'yc-pill', 'data-for': i, height: 15, rx: 7.5, display: 'none' }, mlL);
     b.ml = el('text', { 'text-anchor': 'middle', class: 'yc-month' }, mlL);
     b.yl = opts.rolling ? el('text', { 'text-anchor': 'middle', class: 'yc-month yc-year' }, mlL) : null;
-    if (b.yl) b.yl.textContent = `'${String(d.y).slice(2)}`;
-    const label = `${monthTitle(d)}, ${money(d.total)}`;
+    if (b.yl) b.yl.textContent = t('chart.yearShort', { yy: String(d.y).slice(2) });
+    const label = t('chart.bar.label', { month: monthTitle(d), amount: money(d.total) });
     b.hit = el('rect', { class: 'yc-hit', 'data-i': i, role: 'option', id: `${uid}-${i}`, 'aria-label': label, 'aria-selected': 'false' }, hitL);
     return b;
   });

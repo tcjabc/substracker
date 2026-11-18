@@ -215,6 +215,7 @@ export default {
   'common.items.other': '{count} items',
   'common.editItem': 'Edit {name}',
   'common.listSep': ', ',
+  'common.year': '{year}', // a year on its own, as on the yearly card (Chinese adds 年)
 
   // Wallet view (js/wallet.js)
   'wallet.label': 'Groups. Arrow keys move between groups, Enter opens one, Escape closes it.',
@@ -407,6 +408,7 @@ export default {
   'donut.ring.help': 'Drag to spin. Left and right arrow keys bring the previous or next category to the front. Amounts are listed below.',
   'donut.ring.describe': '{name}, {amount}, {share}',
   'donut.ring.share': '{share} of {month}',
+  'donut.slice.title': '{name}: {amount} ({share})',
 
   // Insights year chart (js/year-chart.js)
   'chart.label': 'Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.',
@@ -415,6 +417,8 @@ export default {
   'chart.key.hide': 'Hide key',
   'chart.now': 'Jump to now',
   'chart.monthYear': '{month} {year}',
+  'chart.yearShort': "'{yy}", // under the month in Rolling: '26
+  'chart.bar.label': '{month}, {amount}',
   'chart.readout.now': '{month} · now',
   'chart.delta.about': 'About the average',
   'chart.delta.about.inline': 'about the average',

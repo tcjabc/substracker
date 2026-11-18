@@ -665,7 +665,7 @@ function renderMoneySummary() {
   const sum = stripSummary(inCur, state.period, now.getFullYear(), now.getMonth());
   const undated = undatedItems(inCur);
   const when = state.period === 'annual'
-    ? String(now.getFullYear())
+    ? t('common.year', { year: now.getFullYear() })
     : now.toLocaleDateString(formatLocale(), { month: 'long', year: 'numeric' });
   // `id` names the figure for the rolling totals (stable in every language); `label` is shown.
   const cell = (id, label, value, cls = '', sub = '') => `
@@ -1142,7 +1142,7 @@ function yearCardHTML(year, y, cur, nUndated) {
           <div class="year-line${cls}"><dt>${esc(label)}</dt><dd data-roll="year-${id}" data-value="${value}" data-cur="${esc(cur)}">${esc(money(value, cur))}</dd></div>`;
   return `
       <div class="stat stat-year">
-        <div class="stat-label">${y}</div>
+        <div class="stat-label">${esc(t('common.year', { year: y }))}</div>
         <dl class="year-lines">${year.income > 0 ? yearLine('Income', t('insights.year.income'), year.income) : ''}${yearLine('Outgoings', t('insights.year.outgoings'), year.outgoings)}${year.income > 0
           ? yearLine('Left over', t('insights.year.leftOver'), year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
         </dl>

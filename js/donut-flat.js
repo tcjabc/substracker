@@ -77,7 +77,7 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
     const dash = Math.max(len - gap, 0.5);
     const arc = `<circle class="donut-slice" data-slice="${esc(s.key)}" cx="100" cy="100" r="${DONUT.r}"
       style="--swatch: ${s.swatch}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}"
-      stroke-dashoffset="${(-offset).toFixed(2)}"><title>${esc(s.name)}: ${esc(money(s.total, cur))} (${shareText(s.total, total)})</title></circle>`;
+      stroke-dashoffset="${(-offset).toFixed(2)}"><title>${esc(t('donut.slice.title', { name: s.name, amount: money(s.total, cur), share: shareText(s.total, total) }))}</title></circle>`;
     offset += len;
     return arc;
   }).join('');
