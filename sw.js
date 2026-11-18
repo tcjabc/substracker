@@ -36,6 +36,7 @@ const SHELL = [
   './js/services.js',
   './js/logos.js',
   './js/util.js',
+  './js/interval.js',
   './js/count-anim.js',
   './js/insights-calc.js',
   './js/year-chart-math.js',
