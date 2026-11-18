@@ -1215,7 +1215,7 @@ const cssToken = (name) => getComputedStyle(document.documentElement).getPropert
 test('Wallet: a saved Grid choice is kept; Wallet | Grid | List is remembered per device, never exported', async () => {
   goTab('subs');
   eq(viewBtn('grid').getAttribute('aria-pressed'), 'true', 'this device chose Grid before (the runner saved it): kept');
-  eq($$('.seg-btn[data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list'], 'three views');
+  eq($$('.seg-btn[data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list', 'calendar'], 'four views (Calendar since 1.19.0; tests/calendar.html tests it)');
   viewBtn('wallet').click();
   assert($('#subs-list #wallet'), 'the wallet is shown');
   eq(localStorage.getItem('substracker.view'), 'wallet', 'remembered on this device');

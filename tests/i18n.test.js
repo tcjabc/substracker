@@ -182,7 +182,8 @@ async function walk() {
   $('#tab-subs').click();
   await until(() => $('#wallet .w-band'), 'wallet drawn');
   put('doc', [document.title, `lang=${document.documentElement.lang}`]);
-  put('header', grab($('.app-header')));
+  // The Calendar view's toggle button is new in 1.19.0: English records it on its own key.
+  put('header', grab($('.app-header'), { skip: MODE === 'en' ? ['.seg-btn[data-view="calendar"]'] : [] }));
   put('tabbar', grab($('.tabbar')));
   put('fab', grab($('#fab-stack')));
   put('money.strip.monthly', grab($('#money-summary')));
@@ -238,6 +239,25 @@ async function walk() {
   $('.seg-btn[data-view="list"]').click();
   await tick(20);
   put('money.list', grab($('#subs-list')));
+
+  // The calendar view (new in 1.19.0), recorded on its own keys: its toggle button, this month
+  // with today's list, a day with income, the next month, and an empty day.
+  put('money.calendar.toggle', grab($('.seg-btn[data-view="calendar"]')));
+  $('.seg-btn[data-view="calendar"]').click();
+  await until(() => $('#calendar .cal-grid'), 'calendar drawn');
+  put('money.calendar', grab($('#calendar')));
+  $('#calendar .cal-day[data-day="25"]').click();
+  await tick(20);
+  put('money.calendar.day', grab($('#calendar .cal-list')));
+  $('#calendar .cal-day[data-day="19"]').click();
+  await tick(20);
+  put('money.calendar.empty', grab($('#calendar .cal-list')));
+  $('#calendar [data-cal-step="1"]').click();
+  await tick(20);
+  put('money.calendar.next', grab($('#calendar')));
+  $('#calendar [data-cal-today]').click();
+  $('.seg-btn[data-view="list"]').click();
+  await tick(20);
 
   // The add / edit sheet.
   $('#fab').click();
@@ -315,10 +335,12 @@ async function walk() {
   $('#tab-settings').click();
   await tick(20);
   put('doc.settings', [document.title, $('#page-title').textContent]);
-  // The language picker and the Due soon settings are new since the 1.15.0 recording, so English
-  // leaves them out of the screen (their own tests check them); the other languages walk them.
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings'] : [])] }));
+  // The language picker and the Due soon and Calendar settings are new since the 1.15.0 recording,
+  // so English leaves them out of the screen (their own tests and keys check them); the other
+  // languages walk them.
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings', '#calendar-settings'] : [])] }));
   if (MODE === 'en') dueSettingsEn = grab($('#due-settings'));
+  put('settings.calendar', grab($('#calendar-settings')));
 
   // Sync sheet: every step's text, then a Join with wrong words.
   $('#btn-sync').click();
@@ -562,6 +584,7 @@ const ZH_LATIN = new Set([
   'Peek', 'Budget', // the app's name
   'Android', 'Chrome', 'iPhone', 'iPad', 'Safari', 'IndexedDB', 'Google', 'favicon', 'Play', // products and the web storage's name
   'CSV', 'JSON', 'QR', 'AI', 'PDF', 'App', 'Enter', 'Esc', 'flat', // formats, keys and the ?flat=1 switch
+  'Page', 'Up', 'Down', // the keys Page Up and Page Down, as printed on keyboards (the calendar's key hint)
   'English', // Settings → Language names each language in its own
   'Netflix', 'example', 'com', // the form's examples
   'name', 'amount', 'currency', 'cycle', 'nextDate', 'category', 'type', 'id', 'YYYY', 'MM', 'DD', // the AI's JSON names (ai.row.*)
