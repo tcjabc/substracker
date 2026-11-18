@@ -18,10 +18,11 @@
 // calendar dates (year, month, day), never milliseconds, so a DST change can't move an item.
 //
 // Undated recurring items appear on no day; undatedItems() lists them for the "N items need a
-// date" line. Custom intervals (later) replace stepDays() only: it's the one place that decides on
-// which days of a month an item falls.
+// date" line. stepDays() is the one place here that decides on which days of a month an item
+// falls, and it asks js/interval.js, the shared stepper.
 
-import { isIncome, isOnce, parseDate, nextRenewal } from './util.js';
+import { isIncome, isOnce, parseDate } from './util.js';
+import { intervalOfCycle, inMonth, dayOf } from './interval.js';
 import { dueInMonth, incomeInMonth, undatedItems, groupOf } from './insights-calc.js';
 
 /* Week start ------------------------------------------------------------------------------------ */
@@ -89,9 +90,9 @@ export function monthGrid(year, month, weekStart = 1) {
 const isLive = (s) => s && s.del !== true && s.deleted !== true;
 
 /**
- * The days of `month` (0-based) of `year` on which item `s` falls: [] or [day]. The one place that
- * steps through an item's dates (custom intervals replace this). Same months as insights-calc's
- * cash basis; the day is nextRenewal()'s from the stored date on, and its clamp before.
+ * The days of `month` (0-based) of `year` on which item `s` falls, earliest first: today [] or
+ * [day]. Same months as insights-calc's cash basis, and the same day nextRenewal() gives: both come
+ * from js/interval.js (the stored date's day, clamped in a shorter month, before and after it).
  */
 export function stepDays(s, year, month) {
   if (isOnce(s)) {
@@ -100,13 +101,9 @@ export function stepDays(s, year, month) {
   }
   const start = parseDate(s.nextRenewal);
   if (!start) return []; // undated: see undatedItems()
-  if (s.cycle === 'annual' && start.getMonth() !== month) return [];
-  const first = new Date(year, month, 1);
-  if (first >= new Date(start.getFullYear(), start.getMonth(), 1)) {
-    const d = nextRenewal(s, first);
-    if (d && d.getFullYear() === year && d.getMonth() === month) return [d.getDate()];
-  }
-  return [Math.min(start.getDate(), daysInMonth(year, month))];
+  // The month as the Date constructor reads (year, month), as this has always done.
+  const m = dayOf(new Date(year, month, 1));
+  return inMonth(dayOf(start), intervalOfCycle(s.cycle), m.year, m.month).map((d) => d.day);
 }
 
 const byName = (a, b) => String(a.item.name ?? '').localeCompare(String(b.item.name ?? ''), undefined, { sensitivity: 'base' });
