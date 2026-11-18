@@ -105,10 +105,18 @@ export function sameLanguage(a, b) {
   return !!x && !!y && x.language === y.language && x.script === y.script;
 }
 
+/** Whether two tags are the same language, whatever the script ("zh-CN" and "zh-TW"). */
+export function sameBaseLanguage(a, b) {
+  const x = tagParts(a), y = tagParts(b);
+  return !!x && !!y && x.language === y.language;
+}
+
 /**
  * The UI locale for a setting ('auto' or a locale tag) and the device's preferred languages.
- * 'auto' takes the first device language that has a locale (exactly, else the same language and
- * script), else English. Returns { locale, matched }: matched is false when English is a fallback.
+ * 'auto' takes the first device language that has a locale: exactly, else the same language and
+ * script (zh-Hant, zh-HK and zh-MO → zh-TW), else the same language in another script (zh-CN and
+ * other Simplified Chinese → zh-TW, until a Simplified locale exists); else English.
+ * Returns { locale, matched }: matched is false when English is a fallback.
  */
 export function resolveLocale(setting, languages = [], available = Object.keys(LOCALES)) {
   if (setting && setting !== 'auto' && available.includes(setting)) return { locale: setting, matched: true };
@@ -116,7 +124,7 @@ export function resolveLocale(setting, languages = [], available = Object.keys(L
     if (!lang) continue;
     const exact = available.find((a) => a.toLowerCase() === String(lang).toLowerCase());
     if (exact) return { locale: exact, matched: true };
-    const near = available.find((a) => sameLanguage(a, lang));
+    const near = available.find((a) => sameLanguage(a, lang)) ?? available.find((a) => sameBaseLanguage(a, lang));
     if (near) return { locale: near, matched: true };
   }
   return { locale: FALLBACK, matched: false };
@@ -125,12 +133,13 @@ export function resolveLocale(setting, languages = [], available = Object.keys(L
 /**
  * The locale for numbers, money and dates. `undefined` (the device's own conventions, as before
  * languages existed) when the UI is in the device's language, so en-GB keeps "18 Nov" and en-US
- * "Nov 18"; also when English is only a fallback ('auto' found no locale for the device). Otherwise
- * the UI locale, so a language picked by hand formats like that language.
+ * "Nov 18", and a zh-CN or zh-HK device in zh-TW keeps its own; also when English is only a
+ * fallback ('auto' found no locale for the device). Otherwise the UI locale, so a language picked
+ * by hand on a device in another language formats like that language (zh-TW on an en-GB device).
  */
 export function formatLocaleFor(locale, { matched = true, deviceLocale } = {}) {
   if (locale === PSEUDO || !matched) return undefined;
-  if (deviceLocale && sameLanguage(locale, deviceLocale)) return undefined;
+  if (deviceLocale && sameBaseLanguage(locale, deviceLocale)) return undefined;
   return locale;
 }
 
