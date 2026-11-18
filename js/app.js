@@ -4,6 +4,7 @@ import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js
 import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
 import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
+import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
 import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, WALLET_KEYS, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
@@ -61,7 +62,8 @@ const state = {
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
   view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List | Calendar, per device
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
-  colorPicks: new Set(), // groups whose colour someone chose (left alone by the automatic colours)
+  colorPicks: new Set(), // groups with a colour in the household's record: picked, or a shared slot (left alone by this device's automatic colours)
+  settingsRecord: null, // the shared settings record, read for group slots (js/group-slots.js); null before settings are shared
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
@@ -227,8 +229,9 @@ async function init() {
   }));
   let syncUnavailable = t('sync.unavailable.storage');
   try {
-    const [subs, settings, picks] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors()]);
+    const [subs, settings, picks, record] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors(), storage.getSettingsRecord()]);
     state.colorPicks = new Set(Object.keys(picks));
+    state.settingsRecord = record;
     const usingLegacy = (await storage.status()).usingLegacy;
     syncUnavailable = usingLegacy ? t('sync.unavailable.legacy') : '';
     if (usingLegacy) {
@@ -302,8 +305,9 @@ async function startSync(unavailable) {
  * A remote change leaves the open add/edit form alone; only the Settings currency menu follows.
  */
 async function reloadData({ remote = false } = {}) {
-  const [subs, settings, picks] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors()]);
+  const [subs, settings, picks, record] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors(), storage.getSettingsRecord()]);
   state.colorPicks = new Set(Object.keys(picks));
+  state.settingsRecord = record;
   const before = state.settings.defaultCurrency;
   state.subs = subs;
   Object.assign(state.settings, settings);
@@ -391,18 +395,36 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 
 
 /* Group colours ------------------------------------------------------------- */
 /**
- * Give every expense group a colour, in A–Z group order (the default stack order). A colour someone
- * chose stays exactly as it is. The others come from the Wallet palette (js/wallet-math.js
- * assignAutoColours): up to 15 groups get 15 different colours in palette order, more cycle, and an
- * automatic colour is never the same as the group's A–Z neighbour. An automatic colour from the old
- * ten moves to the new palette. Income has no colour.
- * Sort (Total or Items) never changes a colour: colours follow the group, so a group looks the same
- * in every order and in Insights. The neighbour guarantee is for A–Z order only; another order can
- * put two similar (or, past 15 groups, equal) colours next to each other. See the README.
+ * Give every expense group a colour. A colour someone chose stays exactly as it is (an old g one
+ * too). With the household's settings shared, a group with no colour gets a shared palette slot
+ * (js/group-slots.js: a default group's fixed slot, else the hash probe; past 15 groups the colours
+ * repeat), written to the record so every device draws it the same; and the household's repair
+ * moves a later automatic slot off one another group already uses. A group that has an automatic
+ * colour of this device's own from before keeps it, as before (1.20.0's first-launch step adopts
+ * those): js/wallet-math.js assignAutoColours, never the same as its A–Z neighbour. Income has no
+ * colour. Sort never changes a colour; close neighbours get the Wallet's divider. See the README.
  */
 function ensureGroupColors() {
   const map = state.settings.groupColors;
   const names = [...new Set(state.subs.filter((s) => !isIncome(s)).map(groupOf))].sort(byGroupName);
+  const rec = state.settingsRecord;
+  if (rec) {
+    const { shared, picks } = slotsFromRecord(rec);
+    const held = new Map();
+    for (const n of names) {
+      if (shared.has(n)) continue;
+      if (picks.has(n)) held.set(n, null); // an old g pick: holds no slot
+      else if (isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1); // this device's own automatic colour
+    }
+    const plan = planSlots({ live: names, shared: new Map([...shared].filter(([n]) => names.includes(n))), held });
+    const writes = [...plan.assign, ...plan.moves];
+    if (writes.length) {
+      const fields = slotFields(writes);
+      for (const [k, v] of Object.entries(fields)) { rec.fields[k] = v; rec.ts[k] = '~'; } // as written, newest
+      for (const { name, slot } of writes) { map[name] = `w${slot + 1}`; state.colorPicks.add(name); }
+      storage.saveColourValues(fields).catch((err) => console.error(err));
+    }
+  }
   const picked = new Set(names.filter((n) => state.colorPicks.has(n) && validSwatch(map[n])));
   const patch = assignAutoColours(names, map, picked);
   Object.assign(map, patch);
@@ -476,6 +498,12 @@ function bindGroupColors() {
     const name = group;
     state.settings.groupColors[name] = b.dataset.swatch;
     state.colorPicks.add(name); // chosen now: the automatic colours leave it alone
+    const pickedSlot = WALLET_KEYS.indexOf(b.dataset.swatch);
+    if (state.settingsRecord && pickedSlot >= 0) { // a pick, not automatic: the repair leaves it alone
+      const k = storage.colorField(name);
+      state.settingsRecord.fields[k] = { name, swatch: b.dataset.swatch, slot: pickedSlot };
+      state.settingsRecord.ts[k] = '~';
+    }
     close(false);
     renderSubs();
     $(`.group-dot[data-group="${CSS.escape(name)}"]`)?.focus();
@@ -751,9 +779,9 @@ function renderWallet(list, { reorder = false } = {}) {
   const cur = state.settings.defaultCurrency;
   const now = new Date();
   const groups = moneyGroups().map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
-  // Dividers between close colours under Total and Items; A–Z keeps today's look (decision pending
-  // on A–Z, see docs/plan-intervals-groups.md "Contrast and distance checks").
-  const dividers = state.groupSort !== 'az';
+  // A stronger divider between neighbours whose colours are close, in every sort (A–Z looks as
+  // before unless two neighbours are close).
+  const dividers = true;
   wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth(), dividers }, { reorder });
 }
 
@@ -1875,8 +1903,8 @@ async function exportData() {
   try {
     const payload = await storage.exportAll();
     payload.items.sort(byName);
-    // Automatic colours stay on this device: a backup carries only the colours someone picked (the
-    // household's), old g ones and new slot ones alike, never this device's own automatic picks.
+    // A backup carries the household's colours (everything in the settings record: picked ones, old
+    // g and slot alike, and the shared automatic slots), never this device's own automatic colours.
     const colours = payload.settings?.groupColors;
     if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([k]) => state.colorPicks.has(k)));
     const slots = payload.settings?.groupSlots;

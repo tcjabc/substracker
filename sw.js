@@ -35,6 +35,7 @@ const SHELL = [
   './js/overlays.js',
   './js/services.js',
   './js/group-merge.js',
+  './js/group-slots.js',
   './js/logos.js',
   './js/util.js',
   './js/interval.js',
