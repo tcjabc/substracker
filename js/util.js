@@ -102,14 +102,11 @@ export function parseDate(str) {
   return new Date(y, m - 1, d);
 }
 
-// How many intervals the stored date may roll forward: the step loop this replaced gave up after
-// 1200 and returned a date in the past for older dates (docs/plan-intervals-groups.md, bug b).
-const ROLL_LIMIT = 1200;
-
 /**
  * The next renewal on or after today, rolling a past stored date forward by its cycle (js/interval.js:
  * monthly every 1 month, annual every 12, clamped from the stored day). Never a date before the
- * stored one. Display only: the stored date is never rewritten. `now` is for the pure modules and
+ * stored one, and never one before today, however old the stored date (worked out directly, with no
+ * step limit). Display only: the stored date is never rewritten. `now` is for the pure modules and
  * their tests.
  */
 export function nextRenewal(sub, now = new Date()) {
@@ -121,7 +118,7 @@ export function nextRenewal(sub, now = new Date()) {
   if (Number.isNaN(today.getTime())) return start; // nothing to compare with
   const anchor = dayOf(start);
   const interval = intervalOfCycle(sub.cycle);
-  const k = Math.min(Math.max(0, indexOnOrAfter(anchor, interval, dayOf(today))), ROLL_LIMIT);
+  const k = Math.max(0, indexOnOrAfter(anchor, interval, dayOf(today)));
   return k === 0 ? start : dateOf(occurrence(anchor, interval, k));
 }
 

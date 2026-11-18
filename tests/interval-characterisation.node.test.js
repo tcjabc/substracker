@@ -223,8 +223,8 @@ test('spot checks: DST-change days are ordinary days', () => {
 test('known bug a (as of 1.19.0): years 0–99 are read as 1900–1999', () => {
   assert.equal(ser(parseDate('0050-03-01')), '1950-03-01');
   assert.equal(ser(parseDate('0000-02-29')), '1900-03-01', 'year 0 is a leap year; 1900 is not');
-  // Read as 1900-03-01, 1520 months back, so it also hits bug b's 1200-step limit.
-  assert.equal(next('0000-02-29', 'monthly', at(2026, 11, 19)), '2000-03-01');
+  // Read as 1900-03-01, 1520 months back: 1.19.0 also hit bug b's 1200-step limit (2000-03-01).
+  assert.equal(next('0000-02-29', 'monthly', at(2026, 11, 19)), '2026-12-01');
   assert.equal(next('0000-02-29', 'annual', at(2026, 11, 19)), '2027-03-01');
   const once = itemOf('0050-06-15', 'once');
   assert.equal(dueInMonth(once, 1950, 5), 100, 'a one-off in year 50 counts in 1950');
@@ -232,12 +232,15 @@ test('known bug a (as of 1.19.0): years 0–99 are read as 1900–1999', () => {
   assert.deepEqual(stepDays(once, 1950, 5), [15]);
 });
 
-test('known bug b (as of 1.19.0): nextRenewal gives up after 1200 steps and returns a past date', () => {
-  assert.equal(next('1876-01-15', 'monthly', at(2026, 11, 19)), '1976-01-15');
-  assert.equal(next('1925-03-31', 'monthly', at(2026, 11, 19)), '2025-03-31');
-  assert.equal(next('1926-11-19', 'monthly', at(2026, 11, 19)), '2026-11-19', '1200 steps exactly: still right');
-  assert.equal(next('0500-06-15', 'annual', at(2026, 11, 19)), '1700-06-15');
+// Fixed after 1.19.0: nextRenewal() stepped one interval at a time and gave up after 1200 steps,
+// returning a date in the past for stored dates more than 100 years (monthly) or 1200 years
+// (annual) back. It now works the date out directly. 1.19.0's results are in the messages.
+test('fixed bug b: nextRenewal rolls any stored date forward, however old (1.19.0 stopped after 1200 steps)', () => {
+  assert.equal(next('1876-01-15', 'monthly', at(2026, 11, 19)), '2026-12-15', '1.19.0: 1976-01-15');
+  assert.equal(next('1925-03-31', 'monthly', at(2026, 11, 19)), '2026-11-30', '1.19.0: 2025-03-31');
+  assert.equal(next('1926-11-19', 'monthly', at(2026, 11, 19)), '2026-11-19', '1200 steps exactly: right before and after');
+  assert.equal(next('0500-06-15', 'annual', at(2026, 11, 19)), '2027-06-15', '1.19.0: 1700-06-15');
   const banner = dueSoon([itemOf('1876-11-20', 'monthly')], at(2026, 11, 19), { windowDays: 7 });
-  assert.equal(banner.count, 0, 'so the banner leaves it out');
-  assert.deepEqual(stepDays(itemOf('1876-01-15', 'monthly'), 2026, 10), [15], 'the calendar falls back to the clamp and is right');
+  assert.deepEqual(banner.rows.map((r) => [ser(r.date), r.days]), [['2026-11-20', 1]], '1.19.0 left it out of the banner');
+  assert.deepEqual(stepDays(itemOf('1876-01-15', 'monthly'), 2026, 10), [15], 'the calendar was right before and is right now');
 });
