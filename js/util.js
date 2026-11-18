@@ -180,16 +180,17 @@ export function firstEmoji(str) {
   return (s.match(EMOJI_SEQ)?.[0] ?? '').slice(0, 32);
 }
 
-const countOf = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const items = (n) => t('common.items', { count: n });
 
+// The wording is read when it's needed (functions, not constants), in the language in use then.
 /** The extra lines the import dialog shows when this device syncs: both choices reach every device. */
-export const REPLACE_SYNC_WARNING = 'Replace all deletes the current items and settings here and on every device you sync with.';
-export const MERGE_SYNC_NOTE = 'Changes are sent to every device you sync with.';
+export const replaceSyncWarning = () => t('import.sync.replaceWarning');
+export const mergeSyncNote = () => t('import.sync.mergeNote');
 
 /** The final confirmation after choosing Replace all. */
-export const REPLACE_CONFIRM_TITLE = 'Replace everything?';
-export const REPLACE_CONFIRM_MESSAGE = "This deletes all current items and settings on this device. This can't be undone.";
-export const REPLACE_CONFIRM_SYNC = 'It also deletes them on every device you sync with.';
+export const replaceConfirmTitle = () => t('import.replace.title');
+export const replaceConfirmMessage = () => t('import.replace.message');
+export const replaceConfirmSync = () => t('import.replace.sync');
 
 /**
  * The import dialog's text from previewImport()'s { merge, replace } summaries. `synced` is
@@ -197,23 +198,28 @@ export const REPLACE_CONFIRM_SYNC = 'It also deletes them on every device you sy
  * added, each on its own line.
  */
 export function importMessage({ merge, replace }, { synced = false } = {}) {
-  const newer = merge.newerVersion
-    ? ' It comes from a newer version of Peek Budget; fields this version doesn\'t know are ignored.' : '';
-  const text = merge.existing
-    ? `${countOf(merge.total, 'item')}, ${merge.added} new.${newer} Merge adds the new ones, updates ${merge.updated} where the file's copy is newer`
-      + `${merge.kept ? ` and keeps ${merge.kept} where yours is the same or newer` : ''}. `
-      + `Replace deletes your ${countOf(merge.existing, 'item')} and uses the file's items${replace.withSettings ? ' and settings' : ''}`
-      + `${replace.removed ? ` (${replace.removed} of yours aren't in the file)` : ''}.`
-    : `${countOf(merge.total, 'item')}, ${merge.added} new.${newer} Your list is empty, so both options give the same result.`;
-  return synced ? `${text}\n${REPLACE_SYNC_WARNING}\n${MERGE_SYNC_NOTE}` : text;
+  const parts = [t('import.summary', { items: items(merge.total), added: merge.added })];
+  if (merge.newerVersion) parts.push(t('import.newer'));
+  if (merge.existing) {
+    parts.push(merge.kept
+      ? t('import.merge.kept', { updated: merge.updated, kept: merge.kept })
+      : t('import.merge.updated', { updated: merge.updated }));
+    const yours = items(merge.existing);
+    const key = replace.withSettings
+      ? (replace.removed ? 'import.replace.settingsRemoved' : 'import.replace.settings')
+      : (replace.removed ? 'import.replace.itemsRemoved' : 'import.replace.items');
+    parts.push(t(key, { items: yours, removed: replace.removed }));
+  } else parts.push(t('import.sameResult'));
+  const text = parts.join(t('common.sentenceSep'));
+  return synced ? `${text}\n${replaceSyncWarning()}\n${mergeSyncNote()}` : text;
 }
 
 /** The dialog options for the final Replace confirmation. Cancel comes first: it's focused, and dismissing picks it. */
 export function replaceConfirm({ synced = false } = {}) {
   return {
-    title: REPLACE_CONFIRM_TITLE,
-    message: synced ? `${REPLACE_CONFIRM_MESSAGE}\n${REPLACE_CONFIRM_SYNC}` : REPLACE_CONFIRM_MESSAGE,
-    actions: [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }],
+    title: replaceConfirmTitle(),
+    message: synced ? `${replaceConfirmMessage()}\n${replaceConfirmSync()}` : replaceConfirmMessage(),
+    actions: [{ label: t('common.cancel'), value: false }, { label: t('import.replaceAll'), value: true, kind: 'danger' }],
   };
 }
 
@@ -222,8 +228,8 @@ export function replaceConfirm({ synced = false } = {}) {
  * and "Backup saved ✓" once a backup was delivered.
  */
 export function backupLabel(count, saved = false) {
-  if (saved) return 'Backup saved ✓';
-  return count > 0 ? `Export a backup first (${countOf(count, 'item')})` : 'Export a backup first';
+  if (saved) return t('import.backup.saved');
+  return count > 0 ? t('import.backup.withCount', { items: items(count) }) : t('common.exportBackupFirst');
 }
 
 /**
@@ -237,7 +243,7 @@ export function backupLabel(count, saved = false) {
  * `count`; choosing it runs the backup and shows the same step again. It is never required.
  */
 export async function chooseImportMode(preview, {
-  synced = false, confirm, title = 'Import this backup?', message, replace, backup, count = 0,
+  synced = false, confirm, title = t('import.title'), message, replace, backup, count = 0,
 } = {}) {
   let saved = false;
   const backupAction = () => (backup ? [{ label: backupLabel(count, saved), value: 'backup' }] : []);
@@ -248,10 +254,10 @@ export async function chooseImportMode(preview, {
       message: message ?? importMessage(preview, { synced }),
       stacked: true,
       actions: [
-        { label: 'Cancel', value: null },
+        { label: t('common.cancel'), value: null },
         ...backupAction(),
-        { label: 'Replace all', value: 'replace', kind: 'danger' },
-        { label: 'Merge', value: 'merge', kind: 'primary' },
+        { label: t('import.replaceAll'), value: 'replace', kind: 'danger' },
+        { label: t('import.merge'), value: 'merge', kind: 'primary' },
       ],
     });
     if (mode === 'backup') { await runBackup(); continue; }

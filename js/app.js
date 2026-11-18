@@ -1701,14 +1701,14 @@ const isDay = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 // A file that can't be imported gets a dialog naming the problem; existing data is never touched.
 function importProblem(message) {
   return confirmDialog({
-    title: "Can't import this file",
-    message: `${message} Nothing was changed.`,
-    actions: [{ label: 'OK', value: true, kind: 'primary' }],
+    title: t('import.problem.title'),
+    message: t('import.problem.message', { problem: message }),
+    actions: [{ label: t('common.ok'), value: true, kind: 'primary' }],
   });
 }
 
 async function importFile(file) {
-  if (file.size > 5_000_000) return importProblem('That file is too large to be a Peek Budget backup.');
+  if (file.size > 5_000_000) return importProblem(t('import.error.tooLarge'));
   let text;
   let preview;
   try {
@@ -1717,7 +1717,7 @@ async function importFile(file) {
   } catch (err) {
     if (err instanceof storage.ImportError) return importProblem(err.message);
     console.error(err);
-    return importProblem("The file couldn't be read.");
+    return importProblem(t('import.error.unreadable'));
   }
 
   // Sync set up here (a key and sync turned on): both choices reach every device, so say so.
@@ -1730,13 +1730,13 @@ async function importFile(file) {
     const done = await storage.importAll(text, mode);
     await reloadData();
     toast(mode === 'replace'
-      ? `Replaced with ${plural(done.total, 'item')}`
-      : `Merged: ${done.added} new, ${done.updated} updated`);
+      ? t('import.toast.replaced', { items: t('common.items', { count: done.total }) })
+      : t('import.toast.merged', { added: done.added, updated: done.updated }));
     storage.requestPersistence();
   } catch (err) {
     if (err instanceof storage.ImportError) { importProblem(err.message); return; }
     console.error(err);
-    toast('Import failed. Nothing was changed.');
+    toast(t('import.toast.failed'));
   }
 }
 

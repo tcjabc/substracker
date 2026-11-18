@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   importMessage, replaceConfirm, chooseImportMode,
-  REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE, REPLACE_CONFIRM_TITLE, REPLACE_CONFIRM_MESSAGE, REPLACE_CONFIRM_SYNC,
+  replaceSyncWarning, mergeSyncNote, replaceConfirmTitle, replaceConfirmMessage, replaceConfirmSync,
 } from '../js/util.js';
 
 const summary = (over = {}) => ({ total: 12, existing: 5, added: 3, updated: 2, kept: 1, removed: 1, newerVersion: false, withSettings: true, ...over });
@@ -27,22 +27,22 @@ function fakeDialog(...answers) {
 /* ------------------------------------------------------------------ Strings */
 
 test('the exact strings', () => {
-  assert.equal(REPLACE_SYNC_WARNING, 'Replace all deletes the current items and settings here and on every device you sync with.');
-  assert.equal(MERGE_SYNC_NOTE, 'Changes are sent to every device you sync with.');
-  assert.equal(REPLACE_CONFIRM_TITLE, 'Replace everything?');
-  assert.equal(REPLACE_CONFIRM_MESSAGE, "This deletes all current items and settings on this device. This can't be undone.");
-  assert.equal(REPLACE_CONFIRM_SYNC, 'It also deletes them on every device you sync with.');
+  assert.equal(replaceSyncWarning(), 'Replace all deletes the current items and settings here and on every device you sync with.');
+  assert.equal(mergeSyncNote(), 'Changes are sent to every device you sync with.');
+  assert.equal(replaceConfirmTitle(), 'Replace everything?');
+  assert.equal(replaceConfirmMessage(), "This deletes all current items and settings on this device. This can't be undone.");
+  assert.equal(replaceConfirmSync(), 'It also deletes them on every device you sync with.');
 });
 
 test('choice dialog with sync set up: the Replace warning and the Merge note, each on its own line', () => {
   const lines = importMessage(preview(), { synced: true }).split('\n');
-  assert.deepEqual(lines.slice(1), [REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE]);
+  assert.deepEqual(lines.slice(1), [replaceSyncWarning(), mergeSyncNote()]);
   assert.equal(lines[0], importMessage(preview()), 'the rest is unchanged');
 });
 
 test('choice dialog without sync: no sync lines', () => {
   const text = importMessage(preview(), { synced: false });
-  for (const line of [REPLACE_SYNC_WARNING, MERGE_SYNC_NOTE]) assert.equal(text.includes(line), false);
+  for (const line of [replaceSyncWarning(), mergeSyncNote()]) assert.equal(text.includes(line), false);
   assert.equal(text.includes('\n'), false);
   assert.equal(importMessage(preview()), text, 'off by default');
 });
@@ -58,10 +58,10 @@ test('the existing choice wording is kept', () => {
 test('final Replace confirmation: Cancel first and safe, destructive Replace all; sync line only when synced', () => {
   const off = replaceConfirm({ synced: false });
   assert.equal(off.title, 'Replace everything?');
-  assert.equal(off.message, REPLACE_CONFIRM_MESSAGE);
+  assert.equal(off.message, replaceConfirmMessage());
   assert.deepEqual(off.actions, [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }]);
   const on = replaceConfirm({ synced: true });
-  assert.deepEqual(on.message.split('\n'), [REPLACE_CONFIRM_MESSAGE, REPLACE_CONFIRM_SYNC]);
+  assert.deepEqual(on.message.split('\n'), [replaceConfirmMessage(), replaceConfirmSync()]);
   assert.deepEqual(replaceConfirm(), off, 'off by default');
 });
 
@@ -71,7 +71,7 @@ test('Replace all takes two steps and only then returns replace', async () => {
   const d = fakeDialog('replace', true);
   assert.equal(await chooseImportMode(preview(), { synced: true, confirm: d.confirm }), 'replace');
   assert.deepEqual(d.shown.map((s) => s.title), ['Import this backup?', 'Replace everything?']);
-  assert.ok(d.shown[1].message.includes(REPLACE_CONFIRM_SYNC));
+  assert.ok(d.shown[1].message.includes(replaceConfirmSync()));
 });
 
 test('cancelling or dismissing the final confirmation returns null, so nothing is applied', async () => {
@@ -90,7 +90,7 @@ test('Merge has no second step; cancelling the first dialog asks nothing more', 
   const merge = fakeDialog('merge');
   assert.equal(await chooseImportMode(preview(), { synced: true, confirm: merge.confirm }), 'merge');
   assert.equal(merge.shown.length, 1);
-  assert.ok(merge.shown[0].message.endsWith(MERGE_SYNC_NOTE));
+  assert.ok(merge.shown[0].message.endsWith(mergeSyncNote()));
   const cancel = fakeDialog(undefined);
   assert.equal(await chooseImportMode(preview(), { confirm: cancel.confirm }), null);
   assert.equal(cancel.shown.length, 1);

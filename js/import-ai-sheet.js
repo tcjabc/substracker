@@ -7,20 +7,21 @@
 import { esc, money, cycleLabel, parseDate, shortDate, chooseImportMode, backupLabel } from './util.js';
 import {
   AiImportError, parseAiImport, reviewRows, backupFromRows, itemFromFields, totalsOf, TOTAL_LABELS, errorReport,
-  aiImportMessage, aiReplaceConfirm, AI_CHOICE_TITLE, MAX_AI_CHARS, PROBLEM,
+  aiImportMessage, aiReplaceConfirm, aiChoiceTitle, MAX_AI_CHARS, PROBLEM,
 } from './import-ai.js';
+import { t } from './i18n.js';
 import { AI_IMPORT_PROMPT } from './import-ai-prompt.js';
 import { createSlideConfirm } from './slide-confirm.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const items = (n) => t('common.items', { count: n });
 
 const STATUS_TAG = {
-  [PROBLEM.error]: '<span class="tag tag-danger">Can’t import</span>',
-  [PROBLEM.cycle]: '<span class="tag tag-warn">Unsupported cycle</span>',
-  [PROBLEM.date]: '<span class="tag tag-warn">Needs a date</span>',
-  [PROBLEM.duplicate]: '<span class="tag">Duplicate, skipped</span>',
+  [PROBLEM.error]: () => `<span class="tag tag-danger">${esc(t('ai.tag.error'))}</span>`,
+  [PROBLEM.cycle]: () => `<span class="tag tag-warn">${esc(t('ai.tag.cycle'))}</span>`,
+  [PROBLEM.date]: () => `<span class="tag tag-warn">${esc(t('ai.tag.date'))}</span>`,
+  [PROBLEM.duplicate]: () => `<span class="tag">${esc(t('ai.tag.duplicate'))}</span>`,
 };
 
 /**
@@ -140,9 +141,7 @@ export function initImportAiSheet({ storage, ui }) {
   function renderBackup() {
     const count = ui.items().length;
     for (const b of backupBtns) b.textContent = backupLabel(count, backupSaved);
-    $('#ai-backup-hint').textContent = count
-      ? `Optional. Saves your ${plural(count, 'item')} as a file you can import again.`
-      : 'Optional. You have no items yet, so there is nothing to lose.';
+    $('#ai-backup-hint').textContent = count ? t('ai.backup.hint', { items: items(count) }) : t('ai.backup.hintEmpty');
   }
   const runBackup = async () => {
     const ok = (await ui.exportData()) === true;
@@ -155,7 +154,7 @@ export function initImportAiSheet({ storage, ui }) {
   /* ---------------- prompt and reply ---------------- */
   $('#ai-copy-prompt').addEventListener('click', async () => {
     const ok = await copyText(AI_IMPORT_PROMPT, null);
-    if (ok) { ui.toast('Prompt copied'); return; }
+    if (ok) { ui.toast(t('ai.toast.promptCopied')); return; }
     // Clipboard blocked: show the prompt, selected, to copy by hand.
     $('#ai-prompt-details').open = true;
     $('#ai-prompt-fallback').hidden = false;
@@ -171,7 +170,7 @@ export function initImportAiSheet({ storage, ui }) {
     replyErrorBox.dataset.report = message ? errorReport(message) : '';
   }
   $('#ai-reply-copy-error').addEventListener('click', async () => {
-    if (await copyText(replyErrorBox.dataset.report, replyErrorText)) ui.toast('Error copied');
+    if (await copyText(replyErrorBox.dataset.report, replyErrorText)) ui.toast(t('ai.toast.errorCopied'));
   });
   replyInput.addEventListener('input', () => { if (!replyErrorBox.hidden) setReplyProblem(''); });
 
@@ -180,7 +179,7 @@ export function initImportAiSheet({ storage, ui }) {
       rawRows = parseAiImport(text);
     } catch (err) {
       if (!(err instanceof AiImportError)) console.error(err);
-      setReplyProblem(err instanceof AiImportError ? err.message : "That couldn't be read.");
+      setReplyProblem(err instanceof AiImportError ? err.message : t('ai.reply.unreadable'));
       replyInput.focus();
       return;
     }
@@ -195,14 +194,14 @@ export function initImportAiSheet({ storage, ui }) {
     const file = fileInput.files?.[0];
     fileInput.value = '';
     if (!file) return;
-    if (file.size > MAX_AI_CHARS * 4) { setReplyProblem('That file is too large to import.'); return; }
+    if (file.size > MAX_AI_CHARS * 4) { setReplyProblem(t('ai.reply.fileTooLarge')); return; }
     try {
       const text = await file.text();
       replyInput.value = text;
       readReply(text);
     } catch (err) {
       console.error(err);
-      setReplyProblem("The file couldn't be read.");
+      setReplyProblem(t('import.error.unreadable'));
     }
   });
 
@@ -217,98 +216,106 @@ export function initImportAiSheet({ storage, ui }) {
 
   function dateText(f) {
     if (!f.nextDate) return '';
-    const word = f.cycle === 'once' ? 'Date' : f.type === 'income' ? 'Next payment' : 'Next renewal';
-    return `${word} ${shortDate(parseDate(f.nextDate))}`;
+    const date = shortDate(parseDate(f.nextDate));
+    return f.cycle === 'once' ? t('ai.row.when.once', { date }) : f.type === 'income' ? t('ai.row.when.payment', { date }) : t('ai.row.when.renewal', { date });
   }
 
   function rowHTML(r) {
     const f = r.fields;
-    const name = f.name ?? (typeof r.raw?.name === 'string' && r.raw.name.trim() ? r.raw.name.trim().slice(0, 80) : `Row ${r.n}`);
+    const name = f.name ?? (typeof r.raw?.name === 'string' && r.raw.name.trim() ? r.raw.name.trim().slice(0, 80) : t('ai.row.unnamed', { n: r.n }));
     const amount = f.amount !== null && f.currency ? `${money(f.amount, f.currency)}${f.cycle ? ` ${cycleLabel(f.cycle)}` : ''}` : '';
     const meta = [
-      f.type === 'income' ? 'Income' : f.type === 'expense' ? 'Expense' : '',
-      f.cycle === 'once' ? 'One-off' : f.cycle === 'annual' ? 'Annual' : f.cycle === 'monthly' ? 'Monthly' : f.cycleText ? `“${f.cycleText}”` : '',
+      f.type === 'income' ? t('ai.row.income') : f.type === 'expense' ? t('ai.row.expense') : '',
+      f.cycle === 'once' ? t('ai.cycle.once') : f.cycle === 'annual' ? t('ai.cycle.annual') : f.cycle === 'monthly' ? t('ai.cycle.monthly')
+        : f.cycleText ? t('ai.row.cycleAsGiven', { cycle: f.cycleText }) : '',
       dateText(f), f.category,
     ].filter(Boolean).map(esc).join(' · ');
     const problems = r.problems.filter((p) => p.code !== PROBLEM.duplicate || r.status === PROBLEM.duplicate);
     const codes = new Set(r.problems.map((p) => p.code));
     const fixDate = codes.has(PROBLEM.date) && !codes.has(PROBLEM.error)
-      ? `<label class="field ai-fix"><span class="field-label">${f.cycle === 'once' ? 'Date' : f.type === 'income' ? 'Next payment date' : 'Next renewal date'}</span>
-          <input type="date" class="input" data-fix-date="${r.n}" aria-label="Date for row ${r.n}"></label>` : '';
+      ? `<label class="field ai-fix"><span class="field-label">${esc(f.cycle === 'once' ? t('ai.fix.date.once') : f.type === 'income' ? t('ai.fix.date.payment') : t('ai.fix.date.renewal'))}</span>
+          <input type="date" class="input" data-fix-date="${r.n}" aria-label="${esc(t('ai.fix.date.label', { n: r.n }))}"></label>` : '';
     const fixCycle = codes.has(PROBLEM.cycle) && !codes.has(PROBLEM.error)
-      ? `<label class="field ai-fix"><span class="field-label">Cycle</span>
-          <select class="input" data-fix-cycle="${r.n}" aria-label="Cycle for row ${r.n}">
-            <option value="">Choose…</option><option value="monthly">Monthly</option><option value="annual">Annual</option><option value="one-off">One-off</option>
+      ? `<label class="field ai-fix"><span class="field-label">${esc(t('ai.fix.cycle'))}</span>
+          <select class="input" data-fix-cycle="${r.n}" aria-label="${esc(t('ai.fix.cycle.label', { n: r.n }))}">
+            <option value="">${esc(t('ai.fix.choose'))}</option><option value="monthly">${esc(t('ai.cycle.monthly'))}</option><option value="annual">${esc(t('ai.cycle.annual'))}</option><option value="one-off">${esc(t('ai.cycle.once'))}</option>
           </select></label>` : '';
     return `<li class="ai-row${r.importable ? '' : ' is-blocked'}" data-row="${r.n}">
       <label class="ai-row-main">
         <input type="checkbox" class="check" data-include="${r.n}" ${r.include ? 'checked' : ''} ${r.importable ? '' : 'disabled'}
-          aria-label="Import row ${r.n}: ${esc(name)}">
+          aria-label="${esc(t('ai.row.include', { n: r.n, name }))}">
         <span class="ai-row-body">
           <span class="ai-row-name"><span class="ai-row-n">${r.n}.</span> ${esc(name)}</span>
           ${meta ? `<span class="ai-row-meta">${meta}</span>` : ''}
         </span>
         <span class="ai-row-amount">${esc(amount)}</span>
       </label>
-      ${r.status !== 'ok' ? `<div class="ai-row-tags">${STATUS_TAG[r.status]}</div>` : ''}
+      ${r.status !== 'ok' ? `<div class="ai-row-tags">${STATUS_TAG[r.status]()}</div>` : ''}
       ${problems.length ? `<ul class="ai-row-problems">${problems.map((p) => `<li>${esc(p.message)}</li>`).join('')}</ul>` : ''}
       ${fixDate || fixCycle ? `<div class="ai-fixes">${fixCycle}${fixDate}</div>` : ''}
     </li>`;
   }
 
-  function renderTotals(items) {
+  function renderTotals(selected) {
     const el = $('#ai-totals');
-    if (!items.length) { el.innerHTML = '<p class="sync-text">No rows selected.</p>'; return; }
+    if (!selected.length) { el.innerHTML = `<p class="sync-text">${esc(t('ai.totals.none'))}</p>`; return; }
     // Cash basis, as everywhere in the app: each group as it is paid, never an average.
-    const EVERY = { monthly: ', each month', annual: ', each year', once: '' };
-    const lines = totalsOf(items).map((t) => {
-      const groups = ['monthly', 'annual', 'once'].filter((k) => t[k].count).map((k) => {
-        const g = t[k];
-        const amounts = [g.out || !g.in ? `${money(g.out, t.currency)} out` : '', g.in ? `${money(g.in, t.currency)} in` : ''].filter(Boolean).join(', ');
-        return `<li><span class="ai-total-label">${TOTAL_LABELS[k]} (${g.count}):</span> ${esc(amounts + EVERY[k])}</li>`;
+    const every = (k, amounts) => (k === 'monthly' ? t('ai.totals.eachMonth', { amounts }) : k === 'annual' ? t('ai.totals.eachYear', { amounts }) : amounts);
+    const lines = totalsOf(selected).map((tot) => {
+      const groups = ['monthly', 'annual', 'once'].filter((k) => tot[k].count).map((k) => {
+        const g = tot[k];
+        const amounts = [g.out || !g.in ? t('ai.totals.out', { amount: money(g.out, tot.currency) }) : '', g.in ? t('ai.totals.in', { amount: money(g.in, tot.currency) }) : '']
+          .filter(Boolean).join(t('common.listSep'));
+        return `<li><span class="ai-total-label">${esc(t('ai.totals.label', { label: TOTAL_LABELS[k], count: g.count }))}</span> ${esc(every(k, amounts))}</li>`;
       }).join('');
-      return `<li><span class="ai-total-cur">${esc(t.currency)}</span><ul class="ai-totals-groups">${groups}</ul></li>`;
+      return `<li><span class="ai-total-cur">${esc(tot.currency)}</span><ul class="ai-totals-groups">${groups}</ul></li>`;
     }).join('');
     el.innerHTML = `<ul class="ai-totals-list">${lines}</ul>`;
   }
 
-  function renderReview() {
+  /** "6 rows · 2 selected · 1 needs a date …." for the review, from the rows as they are now. */
+  function summaryText(selected) {
     const count = (s) => rows.filter((r) => r.status === s).length;
-    const items = selectedItems();
-    const parts = [`${plural(rows.length, 'row')}`, `${items.length} selected`];
-    if (count(PROBLEM.date)) parts.push(`${count(PROBLEM.date)} need${count(PROBLEM.date) === 1 ? 's' : ''} a date`);
-    if (count(PROBLEM.cycle)) parts.push(`${count(PROBLEM.cycle)} with an unsupported cycle`);
-    if (count(PROBLEM.duplicate)) parts.push(`${count(PROBLEM.duplicate)} duplicate${count(PROBLEM.duplicate) === 1 ? '' : 's'} skipped`);
-    if (count(PROBLEM.error)) parts.push(`${count(PROBLEM.error)} can’t be imported`);
-    $('#ai-review-summary').textContent = `${parts.join(' · ')}.`;
+    const parts = [t('ai.summary.rows', { count: rows.length }), t('ai.summary.selected', { count: selected })];
+    if (count(PROBLEM.date)) parts.push(t('ai.summary.needDate', { count: count(PROBLEM.date) }));
+    if (count(PROBLEM.cycle)) parts.push(t('ai.summary.cycle', { count: count(PROBLEM.cycle) }));
+    if (count(PROBLEM.duplicate)) parts.push(t('ai.summary.duplicates', { count: count(PROBLEM.duplicate) }));
+    if (count(PROBLEM.error)) parts.push(t('ai.summary.blocked', { count: count(PROBLEM.error) }));
+    return t('ai.summary', { parts: parts.join(' · ') });
+  }
+  const importLabel = (n) => (n ? t('ai.import.count', { items: items(n) }) : t('ai.import'));
+
+  function renderReview() {
+    const selected = selectedItems();
+    $('#ai-review-summary').textContent = summaryText(selected.length);
     list.innerHTML = rows.map(rowHTML).join('');
-    renderTotals(items);
+    renderTotals(selected);
     const report = errorReport(rows);
     reviewErrorBox.hidden = !report;
     reviewErrorBox.dataset.report = report;
     reviewErrorText.hidden = true;
-    importBtn.disabled = !items.length;
-    importBtn.textContent = items.length ? `Import ${plural(items.length, 'item')}` : 'Import';
+    importBtn.disabled = !selected.length;
+    importBtn.textContent = importLabel(selected.length);
   }
 
   list.addEventListener('change', (e) => {
-    const t = e.target;
-    if (t.matches('[data-include]')) {
-      const n = Number(t.dataset.include);
-      chosen.set(n, t.checked);
+    const field = e.target;
+    if (field.matches('[data-include]')) {
+      const n = Number(field.dataset.include);
+      chosen.set(n, field.checked);
       const r = rows.find((x) => x.n === n);
-      if (r) r.include = t.checked && r.importable;
-      const items = selectedItems();
-      renderTotals(items);
-      importBtn.disabled = !items.length;
-      importBtn.textContent = items.length ? `Import ${plural(items.length, 'item')}` : 'Import';
-      $('#ai-review-summary').textContent = $('#ai-review-summary').textContent.replace(/\d+ selected/, `${items.length} selected`);
+      if (r) r.include = field.checked && r.importable;
+      const selected = selectedItems();
+      renderTotals(selected);
+      importBtn.disabled = !selected.length;
+      importBtn.textContent = importLabel(selected.length);
+      $('#ai-review-summary').textContent = summaryText(selected.length);
       return;
     }
-    const n = Number(t.dataset.fixDate || t.dataset.fixCycle);
-    if (!n || !t.value) return;
-    const key = t.dataset.fixDate ? 'nextDate' : 'cycle';
-    rawRows[n - 1] = { ...rawRows[n - 1], [key]: t.value };
+    const n = Number(field.dataset.fixDate || field.dataset.fixCycle);
+    if (!n || !field.value) return;
+    const key = field.dataset.fixDate ? 'nextDate' : 'cycle';
+    rawRows[n - 1] = { ...rawRows[n - 1], [key]: field.value };
     refreshReview();
     // Focus stays with the row that was fixed: its next fix, or its checkbox.
     const li = $(`[data-row="${n}"]`, list);
@@ -316,7 +323,7 @@ export function initImportAiSheet({ storage, ui }) {
   });
 
   $('#ai-review-copy-error').addEventListener('click', async () => {
-    if (await copyText(reviewErrorBox.dataset.report, reviewErrorText)) ui.toast('Error copied');
+    if (await copyText(reviewErrorBox.dataset.report, reviewErrorText)) ui.toast(t('ai.toast.errorCopied'));
   });
 
   /* ---------------- import ---------------- */
@@ -329,14 +336,14 @@ export function initImportAiSheet({ storage, ui }) {
       preview = await storage.previewImport(backup);
     } catch (err) {
       console.error(err);
-      ui.toast(err instanceof AiImportError ? err.message : "These rows couldn't be prepared. Nothing was changed.");
+      ui.toast(err instanceof AiImportError ? err.message : t('ai.toast.prepareFailed'));
       return;
     }
     const synced = await ui.isSynced();
     // The usual choice: Merge or Replace all, and Replace asks once more. Cancel or Back at either
     // step imports nothing. The optional backup sits beside Replace all.
     const mode = await chooseImportMode(preview, {
-      synced, confirm: ui.confirmDialog, title: AI_CHOICE_TITLE,
+      synced, confirm: ui.confirmDialog, title: aiChoiceTitle(),
       message: aiImportMessage(preview.merge, { synced }), replace: aiReplaceConfirm({ synced }),
       backup: runBackup, count: ui.items().length,
     });
@@ -348,11 +355,11 @@ export function initImportAiSheet({ storage, ui }) {
       busy = false;
       ui.closeDialog(dlg);
       await ui.reloadData();
-      ui.toast(mode === 'replace' ? `Replaced with ${plural(done.total, 'item')}` : `Added ${plural(done.added, 'item')}`);
+      ui.toast(mode === 'replace' ? t('import.toast.replaced', { items: items(done.total) }) : t('ai.toast.added', { items: items(done.added) }));
       storage.requestPersistence?.();
     } catch (err) {
       console.error(err);
-      ui.toast('Import failed. Nothing was changed.');
+      ui.toast(t('import.toast.failed'));
     } finally {
       busy = false;
       importBtn.disabled = !selectedItems().length;

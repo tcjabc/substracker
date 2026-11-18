@@ -14,6 +14,7 @@
 // per device and never synced or exported.
 
 import { firstEmoji, uid } from './util.js';
+import { t } from './i18n.js';
 import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
 
@@ -1040,32 +1041,32 @@ const stamp = (v) => { const t = typeof v === 'string' ? Date.parse(v) : NaN; re
 export function parseBackup(json) {
   let data = json;
   if (typeof json === 'string') {
-    if (json.length > MAX_IMPORT_CHARS) throw new ImportError('That file is too large to be a Peek Budget backup.');
-    try { data = JSON.parse(json); } catch { throw new ImportError("That file isn't valid JSON."); }
+    if (json.length > MAX_IMPORT_CHARS) throw new ImportError(t('import.error.tooLarge'));
+    try { data = JSON.parse(json); } catch { throw new ImportError(t('import.error.json')); }
   }
-  if (!isObj(data)) throw new ImportError("That file isn't a Peek Budget backup: it has no backup header.");
+  if (!isObj(data)) throw new ImportError(t('import.error.noHeader'));
 
   let version, rows, listName;
   if ('app' in data || 'schemaVersion' in data) {
-    if (data.app !== APP_ID) throw new ImportError(`That file isn't a Peek Budget backup: "app" should be "${APP_ID}".`);
+    if (data.app !== APP_ID) throw new ImportError(t('import.error.app', { app: APP_ID }));
     if (!Number.isInteger(data.schemaVersion) || data.schemaVersion < 1) {
-      throw new ImportError('The backup\'s "schemaVersion" must be a whole number of 1 or more.');
+      throw new ImportError(t('import.error.schemaVersion'));
     }
     version = data.schemaVersion;
     listName = 'items';
     rows = data.items;
   } else if (data.format === APP_ID) {
     version = Number(data.version);
-    if (version !== 1 && version !== 2) throw new ImportError('The backup\'s "version" must be 1 or 2.');
+    if (version !== 1 && version !== 2) throw new ImportError(t('import.error.version'));
     listName = version === 1 ? 'subscriptions' : 'items';
     rows = data[listName];
   } else {
-    throw new ImportError(`That file isn't a Peek Budget backup: it has no "app": "${APP_ID}" header.`);
+    throw new ImportError(t('import.error.noApp', { app: APP_ID }));
   }
-  if (!Array.isArray(rows)) throw new ImportError(`The backup's "${listName}" must be a list.`);
-  if (!rows.length) throw new ImportError('That backup has no items.');
+  if (!Array.isArray(rows)) throw new ImportError(t('import.error.list', { list: listName }));
+  if (!rows.length) throw new ImportError(t('import.error.empty'));
   if (data.settings !== undefined && !isObj(data.settings)) {
-    throw new ImportError('The backup\'s "settings" must be an object.');
+    throw new ImportError(t('import.error.settings'));
   }
 
   const firstSeen = new Map();
@@ -1078,21 +1079,23 @@ export function parseBackup(json) {
 }
 
 function checkItem(raw, i, firstSeen) {
-  if (!isObj(raw)) throw new ImportError(`Item ${i + 1} isn't an object.`);
+  if (!isObj(raw)) throw new ImportError(t('import.error.notObject', { n: i + 1 }));
   const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-  const label = `Item ${i + 1}${name ? ` ("${name.slice(0, 40)}")` : ''}`;
-  const fail = (msg) => { throw new ImportError(`${label}: ${msg}`); };
-  if (typeof raw.id !== 'string' || !raw.id || raw.id.length > 64) fail('"id" must be text of 1–64 characters.');
-  if (raw.id === SETTINGS_ID) fail(`"id" can't be "${SETTINGS_ID}", which is reserved.`);
-  if (firstSeen.has(raw.id)) fail(`"id" is the same as item ${firstSeen.get(raw.id) + 1}.`);
+  const fail = (key, params) => {
+    const problem = t(key, params);
+    throw new ImportError(name ? t('import.error.itemNamed', { n: i + 1, name: name.slice(0, 40), problem }) : t('import.error.item', { n: i + 1, problem }));
+  };
+  if (typeof raw.id !== 'string' || !raw.id || raw.id.length > 64) fail('import.error.id');
+  if (raw.id === SETTINGS_ID) fail('import.error.idReserved', { id: SETTINGS_ID });
+  if (firstSeen.has(raw.id)) fail('import.error.idSame', { n: firstSeen.get(raw.id) + 1 });
   firstSeen.set(raw.id, i);
-  if (!name) fail('"name" must be non-empty text.');
-  if (typeof raw.price !== 'number' || !Number.isFinite(raw.price) || raw.price < 0) fail('"price" must be a number of 0 or more.');
-  if (typeof raw.currency !== 'string' || !/^[A-Za-z]{3}$/.test(raw.currency)) fail('"currency" must be a 3-letter code such as TWD.');
-  if (!CYCLES.includes(raw.cycle)) fail('"cycle" must be "monthly", "annual" or "once".');
+  if (!name) fail('import.error.name');
+  if (typeof raw.price !== 'number' || !Number.isFinite(raw.price) || raw.price < 0) fail('import.error.price');
+  if (typeof raw.currency !== 'string' || !/^[A-Za-z]{3}$/.test(raw.currency)) fail('import.error.currency');
+  if (!CYCLES.includes(raw.cycle)) fail('import.error.cycle');
   // Records saved before 1.1.0 have no type and are expenses, in any file version.
-  if (raw.type !== undefined && !TYPES.includes(raw.type)) fail('"type" must be "expense" or "income".');
-  if (raw.cycle === 'once' && !isDay(raw.date)) fail('"date" must be a YYYY-MM-DD date for a one-off item.');
+  if (raw.type !== undefined && !TYPES.includes(raw.type)) fail('import.error.type');
+  if (raw.cycle === 'once' && !isDay(raw.date)) fail('import.error.date');
 }
 
 /** Keep only the fields the app knows, trimmed to the same limits as the form. */

@@ -5,6 +5,8 @@
 // The spring back is a CSS transition. With "Reduce motion and effects" (`reduceMotion`) the
 // thumb returns at once instead, and app.css cuts every transition as well. The pure parts at the top are covered by Node tests.
 
+import { t } from './i18n.js';
+
 export const SLIDE_LOCK_MS = 2000;
 /** How far along the track (0–1) the thumb must be released to confirm. */
 export const SLIDE_DONE = 0.92;
@@ -38,8 +40,8 @@ export function slideKey(key, fraction) {
  * screen is shown: it clears the confirmation and starts the lock again.
  */
 export function createSlideConfirm(root, {
-  onChange = () => {}, reduceMotion = () => false, lockMs = SLIDE_LOCK_MS, label = "Slide to confirm you've read this",
-  doneLabel = 'Confirmed ✓', lockedLabel = 'Read the points above first…',
+  onChange = () => {}, reduceMotion = () => false, lockMs = SLIDE_LOCK_MS, label = t('ai.slide.label'),
+  doneLabel = t('ai.slide.done'), lockedLabel = t('ai.slide.locked'),
 } = {}) {
   const track = root.querySelector('[data-slide-track]');
   const thumb = root.querySelector('[data-slide-thumb]');
@@ -62,7 +64,7 @@ export function createSlideConfirm(root, {
     root.classList.toggle('is-locked', locked);
     root.classList.toggle('is-done', confirmed);
     thumb.setAttribute('aria-disabled', String(locked || confirmed));
-    thumb.setAttribute('aria-valuetext', confirmed ? 'Confirmed' : locked ? 'Locked for a moment' : 'Not confirmed');
+    thumb.setAttribute('aria-valuetext', confirmed ? t('ai.slide.value.confirmed') : locked ? t('ai.slide.value.locked') : t('ai.slide.value.not'));
     text.textContent = confirmed ? doneLabel : locked ? lockedLabel : label;
     check.disabled = locked;
     check.checked = confirmed;

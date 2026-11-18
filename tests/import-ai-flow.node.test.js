@@ -7,8 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { slideFraction, slideRelease, slideKey, SLIDE_DONE, SLIDE_LOCK_MS } from '../js/slide-confirm.js';
-import { chooseImportMode, backupLabel, importMessage, REPLACE_CONFIRM_TITLE } from '../js/util.js';
-import { aiImportMessage, aiReplaceConfirm, AI_CHOICE_TITLE, AI_REPLACE_TITLE, AI_REPLACE_SYNC_WARNING } from '../js/import-ai.js';
+import { chooseImportMode, backupLabel, importMessage, replaceConfirmTitle } from '../js/util.js';
+import { aiImportMessage, aiReplaceConfirm, aiChoiceTitle, aiReplaceTitle, aiReplaceSyncWarning } from '../js/import-ai.js';
 
 /* ------------------------------------------------------------------ Slide to confirm */
 
@@ -68,7 +68,7 @@ test('without a backup callback the flow is exactly as before', async () => {
   assert.deepEqual(shown[0].actions.map((a) => a.label), ['Cancel', 'Replace all', 'Merge']);
   assert.equal(shown[0].title, 'Import this backup?');
   assert.equal(shown[0].message, importMessage(preview()));
-  assert.equal(shown[1].title, REPLACE_CONFIRM_TITLE);
+  assert.equal(shown[1].title, replaceConfirmTitle());
   assert.deepEqual(shown[1].actions.map((a) => a.label), ['Cancel', 'Replace all']);
 });
 
@@ -76,7 +76,7 @@ test('the backup sits beside Replace all at both steps, runs, and never blocks',
   let runs = 0;
   const backup = async () => { runs++; return true; };
   const { confirm, shown } = fakeDialog('backup', 'replace', 'backup', true);
-  const mode = await chooseImportMode(preview(), { confirm, backup, count: 5, title: AI_CHOICE_TITLE, message: 'm', replace: aiReplaceConfirm() });
+  const mode = await chooseImportMode(preview(), { confirm, backup, count: 5, title: aiChoiceTitle(), message: 'm', replace: aiReplaceConfirm() });
   assert.equal(mode, 'replace');
   assert.equal(runs, 2);
   assert.deepEqual(shown.map((s) => s.actions.map((a) => a.label)), [
@@ -85,7 +85,7 @@ test('the backup sits beside Replace all at both steps, runs, and never blocks',
     ['Cancel', 'Backup saved ✓', 'Replace all'],
     ['Cancel', 'Backup saved ✓', 'Replace all'],
   ]);
-  assert.deepEqual(shown.map((s) => s.title), [AI_CHOICE_TITLE, AI_CHOICE_TITLE, AI_REPLACE_TITLE, AI_REPLACE_TITLE]);
+  assert.deepEqual(shown.map((s) => s.title), [aiChoiceTitle(), aiChoiceTitle(), aiReplaceTitle(), aiReplaceTitle()]);
   assert.equal(shown[0].actions[0].value, null, 'Cancel stays first, so dismissing (Back) cancels');
 });
 
@@ -112,7 +112,7 @@ test('the choice text for AI rows: adds only, settings stay, sync lines when syn
     '3 items to add. Merge adds them to your 5 items. Replace all deletes your 5 items and keeps only these 3. Your default currency and group colours stay as they are.');
   assert.equal(aiImportMessage({ total: 1, existing: 0 }), '1 item to add. Your list is empty, so both options give the same result.');
   const lines = aiImportMessage({ total: 3, existing: 5 }, { synced: true }).split('\n');
-  assert.deepEqual(lines.slice(1), [AI_REPLACE_SYNC_WARNING, 'Changes are sent to every device you sync with.']);
+  assert.deepEqual(lines.slice(1), [aiReplaceSyncWarning(), 'Changes are sent to every device you sync with.']);
   assert.match(aiReplaceConfirm().message, /Settings stay as they are\. This can't be undone\.$/);
   assert.match(aiReplaceConfirm({ synced: true }).message, /\nIt also deletes them on every device you sync with\.$/);
   assert.deepEqual(aiReplaceConfirm().actions.map((a) => a.value), [false, true]);

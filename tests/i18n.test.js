@@ -306,7 +306,7 @@ async function walk() {
   ]);
   put('fn.aiImport', [
     aiImport.aiImportMessage({ total: 3, existing: 0 }), aiImport.aiImportMessage({ total: 3, existing: 7 }, { synced: true }),
-    JSON.stringify(aiImport.aiReplaceConfirm()), JSON.stringify(aiImport.aiReplaceConfirm({ synced: true })), aiImport.AI_CHOICE_TITLE,
+    JSON.stringify(aiImport.aiReplaceConfirm()), JSON.stringify(aiImport.aiReplaceConfirm({ synced: true })), aiImport.aiChoiceTitle(),
   ]);
   put('fn.words', ['', 'abandon', 'abandon abilty able about above absent absorb abstract absurd abuse access accident']
     .flatMap((w) => wordProblems(w).map((p) => p.message)));

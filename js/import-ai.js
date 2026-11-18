@@ -10,7 +10,8 @@
 // storage.parseBackup and the existing Merge / Replace import, so ids, field stamps, types and
 // nextRenewal are made exactly as for any other import.
 
-import { CURRENCIES, uid, isOnce, MERGE_SYNC_NOTE } from './util.js';
+import { CURRENCIES, uid, isOnce, mergeSyncNote, replaceConfirmSync } from './util.js';
+import { t, formatLocale } from './i18n.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
 import { DEFAULT_CATEGORIES } from './services.js';
 
@@ -258,12 +259,12 @@ function tidyRow(raw, knownCategories) {
  */
 export function extractJson(input) {
   if (isObj(input)) return input;
-  if (typeof input !== 'string') throw new AiImportError('Nothing to import. Paste the reply or pick its file.');
+  if (typeof input !== 'string') throw new AiImportError(t('ai.reply.nothing'));
   if (input.length > MAX_AI_CHARS) {
-    throw new AiImportError(`That's too long to import (over ${MAX_AI_CHARS.toLocaleString('en')} characters). Import fewer rows at a time.`);
+    throw new AiImportError(t('ai.reply.tooLong', { max: MAX_AI_CHARS.toLocaleString(formatLocale() ?? 'en') }));
   }
   const text = input.replace(BOM, '').trim();
-  if (!text) throw new AiImportError('Nothing to import. Paste the reply or pick its file.');
+  if (!text) throw new AiImportError(t('ai.reply.nothing'));
 
   // [candidate, how many characters come before it on its line] (for undoing a copied line wrap)
   const candidates = [[text, 0]];
@@ -291,10 +292,9 @@ export function extractJson(input) {
   }
   if (found !== null) return found;
   if (broken) {
-    throw new AiImportError('The JSON has a mistake and can\'t be read, for example a missing comma, quote or bracket. '
-      + 'Ask for the whole JSON again, with straight double quotes and nothing else.');
+    throw new AiImportError(t('ai.reply.broken'));
   }
-  throw new AiImportError("Couldn't find any JSON in that. Paste the whole reply, or ask for the JSON only.");
+  throw new AiImportError(t('ai.reply.noJson'));
 }
 
 /**
@@ -303,15 +303,15 @@ export function extractJson(input) {
  */
 export function parseAiImport(input) {
   const data = extractJson(input);
-  if (Array.isArray(data)) throw new AiImportError(`The JSON is a list; it must be an object like ${SHAPE}.`);
-  if (!isObj(data)) throw new AiImportError(`The JSON must be an object like ${SHAPE}.`);
-  if (data.version === undefined) throw new AiImportError('"version" is missing; add "version": 1.');
-  if (data.version !== AI_SCHEMA_VERSION) throw new AiImportError(`"version" must be the number ${AI_SCHEMA_VERSION} without quotes, like "version": ${AI_SCHEMA_VERSION}.`);
-  if (data.rows === undefined) throw new AiImportError('"rows" is missing; add "rows": [...] with one object per item.');
-  if (!Array.isArray(data.rows)) throw new AiImportError('"rows" must be a list in square brackets, like "rows": [{...}, {...}].');
-  if (!data.rows.length) throw new AiImportError('"rows" is empty; there is nothing to import.');
+  if (Array.isArray(data)) throw new AiImportError(t('ai.reply.isList', { shape: SHAPE }));
+  if (!isObj(data)) throw new AiImportError(t('ai.reply.notObject', { shape: SHAPE }));
+  if (data.version === undefined) throw new AiImportError(t('ai.reply.noVersion'));
+  if (data.version !== AI_SCHEMA_VERSION) throw new AiImportError(t('ai.reply.version', { version: AI_SCHEMA_VERSION }));
+  if (data.rows === undefined) throw new AiImportError(t('ai.reply.noRows'));
+  if (!Array.isArray(data.rows)) throw new AiImportError(t('ai.reply.rowsNotList'));
+  if (!data.rows.length) throw new AiImportError(t('ai.reply.rowsEmpty'));
   if (data.rows.length > MAX_AI_ROWS) {
-    throw new AiImportError(`"rows" has ${data.rows.length} rows; the most at once is ${MAX_AI_ROWS}, so split them into smaller batches.`);
+    throw new AiImportError(t('ai.reply.tooMany', { count: data.rows.length, max: MAX_AI_ROWS }));
   }
   return data.rows;
 }
@@ -323,11 +323,8 @@ export function parseAiImport(input) {
 // their own codes so the review screen can offer a date picker or a cycle choice to fix them.
 export const PROBLEM = { error: 'error', date: 'date', cycle: 'cycle', duplicate: 'duplicate' };
 
-/** The date's name for this row, in the app's words. */
-function dateLabel(type, cycle) {
-  if (cycle === 'once') return 'date';
-  return type === 'income' ? 'next payment date' : 'next renewal date';
-}
+/** Which date this row has, for the wording: a one-off's date, a payment or a renewal. */
+const dateKind = (type, cycle) => (cycle === 'once' ? 'once' : type === 'income' ? 'payment' : 'renewal');
 
 /**
  * Check one row. Returns { n, fields, problems } where `fields` holds the clean values
@@ -338,59 +335,60 @@ function dateLabel(type, cycle) {
  */
 export function checkRow(raw, n) {
   const problems = [];
-  const add = (code, msg) => problems.push({ code, message: `Row ${n}: ${msg}` });
+  const add = (code, key, params) => problems.push({ code, message: t('ai.row.problem', { n, problem: t(key, params) }) });
   const fields = { name: null, amount: null, currency: null, cycle: null, cycleText: null, nextDate: null, category: '', type: null };
   if (!isObj(raw)) {
-    add(PROBLEM.error, 'must be an object with name, amount, currency, cycle, nextDate, category and type');
+    add(PROBLEM.error, 'ai.row.notObject');
     return { n, fields, problems };
   }
-  if (raw.id === SETTINGS_ID) add(PROBLEM.error, `remove "id": "${SETTINGS_ID}"; rows don't need an id`);
+  if (raw.id === SETTINGS_ID) add(PROBLEM.error, 'ai.row.reservedId', { id: SETTINGS_ID });
 
-  if (blank(raw.name)) add(PROBLEM.error, 'name is missing; add the merchant or payer name as text, like "Example Streaming"');
-  else if (typeof raw.name !== 'string') add(PROBLEM.error, 'name must be text in quotes, like "Example Streaming"');
-  else if (raw.name.trim().length > NAME_MAX) add(PROBLEM.error, `name must be at most ${NAME_MAX} characters; shorten it`);
+  if (blank(raw.name)) add(PROBLEM.error, 'ai.row.name.missing');
+  else if (typeof raw.name !== 'string') add(PROBLEM.error, 'ai.row.name.text');
+  else if (raw.name.trim().length > NAME_MAX) add(PROBLEM.error, 'ai.row.name.long', { max: NAME_MAX });
   else fields.name = raw.name.trim();
 
-  if (raw.amount === undefined || raw.amount === null || raw.amount === '') add(PROBLEM.error, 'amount is missing; add it as a number without quotes, like 390');
-  else if (typeof raw.amount !== 'number') add(PROBLEM.error, 'amount must be a number without quotes, like 390');
-  else if (!Number.isFinite(raw.amount)) add(PROBLEM.error, 'amount must be a number without quotes, like 390');
-  else if (raw.amount < 0) add(PROBLEM.error, 'amount must be 0 or more without a minus sign; use "type": "income" for money coming in');
-  else if (raw.amount > AMOUNT_MAX) add(PROBLEM.error, 'amount is too large; check it against the document');
+  if (raw.amount === undefined || raw.amount === null || raw.amount === '') add(PROBLEM.error, 'ai.row.amount.missing');
+  else if (typeof raw.amount !== 'number') add(PROBLEM.error, 'ai.row.amount.number');
+  else if (!Number.isFinite(raw.amount)) add(PROBLEM.error, 'ai.row.amount.number');
+  else if (raw.amount < 0) add(PROBLEM.error, 'ai.row.amount.negative');
+  else if (raw.amount > AMOUNT_MAX) add(PROBLEM.error, 'ai.row.amount.large');
   else fields.amount = Math.round(raw.amount * 100) / 100;
 
-  if (blank(raw.currency)) add(PROBLEM.error, 'currency is missing; add a 3-letter code in quotes, like "TWD"');
-  else if (typeof raw.currency !== 'string') add(PROBLEM.error, 'currency must be a 3-letter code in quotes, like "TWD"');
+  if (blank(raw.currency)) add(PROBLEM.error, 'ai.row.currency.missing');
+  else if (typeof raw.currency !== 'string') add(PROBLEM.error, 'ai.row.currency.code');
   else {
     const c = raw.currency.trim().toUpperCase();
-    if (!CURRENCIES.includes(c)) add(PROBLEM.error, `currency "${raw.currency.trim().slice(0, 12)}" isn't supported; use one of ${CURRENCIES.join(', ')}, or leave the row out`);
+    if (!CURRENCIES.includes(c)) add(PROBLEM.error, 'ai.row.currency.unsupported', { currency: raw.currency.trim().slice(0, 12), list: CURRENCIES.join(', ') });
     else fields.currency = c;
   }
 
-  if (blank(raw.type)) add(PROBLEM.error, 'type is missing; use "expense" or "income"');
-  else if (typeof raw.type !== 'string' || !TYPES.includes(raw.type.trim().toLowerCase())) add(PROBLEM.error, 'type must be "expense" or "income"');
+  if (blank(raw.type)) add(PROBLEM.error, 'ai.row.type.missing');
+  else if (typeof raw.type !== 'string' || !TYPES.includes(raw.type.trim().toLowerCase())) add(PROBLEM.error, 'ai.row.type.value');
   else fields.type = raw.type.trim().toLowerCase();
 
-  if (blank(raw.cycle)) add(PROBLEM.error, 'cycle is missing; use "monthly", "annual" or "one-off"');
-  else if (typeof raw.cycle !== 'string') add(PROBLEM.error, 'cycle must be "monthly", "annual" or "one-off" in quotes');
+  if (blank(raw.cycle)) add(PROBLEM.error, 'ai.row.cycle.missing');
+  else if (typeof raw.cycle !== 'string') add(PROBLEM.error, 'ai.row.cycle.text');
   else {
     const c = raw.cycle.trim().toLowerCase();
     fields.cycleText = c.slice(0, 30);
     if (Object.prototype.hasOwnProperty.call(AI_CYCLES, c)) fields.cycle = AI_CYCLES[c];
-    else add(PROBLEM.cycle, `unsupported cycle "${fields.cycleText}"; cycle must be "monthly", "annual" or "one-off", or leave the row out`);
+    else add(PROBLEM.cycle, 'ai.row.cycle.unsupported', { cycle: fields.cycleText });
   }
 
-  const label = dateLabel(fields.type, fields.cycle);
-  if (blank(raw.nextDate)) add(PROBLEM.date, `nextDate is missing; add the ${label} as YYYY-MM-DD, like 2026-12-05`);
-  else if (typeof raw.nextDate !== 'string' || !isRealDay(raw.nextDate.trim())) {
+  const kind = dateKind(fields.type, fields.cycle);
+  if (blank(raw.nextDate)) {
+    add(PROBLEM.date, kind === 'once' ? 'ai.row.date.missing.once' : kind === 'payment' ? 'ai.row.date.missing.payment' : 'ai.row.date.missing.renewal');
+  } else if (typeof raw.nextDate !== 'string' || !isRealDay(raw.nextDate.trim())) {
     const got = String(raw.nextDate).slice(0, 20);
-    add(PROBLEM.date, /^\d{4}-\d{2}-\d{2}$/.test(got.trim())
-      ? `nextDate "${got}" isn't a real date; use the ${label} as a real YYYY-MM-DD date`
-      : `nextDate must be YYYY-MM-DD, like 2026-12-05, not "${got}"`);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(got.trim())) {
+      add(PROBLEM.date, kind === 'once' ? 'ai.row.date.notReal.once' : kind === 'payment' ? 'ai.row.date.notReal.payment' : 'ai.row.date.notReal.renewal', { got });
+    } else add(PROBLEM.date, 'ai.row.date.format', { got });
   } else fields.nextDate = raw.nextDate.trim();
 
   if (raw.category === undefined || raw.category === null) fields.category = '';
-  else if (typeof raw.category !== 'string') add(PROBLEM.error, 'category must be text in quotes, or ""');
-  else if (raw.category.trim().length > CATEGORY_MAX) add(PROBLEM.error, `category must be at most ${CATEGORY_MAX} characters; shorten it or use ""`);
+  else if (typeof raw.category !== 'string') add(PROBLEM.error, 'ai.row.category.text');
+  else if (raw.category.trim().length > CATEGORY_MAX) add(PROBLEM.error, 'ai.row.category.long', { max: CATEGORY_MAX });
   else fields.category = raw.category.trim();
   if (fields.type === 'income') fields.category = ''; // income has no categories in the app
 
@@ -437,7 +435,7 @@ export function reviewRows(rawRows, existing = []) {
       if (duplicateOf) {
         problems.push({
           code: PROBLEM.duplicate,
-          message: `Row ${n}: ${duplicateOf.existing ? 'already in your list' : `same as row ${duplicateOf.row}`}, skipped`,
+          message: t('ai.row.problem', { n, problem: duplicateOf.existing ? t('ai.row.duplicate.existing') : t('ai.row.duplicate.row', { row: duplicateOf.row }) }),
         });
       }
     }
@@ -488,7 +486,7 @@ export function itemFromFields(f, now = new Date().toISOString(), newId = uid) {
  */
 export function backupFromRows(rows, { now = new Date().toISOString(), newId = uid } = {}) {
   const items = rows.filter((r) => r.include && r.importable).map((r) => itemFromFields(r.fields, now, newId));
-  if (!items.length) throw new AiImportError('No rows are selected to import.');
+  if (!items.length) throw new AiImportError(t('ai.reply.noneSelected'));
   const backup = { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: now, items };
   parseBackup(backup); // the same checks as any backup file
   return backup;
@@ -518,13 +516,19 @@ export function totalsOf(items) {
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
-/** The labels for totalsOf's groups, as the review screen shows them. */
-export const TOTAL_LABELS = { monthly: 'Monthly items', annual: 'Yearly items', once: 'One-off' };
+/** The labels for totalsOf's groups, as the review screen shows them (read when shown). */
+export const TOTAL_LABELS = Object.freeze({
+  get monthly() { return t('ai.totals.monthly'); },
+  get annual() { return t('ai.totals.annual'); },
+  get once() { return t('ai.totals.once'); },
+});
 
 /**
  * The text "Copy error for your AI" copies: what's wrong, row by row, and a request for corrected
  * JSON. `problem` is either an AiImportError message (the reply as a whole) or a list of review rows.
- * Duplicates aren't errors and aren't listed.
+ * Duplicates aren't errors and aren't listed. The lines around the problems are written for the
+ * AI, like the prompt (js/import-ai-prompt.js), so they stay in English; the problems themselves
+ * are the ones the review screen shows, in the app's language.
  */
 export function errorReport(problem) {
   const lines = typeof problem === 'string'
@@ -545,28 +549,27 @@ export function errorReport(problem) {
    -------------------------------------------------------------------------- */
 // The rows bring no settings and always get new ids, so Merge only adds and Replace all only
 // replaces the items; the default currency and group colours stay as they are.
-const countOf = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const items = (n) => t('common.items', { count: n });
 
-export const AI_CHOICE_TITLE = 'Import these items?';
-export const AI_REPLACE_SYNC_WARNING = 'Replace all deletes the current items here and on every device you sync with.';
-export const AI_REPLACE_TITLE = 'Replace all items?';
-export const AI_REPLACE_MESSAGE = "This deletes all current items on this device and keeps only the imported ones. Settings stay as they are. This can't be undone.";
+// Read when needed (functions, not constants), in the language in use then.
+export const aiChoiceTitle = () => t('ai.choice.title');
+export const aiReplaceSyncWarning = () => t('ai.replace.syncWarning');
+export const aiReplaceTitle = () => t('ai.replace.title');
+export const aiReplaceMessage = () => t('ai.replace.message');
 
 /** The choice dialog's text from previewImport()'s merge summary. */
 export function aiImportMessage({ total, existing }, { synced = false } = {}) {
   const text = existing
-    ? `${countOf(total, 'item')} to add. Merge adds them to your ${countOf(existing, 'item')}. `
-      + `Replace all deletes your ${countOf(existing, 'item')} and keeps only these ${total}. `
-      + 'Your default currency and group colours stay as they are.'
-    : `${countOf(total, 'item')} to add. Your list is empty, so both options give the same result.`;
-  return synced ? `${text}\n${AI_REPLACE_SYNC_WARNING}\n${MERGE_SYNC_NOTE}` : text;
+    ? t('ai.choice.message', { items: items(total), existing: items(existing), count: total })
+    : t('ai.choice.empty', { items: items(total) });
+  return synced ? `${text}\n${aiReplaceSyncWarning()}\n${mergeSyncNote()}` : text;
 }
 
 /** The final confirmation after choosing Replace all. Cancel comes first: it's focused, and dismissing picks it. */
 export function aiReplaceConfirm({ synced = false } = {}) {
   return {
-    title: AI_REPLACE_TITLE,
-    message: synced ? `${AI_REPLACE_MESSAGE}\nIt also deletes them on every device you sync with.` : AI_REPLACE_MESSAGE,
-    actions: [{ label: 'Cancel', value: false }, { label: 'Replace all', value: true, kind: 'danger' }],
+    title: aiReplaceTitle(),
+    message: synced ? `${aiReplaceMessage()}\n${replaceConfirmSync()}` : aiReplaceMessage(),
+    actions: [{ label: t('common.cancel'), value: false }, { label: t('import.replaceAll'), value: true, kind: 'danger' }],
   };
 }
