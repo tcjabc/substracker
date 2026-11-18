@@ -1,4 +1,4 @@
-// The mixed-version sync scenarios (tests/mixed-version.scenarios.js and tests/mixed-format5.scenarios.js) again in a time zone with
+// The mixed-version sync scenarios (tests/mixed-version.scenarios.js, mixed-format5 and mixed-groups) again in a time zone with
 // DST, America/New_York, as the other date tests run. Run with `npm test`.
 
 import { test } from 'node:test';
@@ -13,3 +13,4 @@ test('this run is in America/New_York (DST on in July, off in January)', () => {
 
 await import('./mixed-version.scenarios.js');
 await import('./mixed-format5.scenarios.js');
+await import('./mixed-groups.scenarios.js');
