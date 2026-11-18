@@ -84,12 +84,14 @@ const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;
 const escHTML = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 
 /**
- * Markup for a key whose text holds a few tags (keys ending in "Html", such as a figure in
- * <strong>). The template comes from the app's own dictionary; every param is escaped.
+ * Markup for `key`. A key ending in "Html" holds a few tags of its own (such as a figure in
+ * <strong>) and is used as it is; any other key's text is escaped. Every param is escaped, except
+ * those in `markup`, which are ready-made markup (such as a <span> around a rolling figure).
  */
-export function tHTML(key, params) {
-  const safe = params && Object.fromEntries(Object.entries(params).map(([k, v]) => [k, escHTML(v)]));
-  return interpolate(template(key, params), safe);
+export function tHTML(key, params, markup) {
+  const tpl = template(key, params);
+  const safe = { ...(params && Object.fromEntries(Object.entries(params).map(([k, v]) => [k, escHTML(v)]))), ...markup };
+  return interpolate(/Html$/.test(key) ? tpl : escHTML(tpl), safe);
 }
 
 /* Locale choice --------------------------------------------------------------------------------- */

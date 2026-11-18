@@ -169,8 +169,6 @@ export function nowIndex(months, now = new Date()) {
   return months.findIndex((x) => x.y === now.getFullYear() && x.m === now.getMonth());
 }
 
-export const TYPE_NAMES = Object.freeze({ monthly: 'Monthly plans', annual: 'Annual renewals', once: 'One-offs' });
-
 /**
  * Per-month data for `months` (consecutive) from one currency's items: totals and income from
  * monthSeries, the stacks from breakdown. { months: [{ y, m, total, income, over, byType,

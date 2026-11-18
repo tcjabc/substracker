@@ -3,14 +3,15 @@
 // Slices come from the month's breakdown (js/insights-calc.js) via donutSlices().
 
 import { esc, money } from './util.js';
+import { t } from './i18n.js';
 
 const DONUT = { r: 80, gap: 2 }; // SVG user units in a 200 × 200 viewBox; stroke width lives in app.css
 const SMALL_SLICE = 0.03; // categories under 3% of the month are pooled into "Other"
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
- * Slices for the month, largest first, from catList [{ name, total, count }]. Two or more categories
- * under 3% become one neutral "Other". `swatchFor(name)` gives a category's colour (a CSS value).
+ * Slices for the month, largest first, from catList [{ name, label, total, count }] (`name` the
+ * group's key, `label` what shows; label defaults to name). Two or more categories under 3% become
+ * one neutral "Other". `swatchFor(name)` gives a category's colour (a CSS value).
  */
 export function donutSlices(catList, total, swatchFor) {
   const big = [];
@@ -19,13 +20,13 @@ export function donutSlices(catList, total, swatchFor) {
   // Pooling a single category would only hide its name, so keep it as its own slice.
   if (small.length < 2) big.push(...small.splice(0));
   const slices = big.map((c) => ({
-    key: `cat:${c.name}`, name: c.name, total: c.total, sub: plural(c.count, 'item'),
+    key: `cat:${c.name}`, name: c.label ?? c.name, total: c.total, sub: t('common.items', { count: c.count }),
     swatch: swatchFor(c.name),
   }));
   if (small.length) {
     slices.push({
-      key: 'other', name: 'Other', total: small.reduce((t, c) => t + c.total, 0),
-      sub: small.map((c) => c.name).join(', '), swatch: 'var(--group-other)',
+      key: 'other', name: t('donut.otherSlice'), total: small.reduce((sum, c) => sum + c.total, 0),
+      sub: small.map((c) => c.label ?? c.name).join(t('common.listSep')), swatch: 'var(--group-other)',
     });
   }
   return slices;
@@ -40,8 +41,8 @@ export function emptyDonutHTML(cur, monthName) {
   return `
       <div class="panel donut-empty">
         <div class="donut-empty-ring" aria-hidden="true"></div>
-        <p class="donut-empty-title">No ${esc(cur)} outgoings in ${esc(monthName)}</p>
-        <p class="donut-empty-text">Add an expense, or step to another month.</p>
+        <p class="donut-empty-title">${esc(t('donut.empty.title', { currency: cur, month: monthName }))}</p>
+        <p class="donut-empty-text">${esc(t('donut.empty.text'))}</p>
       </div>`;
 }
 
@@ -86,13 +87,13 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
       ${note ? `<p class="ring-note">${esc(note)}</p>` : ''}
       <div class="donut-wrap">
         <div class="donut"${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
-          <svg viewBox="0 0 200 200" role="img" aria-label="Donut chart of outgoings by category for ${esc(monthName)}. Amounts are listed below.">${arcs}</svg>
+          <svg viewBox="0 0 200 200" role="img" aria-label="${esc(t('donut.label', { month: monthName }))}">${arcs}</svg>
           <div class="donut-center">
             <span class="donut-total" data-roll="donut-total" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>
             <span class="donut-label">${esc(monthName)}</span>
           </div>
         </div>
-        ${keys ? '<p class="sr-only" id="donut-keys-help">Left and right arrow keys highlight the previous or next category.</p>' : ''}
+        ${keys ? `<p class="sr-only" id="donut-keys-help">${esc(t('donut.keysHelp'))}</p>` : ''}
       </div>
       ${legendHTML(slices, total, cur)}
     </div>`;

@@ -12,12 +12,14 @@
 import {
   GEOM as G, lerp, clamp, wrapRel, centreIndex, nearestPos, taper, edgeOpacity, prominence,
   monthLabel, labelSize, springStep, springSettle, flingStep, dragVelocity, releaseVelocity,
-  staggerOmega, niceScale, monthDelta, listNames, aboveAverage, TYPE_NAMES,
+  staggerOmega, niceScale, monthDelta, listNames, aboveAverage,
   FLING_STOP, SNAP_OMEGA, FOCUS_OMEGA, REDUCED_OMEGA,
 } from './year-chart-math.js';
+import { t, formatLocale } from './i18n.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const TYPE_COLOUR = { monthly: 'var(--type-monthly)', annual: 'var(--type-annual)', once: 'var(--type-once)' };
+const TYPE_NAMES = { monthly: 'chart.type.monthly', annual: 'chart.type.annual', once: 'chart.type.once' }; // keys
 const MARK_ABOVE = 'M0,-3.2L3.4,2.6L-3.4,2.6Z';     // small triangle: above the average
 const MARK_OVER = 'M0,-3.8L3.8,0L0,3.8L-3.8,0Z';    // small diamond: more out than in
 
@@ -52,12 +54,13 @@ const newSpring = (x, w) => ({ x, v: 0, t: x, w });
 const moving = (sp) => !springSettle(sp);
 
 // Three letters ("Sep", not the "Sept" some locales use); the carousel cuts to two where it's tight.
-const monthShort = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short' }).replace('.', '').slice(0, 3);
-const monthFull = (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'long' });
+const monthShort = (y, m) => new Date(y, m, 1).toLocaleDateString(formatLocale(), { month: 'short' }).replace('.', '').slice(0, 3);
+const monthFull = (y, m) => new Date(y, m, 1).toLocaleDateString(formatLocale(), { month: 'long' });
 
 /**
  * Draw the chart into `host`. opts: { months, average, nowIndex, rolling, stack: 'type' |
- * 'category', showIncome, money(n), categoryColour(group), pos (optional start position),
+ * 'category', showIncome, money(n), categoryColour(group), groupLabel(group) (the name shown for a
+ * category; default: the name itself), pos (optional start position),
  * onSettle(pos), fadeIn, overlays (optional, js/overlays.js: focus mode registers there),
  * reduced (optional: reduce motion; defaults to the system's prefers-reduced-motion) }.
  * Returns { setStack, destroy, state, stats }.
@@ -67,6 +70,8 @@ export function createYearChart(host, opts) {
   const reduced = opts.reduced ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const W = (w) => (reduced ? REDUCED_OMEGA : w);
   const money = opts.money;
+  // A category's name as shown (app.js groupLabel: "Uncategorised" is translated, the rest are the person's).
+  const label = opts.groupLabel ?? ((g) => g);
   // Derived figures (the average, differences) in whole units once they're 10 or more.
   const approx = (v) => money(Math.abs(v) >= 10 ? Math.round(v) : v);
   const list = opts.months;
@@ -79,7 +84,7 @@ export function createYearChart(host, opts) {
   const visibleMax = Math.max(0, ...list.map((d) => (opts.showIncome ? Math.max(d.total, d.income) : d.total)));
   const scaleInfo = niceScale(visibleMax);
   const SCALE = scaleInfo.max ? G.BAR_H / scaleInfo.max : 0;
-  const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+  const compact = new Intl.NumberFormat(formatLocale(), { notation: 'compact', maximumFractionDigits: 1 });
 
   /* DOM ------------------------------------------------------------------- */
   host.textContent = '';
@@ -90,11 +95,11 @@ export function createYearChart(host, opts) {
   const readName = html('span', 'yc-read-name', readTop);
   const readTot = html('span', 'yc-read-total', readTop);
   const readDelta = html('div', 'yc-read-delta', readout);
-  const back = html('button', 'yc-back', stage, 'All months');
+  const back = html('button', 'yc-back', stage, t('chart.allMonths'));
   back.type = 'button';
   const svg = el('svg', {
     class: 'yc-svg', viewBox: `0 0 ${G.W} ${G.H}`, role: 'listbox', tabindex: '0',
-    'aria-label': 'Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.',
+    'aria-label': t('chart.label'),
   }, stage);
   const dock = html('div', 'yc-dock', stage);
   // The key (legend) is hidden until asked for: a small "Show key" toggle, remembered by the app
@@ -109,12 +114,12 @@ export function createYearChart(host, opts) {
   const setKey = (on) => {
     showKey = on;
     legend.hidden = !on;
-    keyBtn.textContent = on ? 'Hide key' : 'Show key';
+    keyBtn.textContent = on ? t('chart.key.hide') : t('chart.key.show');
     keyBtn.setAttribute('aria-expanded', String(on));
   };
   setKey(showKey);
   keyBtn.addEventListener('click', () => { setKey(!showKey); opts.onKey?.(showKey); });
-  const nowBtn = html('button', 'yc-now', dock, 'Jump to now');
+  const nowBtn = html('button', 'yc-now', dock, t('chart.now'));
   nowBtn.type = 'button';
   const live = html('p', 'sr-only', stage);
   live.setAttribute('aria-live', 'polite');
@@ -148,17 +153,21 @@ export function createYearChart(host, opts) {
 
   const deltaText = (total) => {
     const d = monthDelta(total, avgVal);
-    if (d.kind === 'about') return { text: 'About the average', cls: 'yc-about' };
-    return { text: `${approx(d.amount)} ${d.kind} the average`, cls: d.kind === 'above' ? 'yc-above' : 'yc-below' };
+    // `inline`: the same words inside a sentence read aloud ("…, about the average").
+    if (d.kind === 'about') return { text: t('chart.delta.about'), inline: t('chart.delta.about.inline'), cls: 'yc-about' };
+    const amount = approx(d.amount);
+    return d.kind === 'above'
+      ? { text: t('chart.delta.above', { amount }), inline: t('chart.delta.above', { amount }), cls: 'yc-above' }
+      : { text: t('chart.delta.below', { amount }), inline: t('chart.delta.below', { amount }), cls: 'yc-below' };
   };
-  const monthTitle = (d) => `${monthFull(d.y, d.m)} ${d.y}`;
+  const monthTitle = (d) => t('chart.monthYear', { month: monthFull(d.y, d.m), year: d.y });
 
   function segments(d) {
-    const T = d.byType.map((t) => ({
-      key: t.key, name: TYPE_NAMES[t.key], amount: t.amount, colour: TYPE_COLOUR[t.key],
-      sub: listNames(t.names), names: t.names.join(', '), // `sub` on screen, every name for screen readers
+    const T = d.byType.map((ty) => ({
+      key: ty.key, name: t(TYPE_NAMES[ty.key]), amount: ty.amount, colour: TYPE_COLOUR[ty.key],
+      sub: listNames(ty.names), names: ty.names.join(', '), // `sub` on screen, every name for screen readers
     }));
-    const C = d.byCategory.map((c) => ({ key: c.group, name: c.group, amount: c.amount, colour: opts.categoryColour(c.group) }));
+    const C = d.byCategory.map((c) => ({ key: c.group, name: label(c.group), amount: c.amount, colour: opts.categoryColour(c.group) }));
     for (const segs of [T, C]) {
       let cum = 0;
       for (const s of segs) {
@@ -220,7 +229,7 @@ export function createYearChart(host, opts) {
     b.labC = el('g', {}, b.lab);
     buildRows(b.labT, segs.T, 46, true);
     buildRows(b.labC, segs.C, 25, false);
-    if (!d.total) el('text', { x: 170, y: 234, class: 'yc-row-sub' }, b.lab).textContent = 'Nothing due';
+    if (!d.total) el('text', { x: 170, y: 234, class: 'yc-row-sub' }, b.lab).textContent = t('chart.nothingDue');
     // The centre month's label sits in a small accent pill (drawn first, so the text is on top).
     b.pill = el('rect', { class: 'yc-pill', 'data-for': i, height: 15, rx: 7.5, display: 'none' }, mlL);
     b.ml = el('text', { 'text-anchor': 'middle', class: 'yc-month' }, mlL);
@@ -243,16 +252,16 @@ export function createYearChart(host, opts) {
     if (stack === 'category') {
       const seen = [];
       for (const d of list) for (const c of d.byCategory) if (!seen.includes(c.group)) seen.push(c.group);
-      seen.forEach((g) => add('yc-swatch', opts.categoryColour(g), g));
+      seen.forEach((g) => add('yc-swatch', opts.categoryColour(g), label(g)));
     } else {
-      ['monthly', 'annual', 'once'].forEach((k) => add('yc-swatch', TYPE_COLOUR[k], TYPE_NAMES[k]));
+      ['monthly', 'annual', 'once'].forEach((k) => add('yc-swatch', TYPE_COLOUR[k], t(TYPE_NAMES[k])));
     }
-    if (avgVal > 0) add('yc-swatch-avg', null, `Average of these months ${approx(avgVal)}`);
+    if (avgVal > 0) add('yc-swatch-avg', null, t('chart.legend.average', { amount: approx(avgVal) }));
     if (opts.showIncome) {
-      add('yc-swatch-line', null, 'Income');
-      if (bars.some((b) => b.markOver)) add('yc-swatch-over', null, 'More out than in');
+      add('yc-swatch-line', null, t('chart.legend.income'));
+      if (bars.some((b) => b.markOver)) add('yc-swatch-over', null, t('chart.legend.over'));
     } else if (bars.some((b) => b.markAbove)) {
-      add('yc-swatch-above', null, 'Above average');
+      add('yc-swatch-above', null, t('chart.legend.above'));
     }
   }
 
@@ -292,7 +301,7 @@ export function createYearChart(host, opts) {
       if (lastC >= 0 && !focus && mode !== 'idle') { try { navigator.vibrate?.(4); } catch { /* unsupported */ } }
       lastC = c;
       const cb = bars[c];
-      readName.textContent = `${monthTitle(cb.d)}${c === nowIdx ? ' · now' : ''}`;
+      readName.textContent = c === nowIdx ? t('chart.readout.now', { month: monthTitle(cb.d) }) : monthTitle(cb.d);
       readTot.textContent = money(cb.d.total);
       const dt = deltaText(cb.d.total);
       readDelta.textContent = dt.text;
@@ -430,8 +439,13 @@ export function createYearChart(host, opts) {
   function detailText(b) {
     const d = b.d;
     const segs = stack === 'category' ? b.segs.C : b.segs.T;
-    const rows = segs.slice().reverse().map((s) => `${s.name} ${money(s.amount)}${s.names ? ` (${s.names})` : ''}`);
-    return `${monthTitle(d)}, ${money(d.total)}, ${deltaText(d.total).text.toLowerCase()}. ${rows.join('. ')}${rows.length ? '.' : 'Nothing due.'}`;
+    const rows = segs.slice().reverse().map((s) => (s.names
+      ? t('chart.focus.rowNames', { name: s.name, amount: money(s.amount), names: s.names })
+      : t('chart.focus.row', { name: s.name, amount: money(s.amount) })));
+    return t('chart.focus.label', {
+      month: monthTitle(d), amount: money(d.total), delta: deltaText(d.total).inline,
+      rows: rows.length ? t('chart.focus.rows', { rows: rows.join(t('chart.focus.rowSep')) }) : t('chart.focus.nothingDue'),
+    });
   }
 
   /* Loop -------------------------------------------------------------------- */
@@ -476,7 +490,8 @@ export function createYearChart(host, opts) {
     const c = centreIndex(pos, n);
     if (!focus && c !== announced) {
       announced = c;
-      announce(`${monthTitle(bars[c].d)}${c === nowIdx ? ', now' : ''}, ${money(bars[c].d.total)}, ${deltaText(bars[c].d.total).text.toLowerCase()}`);
+      const bd = bars[c].d;
+      announce(t(c === nowIdx ? 'chart.announce.now' : 'chart.announce', { month: monthTitle(bd), amount: money(bd.total), delta: deltaText(bd.total).inline }));
     }
     opts.onSettle?.(pos);
   }

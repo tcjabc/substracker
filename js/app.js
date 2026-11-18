@@ -795,8 +795,8 @@ function renderInsights() {
     root.innerHTML = `
       <div class="empty-state">
         <div class="empty-mark" aria-hidden="true"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
-        <h2>Nothing to analyse yet</h2>
-        <p>Add your income and outgoings and your monthly and yearly totals will appear here.</p>
+        <h2>${esc(t('insights.empty.title'))}</h2>
+        <p>${esc(t('insights.empty.text'))}</p>
       </div>`;
     return;
   }
@@ -816,9 +816,9 @@ function renderInsights() {
   const inCur = state.subs.filter((s) => s.currency === cur);
   const modeHTML = `
     <div class="insights-mode">
-      <div class="segmented" role="group" aria-label="Insights view">
-        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="${state.insightsMode === 'month'}">Month</button>
-        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="${state.insightsMode === 'year'}">Year</button>
+      <div class="segmented" role="group" aria-label="${esc(t('insights.mode.label'))}">
+        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="${state.insightsMode === 'month'}">${esc(t('insights.mode.month'))}</button>
+        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="${state.insightsMode === 'year'}">${esc(t('insights.mode.year'))}</button>
       </div>
     </div>`;
   const bindMode = () => $$('[data-insights-mode]', root).forEach((b) => b.addEventListener('click', () => {
@@ -838,7 +838,7 @@ function renderInsights() {
   const month = state.insightsMonth;
   const y = month.getFullYear();
   const m = month.getMonth();
-  const monthName = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const monthName = month.toLocaleDateString(formatLocale(), { month: 'long', year: 'numeric' });
   const incomeItems = inCur.filter(isIncome);
   const subs = inCur.filter((s) => !isIncome(s)); // expenses only from here on
 
@@ -862,75 +862,79 @@ function renderInsights() {
   const undatedInTotal = undatedIn.reduce((t, s) => t + s.price, 0);
   const nUndated = undated.length + undatedIn.length; // a count of items; amounts are never mixed
 
-  const catList = due.byCategory.map((c) => ({ name: c.group, total: c.amount, count: c.items.length }));
+  // `name` is the group's key (its colour is keyed by it); `label` is what shows.
+  const catList = due.byCategory.map((c) => ({ name: c.group, label: groupLabel(c.group), total: c.amount, count: c.items.length }));
   const maxCat = catList[0]?.total || 1;
   const slices = donutSlices(catList, monthly, (name) => swatchVar(groupSwatch(name)));
   // The Ring, unless something rules it out; then the flat donut stands in, saying why.
   const ringWhy = state.catView === 'ring' && slices.length ? ringBlocker() : '';
   const showRing = state.catView === 'ring' && slices.length && !ringWhy;
   const catViewBtn = (view, title, icon) => `
-          <button type="button" class="seg-btn" data-catview="${view}" aria-pressed="${state.catView === view}" title="${title}">
+          <button type="button" class="seg-btn" data-catview="${view}" aria-pressed="${state.catView === view}" title="${esc(title)}">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>
-            <span class="sr-only">${title}</span>
+            <span class="sr-only">${esc(title)}</span>
           </button>`;
 
   const ranked = [...inMonth].sort((a, b) => b.due - a.due || byName(a, b));
 
   const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
   const headline = incomeMonth
-    ? `Outgoings <strong>${esc(money(monthly, cur))}</strong> of <strong>${esc(money(incomeMonth, cur))}</strong> income <span class="pct">(${pct}%)</span>`
+    ? tHTML('insights.headline.incomeHtml', { spent: money(monthly, cur), income: money(incomeMonth, cur), pct })
     // No percentage without income this month: say whether there's none at all or none paid now.
-    : `Outgoings <strong>${esc(money(monthly, cur))}</strong> <span class="pct">· ${incomeItems.length
-      ? `no ${esc(cur)} income paid in ${esc(monthName)}, so no percentage`
-      : `no ${esc(cur)} income recorded`}</span>`;
+    : tHTML('insights.headline.noIncomeHtml', {
+      spent: money(monthly, cur),
+      why: incomeItems.length
+        ? t('insights.headline.noIncomePaid', { currency: cur, month: monthName })
+        : t('insights.headline.noIncomeRecorded', { currency: cur }),
+    });
 
   root.innerHTML = `${modeHTML}
     <div class="month-nav">
-      <button type="button" class="icon-btn" data-month-step="-1" aria-label="Previous month">
+      <button type="button" class="icon-btn" data-month-step="-1" aria-label="${esc(t('insights.month.previous'))}">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
       </button>
       <span class="month-label" aria-live="polite">${esc(monthName)}</span>
-      <button type="button" class="icon-btn" data-month-step="1" aria-label="Next month">
+      <button type="button" class="icon-btn" data-month-step="1" aria-label="${esc(t('insights.month.next'))}">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     </div>
 
     <div class="headline">
       <p class="headline-text">${headline}</p>
-      ${incomeMonth ? `<div class="bar" role="img" aria-label="Outgoings are ${pct}% of income"><div class="bar-fill${pct > 100 ? ' bar-fill-over' : ''}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div>` : ''}
+      ${incomeMonth ? `<div class="bar" role="img" aria-label="${esc(t('insights.bar.label', { pct }))}"><div class="bar-fill${pct > 100 ? ' bar-fill-over' : ''}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div>` : ''}
     </div>
 
-    ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
+    ${currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : ''}
     ${undated.length ? `
     <button type="button" class="notice-action" data-notice="plans" data-id="${esc(undated[0].id)}">
-      ${esc(`${plural(undated.length, 'plan')} ${undated.length === 1 ? 'needs' : 'need'} a renewal date, ${money(undatedTotal, cur)} not shown`)}
+      ${esc(t('insights.notice.plans', { count: undated.length, amount: money(undatedTotal, cur) }))}
     </button>` : ''}
     ${undatedIn.length ? `
     <button type="button" class="notice-action" data-notice="income" data-id="${esc(undatedIn[0].id)}">
-      ${esc(`${plural(undatedIn.length, 'income item')} ${undatedIn.length === 1 ? 'needs' : 'need'} a payment date, ${money(undatedInTotal, cur)} not shown`)}
+      ${esc(t('insights.notice.income', { count: undatedIn.length, amount: money(undatedInTotal, cur) }))}
     </button>` : ''}
     <div class="stats">
       <div class="stat stat-primary">
         <div class="stat-label">${esc(monthName)}</div>
         <div class="stat-value" data-roll="month-due" data-value="${monthly}" data-cur="${esc(cur)}">${esc(money(monthly, cur))}</div>
-        <div class="stat-sub">Cash due this month</div>
-        <div class="stat-sub">Avg <span data-roll="month-avg" data-value="${avg}" data-cur="${esc(cur)}">${esc(money(avg, cur))}</span>/mo</div>
+        <div class="stat-sub">${esc(t('insights.stat.cashDue'))}</div>
+        <div class="stat-sub">${tHTML('common.avgPerMonth', null, { amount: `<span data-roll="month-avg" data-value="${avg}" data-cur="${esc(cur)}">${esc(money(avg, cur))}</span>` })}</div>
       </div>
       ${yearCardHTML(year, y, cur, nUndated)}
       <div class="stat">
-        <div class="stat-label">Outgoings</div>
+        <div class="stat-label">${esc(t('insights.outgoings'))}</div>
         <div class="stat-value">${inMonth.length}</div>
-        <div class="stat-sub">${nMonthly} monthly · ${nAnnual} annual · ${nOnce} one-off</div>
+        <div class="stat-sub">${esc(t('insights.stat.counts', { monthly: nMonthly, annual: nAnnual, once: nOnce }))}</div>
       </div>
     </div>
 
     <section class="section" aria-labelledby="cat-title">
       <div class="section-head">
-        <h2 class="section-title" id="cat-title">By category <span class="optional">${esc(monthName)}</span></h2>
-        <div class="segmented" role="group" aria-label="Category view">
-          ${catViewBtn('ring', '3D ring', '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
-          ${catViewBtn('donut', 'Donut chart', '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
-          ${catViewBtn('list', 'List view', '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
+        <h2 class="section-title" id="cat-title">${esc(t('insights.byCategory'))} <span class="optional">${esc(monthName)}</span></h2>
+        <div class="segmented" role="group" aria-label="${esc(t('insights.catView.label'))}">
+          ${catViewBtn('ring', t('insights.catView.ring'), '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
+          ${catViewBtn('donut', t('insights.catView.donut'), '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
+          ${catViewBtn('list', t('insights.catView.list'), '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
         </div>
       </div>
       ${showRing ? ringHTML(slices, monthly, cur, monthName)
@@ -942,30 +946,30 @@ function renderInsights() {
           return `
           <div class="cat-row">
             <div class="cat-head">
-              <span class="cat-name">${esc(c.name)} <span class="cat-count">${c.count}</span></span>
+              <span class="cat-name">${esc(c.label)} <span class="cat-count">${c.count}</span></span>
               <span class="cat-amount">${esc(money(c.total, cur))}<span class="pct">${share}%</span></span>
             </div>
-            <div class="bar" role="img" aria-label="${esc(c.name)}: ${share}% of spend in ${esc(monthName)}"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
+            <div class="bar" role="img" aria-label="${esc(t('insights.catBar.label', { name: c.label, pct: share, month: monthName }))}"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
           </div>`;
-        }).join('') : `<p class="panel-empty">No ${esc(cur)} outgoings in ${esc(monthName)}.</p>`}
+        }).join('') : `<p class="panel-empty">${esc(t('insights.list.empty', { currency: cur, month: monthName }))}</p>`}
       </div>`}
     </section>
 
     ${ranked.length ? `
     <section class="section" aria-labelledby="rank-title">
-      <h2 class="section-title" id="rank-title">Most expensive <span class="optional">${esc(monthName)}</span></h2>
+      <h2 class="section-title" id="rank-title">${esc(t('insights.ranked'))} <span class="optional">${esc(monthName)}</span></h2>
       <div class="panel">
         ${ranked.map((s, i) => `
-          <button type="button" class="rank-row" data-id="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">
+          <button type="button" class="rank-row" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
             <span class="rank-num">${i + 1}</span>
             ${logoHTML(s, 'sm')}
             <span class="sub-text">
               <span class="sub-name">${esc(s.name)}</span>
-              <span class="sub-plan">${isOnce(s) ? `One-off · ${esc(onceDate(s))}` : `${esc(money(s.price, s.currency))} ${cycleLabel(s.cycle)}`}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
+              <span class="sub-plan">${isOnce(s) ? esc(t('insights.ranked.oneOff', { date: onceDate(s) })) : `${esc(money(s.price, s.currency))} ${esc(cycleLabel(s.cycle))}`}${s.plan ? ' · ' + esc(s.plan) : ''}</span>
             </span>
             <span class="sub-row-price">
               <span class="amount">${esc(money(s.due, cur))}</span>
-              <span class="cycle">${isOnce(s) ? 'one-off' : cycleLabel(s.cycle)}</span>
+              <span class="cycle">${esc(isOnce(s) ? t('insights.ranked.oneOffShort') : cycleLabel(s.cycle))}</span>
             </span>
           </button>`).join('')}
       </div>
@@ -1006,16 +1010,16 @@ function renderInsights() {
 // js/donut-3d.js and three.js load on first use. Until then, and whenever the Ring can't run, the
 // flat donut stands in. A failure (no WebGL, the module didn't load, a lost context) lasts the session.
 let ringModule = null;
-let ringFailure = '';
+let ringFailure = ''; // the key of the note saying why the Ring can't show, for the session
 let ring = null;
 let ringAnnounced = null;
 
 /** Why the Ring can't show right now (a sentence for the note above the flat donut), or ''. */
 function ringBlocker() {
-  if (reduceEffects()) return 'Showing the flat donut: Reduce motion and effects is on in Settings.';
-  if (new URLSearchParams(location.search).get('flat') === '1') return 'Showing the flat donut (flat=1).';
-  if (ringFailure) return ringFailure;
-  if (!webglWorks()) return "Showing the flat donut: this device can't show the 3D ring.";
+  if (reduceEffects()) return t('donut.flat.reduced');
+  if (new URLSearchParams(location.search).get('flat') === '1') return t('donut.flat.param');
+  if (ringFailure) return t(ringFailure);
+  if (!webglWorks()) return t('donut.flat.noWebgl');
   return '';
 }
 
@@ -1047,15 +1051,15 @@ function keyStep(e, i, n) {
 function ringHTML(slices, total, cur, monthName) {
   return `
     <div class="panel">
-      <div class="ring-stage" tabindex="0" role="group" aria-roledescription="rotating donut chart"
-        aria-label="Outgoings by category for ${esc(monthName)}" aria-describedby="ring-help">
+      <div class="ring-stage" tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
+        aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
         <div class="ring-caption" aria-hidden="true">
           <span class="ring-name"></span>
           <span class="ring-amount"></span>
           <span class="ring-share"></span>
         </div>
       </div>
-      <p class="sr-only" id="ring-help">Drag to spin. Left and right arrow keys bring the previous or next category to the front. Amounts are listed below.</p>
+      <p class="sr-only" id="ring-help">${esc(t('donut.ring.help'))}</p>
       <p class="sr-only" id="ring-live" aria-live="polite" aria-atomic="true"></p>
       ${legendHTML(slices, total, cur)}
     </div>`;
@@ -1064,7 +1068,7 @@ function ringHTML(slices, total, cur, monthName) {
 async function mountRing(root, slices, total, cur, monthName) {
   const stage = $('.ring-stage', root);
   const rows = $$('.legend-row', root);
-  const describe = (s) => `${s.name}, ${money(s.total, cur)}, ${shareText(s.total, total)}`;
+  const describe = (s) => t('donut.ring.describe', { name: s.name, amount: money(s.total, cur), share: shareText(s.total, total) });
   let front = Math.max(0, slices.findIndex((s) => s.key === state.donutActive));
   let announceTimer = 0;
   const show = (i) => {
@@ -1073,8 +1077,8 @@ async function mountRing(root, slices, total, cur, monthName) {
     state.donutActive = s.key;
     $('.ring-name', stage).textContent = s.name;
     $('.ring-amount', stage).textContent = money(s.total, cur);
-    $('.ring-share', stage).textContent = `${shareText(s.total, total)} of ${monthName}`;
-    stage.setAttribute('aria-label', `Outgoings by category for ${monthName}. Front: ${describe(s)}`);
+    $('.ring-share', stage).textContent = t('donut.ring.share', { share: shareText(s.total, total), month: monthName });
+    stage.setAttribute('aria-label', t('donut.ring.labelFront', { month: monthName, front: describe(s) }));
     rows.forEach((r, k) => r.setAttribute('aria-pressed', String(k === i)));
   };
   // Announce once the ring is at rest, and only a slice that wasn't announced last.
@@ -1107,12 +1111,12 @@ async function mountRing(root, slices, total, cur, monthName) {
     ringModule ||= await import('./donut-3d.js');
   } catch (err) {
     console.error(err);
-    fallBack("Showing the flat donut: the 3D ring couldn't load (are you offline?).");
+    fallBack('donut.flat.offline');
     return;
   }
   if (!stage.isConnected) return; // re-rendered while loading
   if (!ringModule.ringAvailable()) {
-    fallBack("Showing the flat donut: this device can't show the 3D ring.");
+    fallBack('donut.flat.noWebgl');
     return;
   }
   try {
@@ -1120,28 +1124,29 @@ async function mountRing(root, slices, total, cur, monthName) {
       slices, selected: front,
       onFront: show,
       onSettle: announce,
-      onFail: () => { ring = null; fallBack('Showing the flat donut: the 3D view stopped working.'); },
+      onFail: () => { ring = null; fallBack('donut.flat.stopped'); },
     });
   } catch (err) {
     console.error(err);
-    fallBack("Showing the flat donut: this device can't show the 3D ring.");
+    fallBack('donut.flat.noWebgl');
   }
 }
 
 /** The yearly card: Income, Outgoings and Left over from yearSummary(), for `y`. */
 function yearCardHTML(year, y, cur, nUndated) {
   const yearShort = year.income > 0 && year.leftOver < 0;
-  const yearLine = (label, value, cls = '') => `
-          <div class="year-line${cls}"><dt>${label}</dt><dd data-roll="year-${label}" data-value="${value}" data-cur="${esc(cur)}">${esc(money(value, cur))}</dd></div>`;
+  // `id` names the figure for the rolling totals (stable in every language); `label` is shown.
+  const yearLine = (id, label, value, cls = '') => `
+          <div class="year-line${cls}"><dt>${esc(label)}</dt><dd data-roll="year-${id}" data-value="${value}" data-cur="${esc(cur)}">${esc(money(value, cur))}</dd></div>`;
   return `
       <div class="stat stat-year">
         <div class="stat-label">${y}</div>
-        <dl class="year-lines">${year.income > 0 ? yearLine('Income', year.income) : ''}${yearLine('Outgoings', year.outgoings)}${year.income > 0
-          ? yearLine('Left over', year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
+        <dl class="year-lines">${year.income > 0 ? yearLine('Income', t('insights.year.income'), year.income) : ''}${yearLine('Outgoings', t('insights.year.outgoings'), year.outgoings)}${year.income > 0
+          ? yearLine('Left over', t('insights.year.leftOver'), year.leftOver, ` year-line-total${yearShort ? ' year-short' : ''}`) : ''}
         </dl>
-        ${year.income > 0 ? '' : `<div class="stat-sub">No income dated in ${y}</div>`}
-        ${yearShort ? '<div class="stat-sub year-short-note">More going out than coming in</div>' : ''}
-        ${nUndated ? `<div class="stat-sub">Excludes ${plural(nUndated, 'undated item')}</div>` : ''}
+        ${year.income > 0 ? '' : `<div class="stat-sub">${esc(t('insights.year.noIncome', { year: y }))}</div>`}
+        ${yearShort ? `<div class="stat-sub year-short-note">${esc(t('common.moreOutThanIn'))}</div>` : ''}
+        ${nUndated ? `<div class="stat-sub">${esc(t('common.excludesUndated', { count: nUndated }))}</div>` : ''}
       </div>`;
 }
 
@@ -1164,20 +1169,20 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
   const undated = undatedItems(inCur);
   const pressed = (on) => `aria-pressed="${on}"`;
   root.innerHTML = `${modeHTML}
-    ${currencies.length > 1 ? `<p class="notice">Totals are per currency — amounts in other currencies aren't converted.</p>` : ''}
+    ${currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : ''}
     <div class="yc-controls">
-      <div class="segmented" role="group" aria-label="Months shown">
-        <button type="button" class="seg-btn seg-btn-text" data-year-range="year" ${pressed(state.yearRange === 'year')}>This year</button>
-        <button type="button" class="seg-btn seg-btn-text" data-year-range="roll" ${pressed(state.yearRange === 'roll')}>Rolling ±6 months</button>
+      <div class="segmented" role="group" aria-label="${esc(t('insights.range.label'))}">
+        <button type="button" class="seg-btn seg-btn-text" data-year-range="year" ${pressed(state.yearRange === 'year')}>${esc(t('insights.range.year'))}</button>
+        <button type="button" class="seg-btn seg-btn-text" data-year-range="roll" ${pressed(state.yearRange === 'roll')}>${esc(t('insights.range.roll'))}</button>
       </div>
-      <div class="segmented" role="group" aria-label="Colour the bars by">
-        <button type="button" class="seg-btn seg-btn-text" data-year-stack="type" ${pressed(state.yearStack === 'type')}>By type</button>
-        <button type="button" class="seg-btn seg-btn-text" data-year-stack="category" ${pressed(state.yearStack === 'category')}>By category</button>
+      <div class="segmented" role="group" aria-label="${esc(t('insights.stack.label'))}">
+        <button type="button" class="seg-btn seg-btn-text" data-year-stack="type" ${pressed(state.yearStack === 'type')}>${esc(t('insights.stack.type'))}</button>
+        <button type="button" class="seg-btn seg-btn-text" data-year-stack="category" ${pressed(state.yearStack === 'category')}>${esc(t('insights.stack.category'))}</button>
       </div>
-      <button type="button" class="chip" data-year-income ${pressed(state.yearIncome)}>Show income</button>
+      <button type="button" class="chip" data-year-income ${pressed(state.yearIncome)}>${esc(t('insights.showIncome'))}</button>
     </div>
     <div id="year-chart"></div>
-    ${undated.length ? `<button type="button" class="summary-note summary-note-action yc-undated" data-id="${esc(undated[0].id)}">Excludes ${plural(undated.length, 'undated item')}</button>` : ''}
+    ${undated.length ? `<button type="button" class="summary-note summary-note-action yc-undated" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
     <div class="stats yc-year-stats">${yearCardHTML(yearSummary(inCur, now.getFullYear()), now.getFullYear(), cur, 0)}</div>`;
 
   stopYearChart();
@@ -1186,7 +1191,7 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
   yearChart = createYearChart($('#year-chart', root), {
     months: data.months, average: data.average, nowIndex: nowIndex(months, now),
     rolling: state.yearRange === 'roll', stack: state.yearStack, showIncome: state.yearIncome,
-    money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)),
+    money: (v) => money(v, cur), categoryColour: (g) => swatchVar(groupSwatch(g)), groupLabel,
     pos: state.yearPos, onSettle: (p) => { state.yearPos = p; }, fadeIn, overlays, reduced: reduceEffects(),
     showKey: state.yearKey, onKey: (on) => { state.yearKey = on; storage.setPref('yearKey', on ? 'on' : 'off'); },
   });
