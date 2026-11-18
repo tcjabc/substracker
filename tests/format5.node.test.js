@@ -12,6 +12,7 @@ import { nextRenewal } from '../js/util.js';
 import { stepDays, occurrences } from '../js/calendar-math.js';
 import { dueInMonth, incomeInMonth, cashDue, dueEach } from '../js/insights-calc.js';
 import { dueSoon } from '../js/due-soon.js';
+import { readFileSync, readdirSync } from 'node:fs';
 import { READ_LIMITS, isReadableInterval, shadowCycle, effectiveInterval, MONTHLY, ANNUAL } from '../js/interval.js';
 
 const T1 = '2026-01-01T00:00:00.000Z';
@@ -210,4 +211,90 @@ test('a repeat that doesn\'t count changes nothing: every site behaves as for th
     }
     assert.equal(nextRenewal(s, new Date(2027, 0, 5)).getTime(), nextRenewal(plain, new Date(2027, 0, 5)).getTime());
   }
+});
+
+/* ------------------------------------------------------------------ The settings record */
+
+const settingsOf = (fields) => ({ id: storage.SETTINGS_ID, fields, ts: Object.fromEntries(Object.keys(fields).map((k) => [k, S(1)])) });
+const C = (name) => storage.colorField(name);
+
+test('palette slots are read from colour values: 0–29, matching the swatch; groupSlots only when any', () => {
+  for (const [v, want] of [
+    [{ swatch: 'w8', slot: 7 }, 7], [{ swatch: 'w3', slot: 17 }, 17], [{ swatch: 'w1', slot: 0 }, 0], [{ swatch: 'w15', slot: 29 }, 29],
+    [{ swatch: 'w8', slot: 6 }, null], [{ swatch: 'g6', slot: 7 }, null], [{ swatch: 'w8' }, null], [{ swatch: 'w1', slot: 30 }, null],
+    [{ swatch: 'w8', slot: '7' }, null], [{ swatch: 'w8', slot: 7.5 }, null], [null, null],
+  ]) assert.equal(storage.slotOf(v), want, JSON.stringify(v));
+  const rec = settingsOf({
+    defaultCurrency: 'TWD',
+    [C('Gaming')]: { name: 'Gaming', swatch: 'w8', slot: 7 },
+    [C('Fuel')]: { name: 'Fuel', swatch: 'w7', slot: 6, auto: true, later: { x: 1 } },
+    [C('Food')]: { name: 'Food', swatch: 'g1' },
+  });
+  assert.deepEqual(storage.settingsFromRecord(rec), {
+    defaultCurrency: 'TWD', groupColors: { Gaming: 'w8', Fuel: 'w7', Food: 'g1' }, groupSlots: { Gaming: 7, Fuel: 6 },
+  });
+  assert.deepEqual(storage.effectiveSettings({}, rec).groupSlots, { Gaming: 7, Fuel: 6 });
+  const none = settingsOf({ [C('Food')]: { name: 'Food', swatch: 'g1' } });
+  assert.equal('groupSlots' in storage.settingsFromRecord(none), false, 'nothing new when no value has a slot');
+  assert.equal('groupSlots' in storage.effectiveSettings({}, none), false);
+});
+
+test('colour values and version notes keep every key through sync and other settings changes', () => {
+  const r = replicaOf('devA');
+  const fuel = { name: 'Fuel', swatch: 'w7', slot: 6, auto: true, later: { x: 1 } };
+  const note = { v: '1.20.0', fmt: 5, at: '2026-12-01', later: true };
+  const ops = [
+    { id: 'c1', rec: storage.SETTINGS_ID, f: C('Fuel'), v: fuel, t: S(1000, 'devB'), dev: 'devB' },
+    { id: 'n1', rec: storage.SETTINGS_ID, f: storage.versionNoteField('devB'), v: note, t: S(1000, 'devB'), dev: 'devB' },
+    { id: 'n2', rec: storage.SETTINGS_ID, f: 'app_0123456789abcdef', v: 'not a note', t: S(1000, 'devB'), dev: 'devB' },
+  ];
+  assert.equal(storage.applyRemoteOps(r, ops, 2000).skipped, 0);
+  storage.settingsOps(r, { defaultCurrency: 'EUR' }, opts(3000));
+  const f = r.records.get(storage.SETTINGS_ID).fields;
+  assert.deepEqual(f[C('Fuel')], fuel);
+  assert.deepEqual(f[storage.versionNoteField('devB')], note);
+  assert.equal(f.app_0123456789abcdef, 'not a note', 'kept, though no use here');
+  assert.ok(!('del' in f));
+});
+
+test('version notes: one field per device (frozen hash), the plan\'s value, usable ones read back', () => {
+  assert.equal(storage.versionNoteField('devA'), 'app_84ee3903b11475ae');
+  assert.equal(storage.versionNoteField('3f2a9c1b-7e4d-4a8b-9c1d-2e3f4a5b6c7d'), 'app_7c26d643d6df0c39');
+  assert.ok(core.isFieldName(storage.versionNoteField('a-b_c-'.repeat(10))), 'any device id makes a valid field name');
+  const rec = settingsOf({
+    [storage.versionNoteField('devA')]: { v: '1.20.0', fmt: 5, at: '2026-12-01' },
+    [storage.versionNoteField('devB')]: { v: '1.21.0', fmt: 5, at: '2027-01-02', later: 1 },
+    app_00000000000000aa: { v: '', fmt: 5, at: '2026-12-01' },
+    app_00000000000000bb: { v: '1.20.0', fmt: '5', at: '2026-12-01' },
+    app_00000000000000cc: { v: '1.20.0', fmt: 5, at: '1 Dec' },
+    app_short: { v: '1.20.0', fmt: 5, at: '2026-12-01' },
+  });
+  assert.deepEqual(storage.versionNotes(rec).map((n) => [n.field, n.v, n.fmt, n.at]).sort(), [
+    [storage.versionNoteField('devA'), '1.20.0', 5, '2026-12-01'],
+    [storage.versionNoteField('devB'), '1.21.0', 5, '2027-01-02'],
+  ].sort());
+});
+
+test('a version note is written only when due: none yet, another version or format, or over 30 days old', () => {
+  const r = replicaOf('devA');
+  const write = (version, fmt, now) => storage.versionNoteOps(r, { deviceId: 'devA', version, fmt, now, newId: () => `n${++n}` });
+  const day = (y, m, d) => new Date(y, m - 1, d, 12).getTime();
+  assert.equal(write('1.20.0', 5, day(2026, 12, 1)).length, 1, 'none yet');
+  assert.deepEqual(r.records.get(storage.SETTINGS_ID).fields[storage.versionNoteField('devA')], { v: '1.20.0', fmt: 5, at: '2026-12-01' });
+  assert.equal(write('1.20.0', 5, day(2026, 12, 20)).length, 0, 'the same, 19 days on');
+  assert.equal(write('1.20.0', 5, day(2026, 12, 31)).length, 0, '30 days on');
+  assert.equal(write('1.20.0', 5, day(2027, 1, 1)).length, 1, '31 days on');
+  assert.equal(write('1.20.1', 5, day(2027, 1, 2)).length, 1, 'a new version');
+  assert.equal(write('1.20.1', 6, day(2027, 1, 3)).length, 1, 'a new format');
+  assert.ok(!('del' in r.records.get(storage.SETTINGS_ID).fields));
+});
+
+test('nothing in the app writes a version note, a repeat or a slot yet', () => {
+  const dir = new URL('../js/', import.meta.url);
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+    const src = readFileSync(new URL(f, dir), 'utf8');
+    if (f !== 'storage.js') assert.ok(!src.includes('versionNoteOps'), `${f} calls versionNoteOps`);
+  }
+  const app = readFileSync(new URL('app.js', dir), 'utf8');
+  assert.ok(!/repeat\s*:/.test(app) && !/slot\s*:/.test(app), 'the app builds no repeat or slot values');
 });

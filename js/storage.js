@@ -17,7 +17,7 @@ import { firstEmoji, uid } from './util.js';
 import { t } from './i18n.js';
 import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
-import { isReadableInterval, shadowCycle } from './interval.js';
+import { isReadableInterval, shadowCycle, dayNumber, dayOf } from './interval.js';
 
 export const APP_ID = 'substracker';
 
@@ -768,6 +768,11 @@ const isSwatchKey = (v) => typeof v === 'string' && v.length > 0 && v.length <= 
  * hex. Every device must compute the same name, so this function is part of the sync format.
  */
 export function colorField(name) {
+  return `${COLOR_PREFIX}${hash64(name)}`;
+}
+
+/** cyrb53's two 32-bit lanes of `text`, as 16 hex digits. Part of the sync format (colorField, versionNoteField). */
+function hash64(name) {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
   for (let i = 0; i < name.length; i++) {
@@ -778,7 +783,7 @@ export function colorField(name) {
   h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   const hex = (n) => (n >>> 0).toString(16).padStart(8, '0');
-  return `${COLOR_PREFIX}${hex(h2)}${hex(h1)}`;
+  return `${hex(h2)}${hex(h1)}`;
 }
 
 /** Whether a field value from another device is a usable shared setting (null clears). */
@@ -791,18 +796,76 @@ function acceptableSetting(op) {
   return true; // a shared setting a newer version added: kept, not used here
 }
 
-/** The shared settings in the record: { defaultCurrency?, groupColors }. Cleared or bad fields are skipped. */
+/**
+ * A colour value's palette slot (format 5, docs/plan-intervals-groups.md 4.2), or null: a whole
+ * number 0–29 whose base colour (slot mod 15) is the value's swatch, `w1`–`w15`. Anything else on
+ * the value (no slot, a slot that doesn't match, `auto`, keys a later version adds) is left as it is.
+ */
+export function slotOf(value) {
+  const s = value?.slot;
+  if (!Number.isInteger(s) || s < 0 || s > 29) return null;
+  return value.swatch === `w${(s % 15) + 1}` ? s : null;
+}
+
+/**
+ * The shared settings in the record: { defaultCurrency?, groupColors, groupSlots? }. Cleared or bad
+ * fields are skipped. groupSlots (name → slot) is there only when a colour value carries a slot
+ * (slotOf); the values themselves, with any keys this version doesn't use, stay in the record.
+ */
 export function settingsFromRecord(record) {
   const out = {};
   const f = record?.fields ?? {};
   if (isCurrency(f[CURRENCY_FIELD])) out.defaultCurrency = f[CURRENCY_FIELD];
   out.groupColors = {};
+  const slots = {};
   for (const [k, v] of Object.entries(f)) {
     if (k.startsWith(COLOR_PREFIX) && isObj(v) && isGroupName(v.name) && isSwatchKey(v.swatch) && colorField(v.name) === k) {
       out.groupColors[v.name] = v.swatch;
+      if (slotOf(v) !== null) slots[v.name] = slotOf(v);
     }
   }
+  if (Object.keys(slots).length) out.groupSlots = slots;
   return out;
+}
+
+/* Per-device version notes (format 5, docs/plan-intervals-groups.md 4.2 and 5.4) ---------------- */
+// One field per device in the settings record: `app_` plus a 64-bit hash of its device id (the
+// same cyrb53 as colorField; a device id may hold characters a field name can't), with the value
+// { v: app version, fmt: data format, at: YYYY-MM-DD }. 1.21.0 reads them to tell whether every
+// active device can show custom intervals. 1.19.0 keeps the field and ignores it. The plan writes a
+// device's note in 1.20.0's first-launch step, so nothing calls versionNoteOps yet.
+const NOTE_PREFIX = 'app_';
+const NOTE_MAX_AGE_DAYS = 30;
+
+/** The settings-record field for device `deviceId`'s version note. */
+export const versionNoteField = (deviceId) => `${NOTE_PREFIX}${hash64(String(deviceId))}`;
+
+const isNote = (v) => isObj(v) && typeof v.v === 'string' && v.v.length > 0 && v.v.length <= 32
+  && Number.isInteger(v.fmt) && v.fmt >= 1 && typeof v.at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.at);
+
+/** Every usable version note in the record: [{ field, v, fmt, at }], by field. Other values are skipped (and kept). */
+export function versionNotes(record) {
+  return Object.entries(record?.fields ?? {})
+    .filter(([k, v]) => /^app_[0-9a-f]{16}$/.test(k) && isNote(v))
+    .map(([field, v]) => ({ field, v: v.v, fmt: v.fmt, at: v.at }))
+    .sort((a, b) => (a.field < b.field ? -1 : a.field > b.field ? 1 : 0));
+}
+
+/**
+ * Ops for this device's version note, only when it's due: none yet, another version or format, or
+ * written more than 30 days before `now`. { deviceId, version, fmt, now (ms) }. Not called yet.
+ */
+export function versionNoteOps(replica, { deviceId, version, fmt, now = Date.now(), ...opts }) {
+  const field = versionNoteField(deviceId);
+  const cur = replica.records.get(SETTINGS_ID)?.fields?.[field];
+  const d = new Date(now);
+  const at = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (isNote(cur) && cur.v === version && cur.fmt === fmt) {
+    const [y, m, day] = cur.at.split('-').map(Number);
+    // Whole local calendar days since it was written (no DST hours, no time of day).
+    if (dayNumber(dayOf(d)) - dayNumber({ year: y, month: m - 1, day }) <= NOTE_MAX_AGE_DAYS) return [];
+  }
+  return sync.setFields(replica, SETTINGS_ID, { [field]: { v: version, fmt, at } }, { now, ...opts });
 }
 
 /**
@@ -870,6 +933,7 @@ export function effectiveSettings(local, record) {
   const cur = shared.defaultCurrency ?? (isCurrency(autoCurrency) ? autoCurrency : undefined);
   if (cur) out.defaultCurrency = cur;
   out.groupColors = { ...cleanColors(autoColors), ...shared.groupColors };
+  if (shared.groupSlots) out.groupSlots = shared.groupSlots;
   return out;
 }
 
