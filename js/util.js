@@ -95,11 +95,15 @@ export function moneyParts(amount, currency, locale = formatLocale()) {
 
 export const cycleLabel = (c) => (c === 'annual' ? t('cycle.perYear') : c === 'once' ? '' : t('cycle.perMonth'));
 
-/** Parse a stored YYYY-MM-DD date as a local date (no timezone shift). */
+/**
+ * Parse a stored YYYY-MM-DD date as a local date (no timezone shift). A day past the month's end
+ * rolls over (2026-02-30 is 2 March), as it always has. Years 0–99 are those years (js/interval.js
+ * dateOf), not 1900–1999 as the Date constructor would make them.
+ */
 export function parseDate(str) {
   if (!str || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
   const [y, m, d] = str.split('-').map(Number);
-  return new Date(y, m - 1, d);
+  return dateOf({ year: y, month: m - 1, day: d });
 }
 
 /**

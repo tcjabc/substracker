@@ -220,16 +220,25 @@ test('spot checks: DST-change days are ordinary days', () => {
 
 /* ------------------------------------------------------------------ The two known bugs, as they are */
 
-test('known bug a (as of 1.19.0): years 0–99 are read as 1900–1999', () => {
-  assert.equal(ser(parseDate('0050-03-01')), '1950-03-01');
-  assert.equal(ser(parseDate('0000-02-29')), '1900-03-01', 'year 0 is a leap year; 1900 is not');
-  // Read as 1900-03-01, 1520 months back: 1.19.0 also hit bug b's 1200-step limit (2000-03-01).
-  assert.equal(next('0000-02-29', 'monthly', at(2026, 11, 19)), '2026-12-01');
-  assert.equal(next('0000-02-29', 'annual', at(2026, 11, 19)), '2027-03-01');
+// Fixed after 1.19.0: a stored date in years 0–99 was read as 1900–1999 (the Date constructor's
+// two-digit years), so a one-off counted in the wrong century and 29 February of year 0 (a leap
+// year) became 1 March 1900 (not one). 1.19.0's results are in the messages.
+test('fixed bug a: years 0–99 are those years (1.19.0 read them as 1900–1999)', () => {
+  assert.equal(ser(parseDate('0050-03-01')), '50-03-01', '1.19.0: 1950-03-01');
+  assert.equal(parseDate('0050-03-01').getFullYear(), 50);
+  assert.equal(ser(parseDate('0000-02-29')), '0-02-29', '1.19.0: 1900-03-01');
+  assert.equal(ser(parseDate('0099-02-30')), '99-03-02', 'a day past the month still rolls over');
+  assert.equal(next('0000-02-29', 'monthly', at(2026, 11, 19)), '2026-11-29', '1.19.0: 2000-03-01 (both bugs)');
+  assert.equal(next('0000-02-29', 'annual', at(2026, 11, 19)), '2027-02-28', '1.19.0: 2027-03-01');
+  assert.equal(next('0050-03-01', 'monthly', at(2026, 11, 19)), '2026-12-01', 'right before too, by luck: 1950 has the same month days');
   const once = itemOf('0050-06-15', 'once');
-  assert.equal(dueInMonth(once, 1950, 5), 100, 'a one-off in year 50 counts in 1950');
-  assert.equal(dueInMonth(once, 50, 5), 0);
-  assert.deepEqual(stepDays(once, 1950, 5), [15]);
+  assert.equal(dueInMonth(once, 50, 5), 100, '1.19.0: 0');
+  assert.equal(dueInMonth(once, 1950, 5), 0, '1.19.0: 100');
+  assert.deepEqual(stepDays(once, 50, 5), [15], '1.19.0: []');
+  assert.deepEqual(stepDays(once, 1950, 5), [], '1.19.0: [15]');
+  assert.deepEqual(stepDays(itemOf('2024-02-29', 'annual'), 0, 1), [29], 'a month in year 0 is year 0\'s (1.19.0: [28], read as 1900)');
+  const banner = dueSoon([itemOf('0050-06-15', 'once')], at(2026, 11, 19), { windowDays: 14 });
+  assert.equal(banner.count, 0, 'a one-off in year 50 is long past (as before)');
 });
 
 // Fixed after 1.19.0: nextRenewal() stepped one interval at a time and gave up after 1200 steps,

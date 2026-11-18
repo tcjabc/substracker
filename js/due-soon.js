@@ -14,6 +14,7 @@
 
 import { isIncome, isOnce, parseDate, nextRenewal, dayStamp } from './util.js';
 import { undatedRecurring, undatedIncome } from './insights-calc.js';
+import { dayNumber as calendarDay, dayOf } from './interval.js';
 
 /** The windows Settings offers, in days; 7 is the default. */
 export const WINDOWS = Object.freeze([3, 7, 14]);
@@ -24,8 +25,11 @@ export const windowFrom = (pref) => (WINDOWS.includes(Number(pref)) ? Number(pre
 export const bannerOnFrom = (pref) => pref !== 'off';
 export const includeIncomeFrom = (pref) => pref === 'on';
 
-/** A date's local calendar day as a whole number, so two days subtract exactly (no DST hours). */
-const dayNumber = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+/**
+ * A date's local calendar day as a whole number, so two days subtract exactly (no DST hours), for
+ * any year (js/interval.js; Date.UTC would read years 0–99 as 1900–1999).
+ */
+const dayNumber = (d) => calendarDay(dayOf(d));
 /** Whole local calendar days from `from` to `to` (0 the same day, 1 the next, -1 the day before). */
 export const daysBetween = (from, to) => dayNumber(to) - dayNumber(from);
 

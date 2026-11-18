@@ -101,9 +101,7 @@ export function stepDays(s, year, month) {
   }
   const start = parseDate(s.nextRenewal);
   if (!start) return []; // undated: see undatedItems()
-  // The month as the Date constructor reads (year, month), as this has always done.
-  const m = dayOf(new Date(year, month, 1));
-  return inMonth(dayOf(start), intervalOfCycle(s.cycle), m.year, m.month).map((d) => d.day);
+  return inMonth(dayOf(start), intervalOfCycle(s.cycle), year, month).map((d) => d.day);
 }
 
 const byName = (a, b) => String(a.item.name ?? '').localeCompare(String(b.item.name ?? ''), undefined, { sensitivity: 'base' });
