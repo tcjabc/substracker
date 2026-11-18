@@ -15,11 +15,15 @@
 
 import en from './locales/en.js';
 
-/** The UI locales: tag → { name (in its own language), load }. English is bundled. */
+/**
+ * The UI locales: tag → { name (in its own language), load, collation }. English is bundled.
+ * `collation` is the locale for ordering group names (A to Z); without one, the device's own
+ * order, as English always had. zh-TW sorts by Zhuyin (ㄅㄆㄇㄈ), Taiwan's standard order.
+ */
 export const LOCALES = Object.freeze({
   en: Object.freeze({ name: 'English', load: null }),
   // A new locale is one line here, its file in js/locales/ and its sw.js SHELL entry.
-  'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js') }),
+  'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js'), collation: 'zh-TW-u-co-zhuyin' }),
 });
 export const FALLBACK = 'en';
 /** The pseudo-locale (dev only, from the address); its document lang is the standard pseudo tag. */
@@ -143,7 +147,20 @@ export function formatLocaleFor(locale, { matched = true, deviceLocale } = {}) {
   return locale;
 }
 
-/** The active UI locale ('en', later e.g. 'zh-TW'; 'xx' in the pseudo-locale). */
+const collators = new Map();
+/**
+ * Compare two names (group names) for display order in the active language, ignoring case and
+ * accents. English and the pseudo-locale keep the device's order (localeCompare with no locale,
+ * exactly as before languages existed); a locale with a `collation` uses it.
+ */
+export function compareNames(a, b, locale = state.locale) {
+  const tag = Object.hasOwn(LOCALES, locale) ? LOCALES[locale].collation : undefined;
+  if (!tag) return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+  if (!collators.has(tag)) collators.set(tag, new Intl.Collator(tag, { sensitivity: 'base' }));
+  return collators.get(tag).compare(String(a), String(b));
+}
+
+/** The active UI locale ('en' or 'zh-TW'; 'xx' in the pseudo-locale). */
 export const getLocale = () => state.locale;
 /** The locale to pass to Intl formatters (undefined: the device's conventions). */
 export const formatLocale = () => state.format;

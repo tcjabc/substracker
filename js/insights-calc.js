@@ -19,7 +19,7 @@
 // amounts are never converted between currencies.
 
 import { isIncome, isOnce, parseDate, amountInYear } from './util.js';
-import { t } from './i18n.js';
+import { t, compareNames } from './i18n.js';
 
 export const UNCATEGORISED = 'Uncategorised';
 /**
@@ -32,9 +32,12 @@ export const TYPE_ORDER = ['monthly', 'annual', 'once'];
 /** The group an expense is shown under: its category, or "Uncategorised". */
 export const groupOf = (s) => s.category?.trim() || UNCATEGORISED;
 
-/** Group display order: A–Z, with Uncategorised last. */
+/**
+ * Group display order: A–Z, with Uncategorised last. "A–Z" is the language's own order
+ * (js/i18n.js compareNames): the device's order in English, Zhuyin in zh-TW.
+ */
 export const byGroupName = (a, b) =>
-  (a === UNCATEGORISED) - (b === UNCATEGORISED) || a.localeCompare(b, undefined, { sensitivity: 'base' });
+  (a === UNCATEGORISED) - (b === UNCATEGORISED) || compareNames(a, b);
 
 // A deleted record never reaches the app as an item (storage.getAll drops tombstones); this also
 // skips any copy that still carries the deleted flag.

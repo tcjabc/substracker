@@ -165,7 +165,7 @@ export function createYearChart(host, opts) {
   function segments(d) {
     const T = d.byType.map((ty) => ({
       key: ty.key, name: t(TYPE_NAMES[ty.key]), amount: ty.amount, colour: TYPE_COLOUR[ty.key],
-      sub: listNames(ty.names), names: ty.names.join(', '), // `sub` on screen, every name for screen readers
+      sub: listNames(ty.names, undefined, t('common.listSep')), names: ty.names.join(t('common.listSep')), // `sub` on screen, every name for screen readers
     }));
     const C = d.byCategory.map((c) => ({ key: c.group, name: label(c.group), amount: c.amount, colour: opts.categoryColour(c.group) }));
     for (const segs of [T, C]) {
