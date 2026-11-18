@@ -19,7 +19,7 @@
 // amounts are never converted between currencies.
 
 import { isIncome, isOnce, parseDate, amountInYear } from './util.js';
-import { intervalOfCycle, countInMonth, dayOf } from './interval.js';
+import { effectiveInterval, countInMonth, dayOf } from './interval.js';
 import { t, compareNames } from './i18n.js';
 
 export const UNCATEGORISED = 'Uncategorised';
@@ -54,8 +54,8 @@ const isUndated = (s) => isOutgoing(s) && noDate(s);
 
 /**
  * The cash an item moves in `month` (0-based) of `year`, whatever its type; 0 when none. A recurring
- * item moves its price each time it falls in the month (js/interval.js counts them): monthly once
- * every month, annual once in its month.
+ * item moves its price each time it falls in the month (js/interval.js counts them, by the item's
+ * effective interval): monthly once every month, annual once in its month.
  */
 function cashInMonth(s, year, month) {
   if (isOnce(s)) {
@@ -64,7 +64,7 @@ function cashInMonth(s, year, month) {
   }
   const d = parseDate(s.nextRenewal);
   if (!d) return 0; // undated: see undatedRecurring() / undatedIncome()
-  const times = countInMonth(dayOf(d), intervalOfCycle(s.cycle), year, month);
+  const times = countInMonth(dayOf(d), effectiveInterval(s), year, month);
   return times ? price(s) * times : 0;
 }
 
@@ -77,6 +77,15 @@ export function dueInMonth(s, year, month) {
 export function incomeInMonth(s, year, month) {
   return isIncoming(s) ? cashInMonth(s, year, month) : 0;
 }
+
+/**
+ * What one occurrence of expense `s` costs (the calendar's row for one day): its price, 0 for income.
+ * The days of a month add up to dueInMonth(), which counts the occurrences.
+ */
+export const dueEach = (s) => (isOutgoing(s) ? price(s) : 0);
+
+/** What one occurrence of income `s` pays: its price, 0 for an outgoing. */
+export const incomeEach = (s) => (isIncoming(s) ? price(s) : 0);
 
 /** Total income paid in `month` (0-based) of `year`, same rules as cashDue. */
 export function incomeDue(items, year, month) {

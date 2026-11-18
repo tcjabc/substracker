@@ -22,8 +22,8 @@
 // falls, and it asks js/interval.js, the shared stepper.
 
 import { isIncome, isOnce, parseDate } from './util.js';
-import { intervalOfCycle, inMonth, dayOf } from './interval.js';
-import { dueInMonth, incomeInMonth, undatedItems, groupOf } from './insights-calc.js';
+import { effectiveInterval, inMonth, dayOf } from './interval.js';
+import { dueEach, incomeEach, undatedItems, groupOf } from './insights-calc.js';
 
 /* Week start ------------------------------------------------------------------------------------ */
 /** The "Week starts on" setting: 'auto' (the default), 'mon' or 'sun'. Per device, never synced. */
@@ -101,7 +101,7 @@ export function stepDays(s, year, month) {
   }
   const start = parseDate(s.nextRenewal);
   if (!start) return []; // undated: see undatedItems()
-  return inMonth(dayOf(start), intervalOfCycle(s.cycle), year, month).map((d) => d.day);
+  return inMonth(dayOf(start), effectiveInterval(s), year, month).map((d) => d.day);
 }
 
 const byName = (a, b) => String(a.item.name ?? '').localeCompare(String(b.item.name ?? ''), undefined, { sensitivity: 'base' });
@@ -122,7 +122,8 @@ const countOthers = (rows, currency) => {
  *   others:  the month's rows in other currencies, counted,
  *   count:   rows in the month, undated: undated recurring items (plans A–Z, then income A–Z),
  * }
- * `amount` is dueInMonth() for an expense and incomeInMonth() for income: insights-calc's figures.
+ * `amount` is one occurrence's, dueEach() for an expense and incomeEach() for income (insights-calc's
+ * figures), so a day's rows add up to dueInMonth() / incomeInMonth() over the month.
  */
 export function occurrences(items, year, month, { currency = 'TWD' } = {}) {
   const live = (items ?? []).filter(isLive);
@@ -131,7 +132,7 @@ export function occurrences(items, year, month, { currency = 'TWD' } = {}) {
   for (const s of live) {
     const income = isIncome(s);
     for (const day of stepDays(s, year, month)) {
-      const amount = income ? incomeInMonth(s, year, month) : dueInMonth(s, year, month);
+      const amount = income ? incomeEach(s) : dueEach(s); // one occurrence's: the day rows add up to the month's
       lists[day - 1].push({ item: s, amount, currency: s.currency, income, group: income ? null : groupOf(s) });
     }
   }

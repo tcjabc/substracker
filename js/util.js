@@ -1,5 +1,5 @@
 import { formatLocale, relativeDays, t } from './i18n.js';
-import { intervalOfCycle, indexOnOrAfter, occurrence, dayOf, dateOf } from './interval.js';
+import { effectiveInterval, indexOnOrAfter, occurrence, dayOf, dateOf } from './interval.js';
 
 export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
@@ -107,8 +107,9 @@ export function parseDate(str) {
 }
 
 /**
- * The next renewal on or after today, rolling a past stored date forward by its cycle (js/interval.js:
- * monthly every 1 month, annual every 12, clamped from the stored day). Never a date before the
+ * The next renewal on or after today, rolling a past stored date forward by the item's interval
+ * (js/interval.js effectiveInterval: its repeat when that counts, else monthly every 1 month and
+ * annual every 12, clamped from the stored day). Never a date before the
  * stored one, and never one before today, however old the stored date (worked out directly, with no
  * step limit). Display only: the stored date is never rewritten. `now` is for the pure modules and
  * their tests.
@@ -121,7 +122,7 @@ export function nextRenewal(sub, now = new Date()) {
   today.setHours(0, 0, 0, 0);
   if (Number.isNaN(today.getTime())) return start; // nothing to compare with
   const anchor = dayOf(start);
-  const interval = intervalOfCycle(sub.cycle);
+  const interval = effectiveInterval(sub);
   const k = Math.max(0, indexOnOrAfter(anchor, interval, dayOf(today)));
   return k === 0 ? start : dateOf(occurrence(anchor, interval, k));
 }

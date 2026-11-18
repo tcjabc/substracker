@@ -8,6 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as storage from '../js/storage.js';
+import { nextRenewal } from '../js/util.js';
+import { stepDays, occurrences } from '../js/calendar-math.js';
+import { dueInMonth, incomeInMonth, cashDue, dueEach } from '../js/insights-calc.js';
+import { dueSoon } from '../js/due-soon.js';
 import { READ_LIMITS, isReadableInterval, shadowCycle, effectiveInterval, MONTHLY, ANNUAL } from '../js/interval.js';
 
 const T1 = '2026-01-01T00:00:00.000Z';
@@ -173,4 +177,37 @@ test('the item view leaves out a repeat that is older than the cycle; the record
   assert.deepEqual(stale.fields.repeat, every(1, 'week'), 'still stored');
   const plain = { id: 'b', fields: { name: 'y', cycle: 'monthly', del: false }, ts: { name: S(1), cycle: S(1), del: S(1) } };
   assert.deepEqual(storage.toItem(plain), { id: 'b', name: 'y', cycle: 'monthly' }, 'no repeat: nothing added');
+});
+
+/* ------------------------------------------------------------------ Every stepping site follows it */
+
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+test('every stepping site uses the effective interval: a weekly repeat steps weekly everywhere', () => {
+  const weekly = item({ nextRenewal: '2026-11-19', repeat: every(1, 'week') }); // a Thursday
+  assert.deepEqual(stepDays(weekly, 2026, 11), [3, 10, 17, 24, 31], 'the calendar: five Thursdays in December');
+  assert.equal(dueInMonth(weekly, 2026, 11), 750, 'cash: five times the price');
+  assert.equal(dueInMonth(weekly, 2027, 1), 600, 'four in February 2027');
+  assert.equal(cashDue([weekly], 2026, 11), 750);
+  assert.equal(incomeInMonth({ ...weekly, type: 'income' }, 2026, 11), 750);
+  assert.equal(ymd(nextRenewal(weekly, new Date(2026, 10, 20, 12))), '2026-11-26', 'the next date: a week on');
+  assert.equal(ymd(nextRenewal(weekly, new Date(2026, 10, 1, 12))), '2026-11-19', 'never before the stored date');
+  const banner = dueSoon([weekly], new Date(2026, 10, 20, 12), { windowDays: 7 });
+  assert.deepEqual(banner.rows.map((r) => [ymd(r.date), r.days, r.amount]), [['2026-11-26', 6, 150]]);
+  const month = occurrences([weekly], 2026, 11, { currency: 'TWD' });
+  assert.deepEqual(month.days.filter((d) => d.count).map((d) => [d.day, d.total]), [[3, 150], [10, 150], [17, 150], [24, 150], [31, 150]]);
+  assert.equal(month.total, dueInMonth(weekly, 2026, 11), 'the day rows add up to the month');
+  assert.equal(dueEach(weekly), 150);
+});
+
+test('a repeat that doesn\'t count changes nothing: every site behaves as for the cycle alone', () => {
+  for (const over of [{ cycle: 'annual', repeat: every(1, 'week') }, { repeat: every(1, 'fortnight') }, { repeat: null }, {}]) {
+    const s = item({ nextRenewal: '2026-11-19', ...over });
+    const plain = item({ nextRenewal: '2026-11-19', cycle: over.cycle ?? 'monthly' });
+    for (const [y, m] of [[2026, 10], [2026, 11], [2027, 10]]) {
+      assert.deepEqual(stepDays(s, y, m), stepDays(plain, y, m), JSON.stringify(over));
+      assert.equal(dueInMonth(s, y, m), dueInMonth(plain, y, m));
+    }
+    assert.equal(nextRenewal(s, new Date(2027, 0, 5)).getTime(), nextRenewal(plain, new Date(2027, 0, 5)).getTime());
+  }
 });
