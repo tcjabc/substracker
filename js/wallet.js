@@ -9,7 +9,7 @@
 import { springStep } from './tab-pill.js';
 import {
   cardPose, maxScroll, rubberBand, releasePlan, sampleVelocity, collapsedHeight, GEOM, MOTION,
-  fitCard, parseColour, hexOf, othersText, periodCash,
+  fitCard, parseColour, hexOf, othersText, periodCash, dividerIndices,
 } from './wallet-math.js';
 import { esc, money, isIncome, isOnce, nextRenewal, renewalText, parseDate, shortDate, daysUntil } from './util.js';
 import { t, formatLocale } from './i18n.js';
@@ -165,6 +165,17 @@ export function createWallet(host, opts) {
     st.setProperty('--ink-2', css(k.ink2));
     st.setProperty('--ink-line', css(k.ink, k.ink[0] > 128 ? 0.24 : 0.16));
     c.fit = k;
+    c.rgb = fill;
+  }
+
+  /**
+   * A stronger divider above a card whose colour is too close to the card before it (wallet-math
+   * dividerIndices: ΔE under 26 in normal vision or any colour-vision deficiency), with this
+   * theme's colours. Only when `data.dividers` is on (the app's Sort); off, nothing changes.
+   */
+  function markDividers() {
+    const on = new Set(data?.dividers ? dividerIndices(cards.map((c) => c.rgb)) : []);
+    cards.forEach((c, i) => c.el.classList.toggle('w-divide', on.has(i)));
   }
 
   function build() {
@@ -192,6 +203,7 @@ export function createWallet(host, opts) {
     }
     host.append(live);
     if (cards.length) cards[cards.length - 1].el.classList.add('w-last');
+    markDividers();
     // Logos load only for cards on or near the screen.
     io = new IntersectionObserver((entries) => entries.forEach((en) => {
       if (!en.isIntersecting) return;
@@ -540,7 +552,7 @@ export function createWallet(host, opts) {
   /* API ----------------------------------------------------------------------------------- */
   const api = {
     /**
-     * Draw `next` = { groups (each with fillVar), currency, period, year, month }. The open card
+     * Draw `next` = { groups (each with fillVar), currency, period, year, month, dividers }. The open card
      * stays open (redrawn without animation) while its group exists; otherwise it closes.
      * `reorder`: the groups are in a new order (Sort changed). An open card stays open and becomes
      * the front card, so closing it puts it back where it can be seen; with none open the stack
@@ -564,8 +576,8 @@ export function createWallet(host, opts) {
       // Card totals: the app's rolling totals (js/count-anim.js), told which cards can be seen.
       if (opts.total) cards.forEach((c, i) => opts.total(c.band.querySelector('.w-total'), c.g, nearScreen(i)));
     },
-    /** The theme changed: refit every card's colours. */
-    recolour() { cards.forEach(colour); },
+    /** The theme changed: refit every card's colours (and the dividers, which follow them). */
+    recolour() { cards.forEach(colour); markDividers(); },
     /** Reduce motion and effects changed (or the layout did): redraw in the right mode. */
     relayout() {
       if (!data) return;
@@ -592,6 +604,7 @@ export function createWallet(host, opts) {
       f: S.f, mode: S.mode, open: S.e >= 0 ? cards[S.e]?.g.key ?? null : null, progress: S.p,
       animating: !!raf, frames, maxScroll: maxF, height: H, count: cards.length,
       fits: cards.map((c) => ({ key: c.g.key, ink: hexOf(c.fit.ink), ratio: c.fit.ratio, ratio2: c.fit.ratio2 })),
+      dividers: cards.map((c) => c.el.classList.contains('w-divide')),
     }),
   };
   return api;

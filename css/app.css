@@ -50,6 +50,7 @@
   --wallet-sheen: 0.07;
   --wallet-lip: rgb(255 255 255 / 0.26);
   --wallet-hairline: inset 0 0 0 1px rgb(16 17 29 / 0.07);
+  --wallet-divider: 4px; /* the band of page colour above a card too close in colour to the one before */
   --wallet-cast: 0 -1px 2px rgb(16 17 29 / 0.10), 0 -4px 9px -3px rgb(16 17 29 / 0.20);
   --wallet-drop: 0 22px 44px -22px rgb(16 17 29 / 0.52), 0 8px 16px -8px rgb(16 17 29 / 0.26);
   /* Logo tiles on cards: always neutral, so brand colours never meet the card colour. */
@@ -820,6 +821,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .w-card.is-open { cursor: default; }
 .w-card.w-last:not(.is-open) { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-cast), var(--wallet-drop); }
+/* A stronger divider (js/wallet.js markDividers): a band of the page's own colour along the top edge. */
+.w-card.w-divide { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-cast), 0 calc(-1 * var(--wallet-divider)) 0 0 var(--bg); }
+.w-card.w-divide.w-last:not(.is-open) { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-cast), var(--wallet-drop), 0 calc(-1 * var(--wallet-divider)) 0 0 var(--bg); }
 .w-band {
   appearance: none; border: 0; background: transparent; color: inherit; width: 100%; height: var(--wallet-band);
   display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name logos total" "meta sub sub";
@@ -900,6 +904,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline);
 }
 .wallet.is-reduced .w-card.is-open { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-drop); }
+/* Reduced: the cards already sit apart; a close neighbour gets a wider gap above it instead. */
+.wallet.is-reduced .w-card.w-divide { margin-top: calc(var(--space-2) + var(--wallet-divider)); }
 .wallet.is-reduced .w-preview, .wallet.is-reduced .w-lift { display: none; }
 .wallet.is-reduced .w-detail { display: none; position: static; opacity: 1 !important; transform: none !important; }
 .wallet.is-reduced .w-card.is-open .w-detail { display: flex; }

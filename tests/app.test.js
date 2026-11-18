@@ -13,7 +13,7 @@ import { overlays, pressBack } from '../js/overlays.js';
 import { keyToWords } from '../js/words.js';
 import { generateKey } from '../js/crypto.js';
 import { createWallet } from '../js/wallet.js';
-import { walletGroups, parseColour, contrast, isWalletKey } from '../js/wallet-math.js';
+import { walletGroups, parseColour, contrast, isWalletKey, dividerIndices } from '../js/wallet-math.js';
 import { dueInMonth, groupOf } from '../js/insights-calc.js';
 import { isIncome } from '../js/util.js';
 import { logoHTML } from '../js/logos.js';
@@ -2380,6 +2380,68 @@ test('Import with AI: Replace all with the backup button beside it, at both step
   const s = await storage.getSettings();
   eq([s.defaultCurrency, JSON.stringify(s.groupColors)], [settingsBefore.defaultCurrency, JSON.stringify(settingsBefore.groupColors)], 'settings unchanged');
   HTMLAnchorElement.prototype.click = realClick;
+});
+
+/* ------------------------------------------------------------------ Wallet divider */
+
+// The Wallet's stronger divider (js/wallet.js markDividers, js/wallet-math.js dividerIndices): under
+// Total and Items, above a card whose colour is within ΔE 26 of the card before it, in normal vision
+// or any colour-vision deficiency, with the theme's own colours. A–Z keeps today's look. Three groups
+// of its own, two of them with the same picked colour, after the Import with AI test left two items.
+test('Wallet divider: Total and Items mark close neighbours with a band of page colour; A–Z as today; both themes; reduced', async () => {
+  const at = { ...base, cycle: 'monthly', nextRenewal: day(Y, M, 3), currency: 'TWD' };
+  const extra = [
+    { ...at, id: 'test-div-a', name: 'Alpha', price: 900, category: 'Dv Alpha' },
+    { ...at, id: 'test-div-b', name: 'Beta', price: 800, category: 'Dv Beta' },
+    { ...at, id: 'test-div-c', name: 'Gamma', price: 700, category: 'Dv Gamma' },
+  ];
+  for (const s of extra) await storage.save(s);
+  await storage.saveSettings({ groupColors: { 'Dv Alpha': 'g2', 'Dv Beta': 'g2' } }); // the same picked colour twice
+  await reloadApp();
+  goTab('subs');
+  viewBtn('wallet').click();
+  await wSettled();
+  const names = () => wCards().map((c) => text($('.w-name', c)));
+  const divided = () => wCards().filter((c) => c.classList.contains('w-divide')).map((c) => text($('.w-name', c)));
+  const expected = () => dividerIndices(wCards().map((c) => parseColour(c.style.getPropertyValue('--card')))).map((i) => names()[i]);
+  const setTheme = async (v) => { $('#set-theme').value = v; $('#set-theme').dispatchEvent(new Event('change')); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); };
+  try {
+    pickSort('az');
+    await wSettled();
+    eq(divided(), [], 'A–Z: no dividers, today\'s look');
+    for (const sort of ['total', 'items']) {
+      pickSort(sort);
+      await wSettled();
+      eq(divided(), expected(), `${sort}: exactly the close neighbours`);
+      eq(wallet().state().dividers.filter(Boolean).length, divided().length);
+    }
+    pickSort('total');
+    await wSettled();
+    const order = names();
+    assert(order.indexOf('Dv Beta') === order.indexOf('Dv Alpha') + 1, `Beta right after Alpha under Total: ${order.join(', ')}`);
+    assert(divided().includes('Dv Beta'), 'the same colour twice: a divider');
+    for (const theme of ['light', 'dark']) {
+      await setTheme(theme);
+      eq(divided(), expected(), `${theme}: recomputed with this theme's colours`);
+      const bg = getComputedStyle(document.body).backgroundColor;
+      assert(getComputedStyle(wCard('Dv Beta')).boxShadow.includes(`${bg} 0px -4px 0px 0px`), `${theme}: a 4px band of the page colour (${bg})`);
+    }
+    await setTheme('system');
+    $('#set-motion').checked = true; $('#set-motion').dispatchEvent(new Event('change'));
+    try {
+      assert($('#wallet').classList.contains('is-reduced'), 'list mode');
+      eq(getComputedStyle(wCard('Dv Beta')).marginTop, '12px', 'reduced: a wider gap above it instead (8px + 4px)');
+      eq(getComputedStyle(wCard('Dv Alpha')).marginTop, '0px', 'and none above the others');
+    } finally {
+      $('#set-motion').checked = false; $('#set-motion').dispatchEvent(new Event('change'));
+    }
+    await wSettled();
+    assert(document.scrollingElement.scrollWidth <= document.scrollingElement.clientWidth, 'nothing runs out sideways');
+  } finally {
+    pickSort('az');
+    for (const s of extra) await storage.remove(s.id);
+    await reloadApp();
+  }
 });
 
 /* ------------------------------------------------------------------ Runner */

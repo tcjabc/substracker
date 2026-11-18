@@ -81,6 +81,38 @@ function fromOk([L, a, b]) {
   return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s]
     .map((v) => Math.round(clamp(gam(clamp(v, 0, 1)), 0, 1) * 255));
 }
+/** OKLab distance (×100, the plan's ΔE) between two [r, g, b] colours. */
+export const deltaE = (a, b) => { const x = toOk(a), y = toOk(b); return 100 * Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+
+// Colour-vision deficiency at full severity (Machado, Oliveira & Fernandes 2009), in linear RGB.
+const CVD = Object.freeze({
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]],
+});
+export const CVD_KINDS = Object.freeze(Object.keys(CVD));
+
+/** `rgb` as someone with `kind` ('protan', 'deutan', 'tritan') colour vision sees it. */
+export function simulateCVD(rgb, kind) {
+  const m = CVD[kind];
+  if (!m) throw new Error(`Unknown colour vision ${kind}`);
+  const l = rgb.map((v) => lin(v / 255));
+  return m.map((row) => Math.round(clamp(gam(clamp(row[0] * l[0] + row[1] * l[1] + row[2] * l[2], 0, 1)), 0, 1) * 255));
+}
+
+/** How close two neighbouring cards may be before the Wallet draws a stronger divider between them. */
+export const DIVIDER_DELTA_E = 26;
+
+/**
+ * The smallest distance between `a` and `b` as anyone sees them: normal vision and the three
+ * colour-vision deficiencies. Under DIVIDER_DELTA_E, neighbouring cards get a divider.
+ */
+export const seenDistance = (a, b) => Math.min(deltaE(a, b), ...CVD_KINDS.map((k) => deltaE(simulateCVD(a, k), simulateCVD(b, k))));
+
+/** Which cards (by index, 1 on) need a divider above them: the fill is too close to the card before. */
+export const dividerIndices = (fills, threshold = DIVIDER_DELTA_E) => fills
+  .map((f, i) => (i > 0 && f && fills[i - 1] && seenDistance(fills[i - 1], f) < threshold ? i : -1)).filter((i) => i > 0);
+
 /** The colour `d` lighter (or darker, d < 0) in OKLCH lightness, hue kept; chroma pulled in if it leaves sRGB. */
 export function shiftL(rgb, d) {
   const [L, a, b] = toOk(rgb);

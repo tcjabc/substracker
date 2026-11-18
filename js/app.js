@@ -743,7 +743,10 @@ function renderWallet(list, { reorder = false } = {}) {
   const cur = state.settings.defaultCurrency;
   const now = new Date();
   const groups = moneyGroups().map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
-  wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() }, { reorder });
+  // Dividers between close colours under Total and Items; A–Z keeps today's look (decision pending
+  // on A–Z, see docs/plan-intervals-groups.md "Contrast and distance checks").
+  const dividers = state.groupSort !== 'az';
+  wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth(), dividers }, { reorder });
 }
 
 /* Calendar view (js/calendar.js, js/calendar-math.js) ------------------------------------------- */
