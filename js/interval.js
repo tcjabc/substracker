@@ -33,6 +33,34 @@ export const intervalOfCycle = (cycle) => (cycle === 'once' ? null : cycle === '
 export const isInterval = (v) => v !== null && typeof v === 'object'
   && Number.isSafeInteger(v.every) && v.every >= 1 && UNITS.includes(v.unit);
 
+/**
+ * The longest interval a stored `repeat` may have, per unit, for it to be read at all: days up to
+ * 3660, weeks up to 520, months up to 120, years up to 10 (docs/plan-intervals-groups.md, decision
+ * "Validation": the reader accepts wider ranges than the item sheet will offer). A longer or
+ * unknown one is never refused when it's synced or stored; it's just not used (the item's cycle is).
+ */
+export const READ_LIMITS = Object.freeze({ day: 3660, week: 520, month: 120, year: 10 });
+
+/** True for an interval a stored `repeat` may use: isInterval and within READ_LIMITS. */
+export const isReadableInterval = (v) => isInterval(v) && v.every <= READ_LIMITS[v.unit];
+
+// Average lengths, only for picking the nearest legacy cycle (never for stepping).
+const NOMINAL_DAYS = Object.freeze({ day: 1, week: 7, month: 365.2425 / 12, year: 365.2425 });
+// Halfway between a month and a year on a log scale (about 105.4 days).
+const MONTHLY_UP_TO_DAYS = Math.sqrt(NOMINAL_DAYS.month * NOMINAL_DAYS.year);
+
+/**
+ * The cycle an interval is stored beside (its "shadow", the plan's decision "Dual-write cycle"):
+ * what 1.19.0 shows. Every 1 month is 'monthly', every 12 months or every 1 year 'annual', null
+ * (no interval) 'once'; any other interval takes the nearer by period on a log scale: up to about
+ * 105 days 'monthly' (weekly, fortnightly, quarterly), longer 'annual' (every 4 or 6 months).
+ */
+export function shadowCycle(interval) {
+  if (interval === null) return 'once';
+  if (!isInterval(interval)) throw new TypeError('Not an interval');
+  return interval.every * NOMINAL_DAYS[interval.unit] <= MONTHLY_UP_TO_DAYS ? 'monthly' : 'annual';
+}
+
 /* -------------------------------------------------------------------------- Calendar days */
 
 const floorDiv = (a, b) => Math.floor(a / b);

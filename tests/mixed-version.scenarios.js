@@ -548,7 +548,7 @@ test('round trip: 1.19.0 backup -> current import -> current export -> 1.19.0 im
   assert.ok(!JSON.parse(file1).settings.groupColors.Software, 'automatic w colours are left out of backups');
 });
 
-test('1.19.0 backups: unknown item fields are in the file but every import drops them; a newer file still imports', async () => {
+test('1.19.0 backups: unknown item fields are in the file; 1.19.0\'s import drops them, the current one keeps a usable repeat; a newer file still imports', async () => {
   const h = await createHousehold();
   const W = await h.device('writer', { version: 'current' });
   const L = await h.device('legacy', { version: 'legacy' });
@@ -561,7 +561,9 @@ test('1.19.0 backups: unknown item fields are in the file but every import drops
   for (const v of VERSIONS) {
     const fresh = await h.device(`fresh-${v}`, { version: v, joined: false });
     fresh.importBackup(JSON.stringify(file), 'replace');
-    assert.equal(fresh.record('a').fields.repeat, undefined, `${v}: import keeps only the known fields`);
+    // Format 5's reader keeps a `repeat` that agrees with the cycle (weekly's shadow is monthly).
+    const want = v === 'legacy' ? undefined : { every: 1, unit: 'week' };
+    assert.deepEqual(fresh.record('a').fields.repeat, want, `${v}: what the import keeps`);
     assert.equal(fresh.item('a').price, 150);
   }
 

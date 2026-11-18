@@ -17,6 +17,7 @@ import { firstEmoji, uid } from './util.js';
 import { t } from './i18n.js';
 import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
+import { isReadableInterval, shadowCycle } from './interval.js';
 
 export const APP_ID = 'substracker';
 
@@ -579,6 +580,31 @@ function itemFields(item) {
   return Object.fromEntries(ITEM_FIELDS.filter((f) => item[f] !== undefined).map((f) => [f, item[f]]));
 }
 
+/**
+ * Format 5's interval field: `repeat: { every, unit }` beside `cycle` (docs/plan-intervals-groups.md
+ * 4.1). It isn't in ITEM_FIELDS, so saving an item never writes it: in this version only an import
+ * carries one in, from a file that has it. Synced as its own field with its own stamp.
+ */
+export const REPEAT = 'repeat';
+
+/**
+ * The `repeat` a backup item may bring in: a readable interval (js/interval.js READ_LIMITS) on a
+ * recurring item whose cycle is its shadow, as { every, unit } (other keys dropped). Else null, and
+ * only the field is left out: the item itself imports as before.
+ */
+export function fileRepeat(raw) {
+  const r = raw?.[REPEAT];
+  if (raw?.cycle === 'once' || !isReadableInterval(r) || shadowCycle(r) !== raw.cycle) return null;
+  return { every: r.every, unit: r.unit };
+}
+
+/** The fields an import writes for an item: itemFields, plus its `repeat` when the file had a usable one. */
+function importFields(item) {
+  const fields = itemFields(item);
+  if (item[REPEAT] !== undefined) fields[REPEAT] = item[REPEAT];
+  return fields;
+}
+
 /** First timestamp for a migrated item: its updatedAt (else createdAt, else 0), never later than now. */
 function initialWall(item, now) {
   for (const v of [item.updatedAt, item.createdAt]) {
@@ -654,7 +680,9 @@ export function importOps(replica, { clear, writes }, opts) {
       if (sync.isLive(rec) && !keep.has(id)) ops.push(...sync.deleteRecord(replica, id, opts));
     }
   }
-  for (const item of writes) ops.push(...sync.putRecord(replica, item.id, itemFields(item), opts));
+  // An item without `repeat` in the file leaves a stored one alone (putRecord only sets the fields
+  // it's given): a missing repeat means "not known here", never "every 1 month" (see effectiveInterval).
+  for (const item of writes) ops.push(...sync.putRecord(replica, item.id, importFields(item), opts));
   return ops;
 }
 
@@ -666,6 +694,10 @@ export function importOps(replica, { clear, writes }, opts) {
 function acceptableRemote(op) {
   if (op.rec === SETTINGS_ID) return acceptableSetting(op);
   if (op.f === sync.DELETED) return typeof op.v === 'boolean';
+  // Any plain JSON is stored for `repeat` (sync-core has checked it is JSON): a value this version
+  // can't use is read as "use the cycle" (js/interval.js effectiveInterval), never skipped, because a
+  // skipped op never comes back and a later version may know what it means.
+  if (op.f === REPEAT) return true;
   if (op.f === 'price') return typeof op.v === 'number' && Number.isFinite(op.v) && op.v >= 0;
   if (ITEM_FIELDS.includes(op.f)) return typeof op.v === 'string' && op.v.length <= 2000;
   return true;
@@ -1119,6 +1151,9 @@ function normalize(raw, exportedAt) {
     notes: text(raw.notes, 1000),
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : fallbackTime,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : fallbackTime,
+    // Format 5's interval, from a file of any version (a 1.19.0 backup can carry one it synced):
+    // kept only when usable and in agreement with the cycle (fileRepeat); otherwise left out.
+    ...(fileRepeat(raw) ? { [REPEAT]: fileRepeat(raw) } : {}),
   };
 }
 
