@@ -288,7 +288,10 @@ test('1.19.0 item sheet: an unknown cycle shows as Monthly and is saved back as 
     ['cycle="monthly"', 'notes="Bring an apron"', 'updatedAt=…'], 'cycle is rewritten though nobody touched it');
   await h.syncAll();
   assert.equal(W.item('w').cycle, 'monthly', 'the household now has monthly');
-  assert.deepEqual(W.item('w').repeat, { every: 1, unit: 'week' }, 'the unknown field is untouched');
+  assert.deepEqual(W.record('w').fields.repeat, { every: 1, unit: 'week' }, 'the stored repeat is untouched');
+  // The cycle's stamp is now newer than the repeat's, so for the current reader repeat no longer
+  // counts and isn't part of the item (format 5's rule); 1.19.0 shows the raw field as it always did.
+  assert.equal('repeat' in W.item('w'), W.version === 'legacy');
 
   // Opened and saved with no change at all: the cycle is written all the same.
   W.save({ ...W.item('w'), cycle: 'quarterly' });

@@ -567,11 +567,18 @@ function result(req) {
 /* --------------------------------------------------------------------------
    Records ↔ items. Pure functions, also used by the Node tests.
    -------------------------------------------------------------------------- */
-/** The app's view of a record: the plain item, or null for a deleted (tombstoned) record. */
+/**
+ * The app's view of a record: the plain item, or null for a deleted (tombstoned) record. Every
+ * stored field comes through, unknown ones too, except a `repeat` whose stamp is older than the
+ * cycle's: an older device changed the cycle after it, so it no longer counts (js/interval.js
+ * effectiveInterval, the stamp half of the rule). The record keeps it, and it still syncs.
+ */
 export function toItem(record) {
   if (!sync.isLive(record)) return null;
   const item = { id: record.id };
   for (const [f, v] of Object.entries(record.fields)) if (f !== sync.DELETED) item[f] = v;
+  const { repeat: tr, cycle: tc } = record.ts ?? {};
+  if (REPEAT in item && typeof tc === 'string' && !(typeof tr === 'string' && tr >= tc)) delete item[REPEAT];
   return item;
 }
 

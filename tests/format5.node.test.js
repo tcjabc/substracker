@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../js/sync-core.js';
 import * as storage from '../js/storage.js';
-import { READ_LIMITS, isReadableInterval, shadowCycle, MONTHLY, ANNUAL } from '../js/interval.js';
+import { READ_LIMITS, isReadableInterval, shadowCycle, effectiveInterval, MONTHLY, ANNUAL } from '../js/interval.js';
 
 const T1 = '2026-01-01T00:00:00.000Z';
 const T2 = '2026-02-01T00:00:00.000Z';
@@ -122,4 +122,55 @@ test('import writes a file\'s repeat; a file item without one leaves the stored 
     assert.deepEqual(r.records.get('a').fields.repeat, every(1, 'week'), `${mode}: the stored repeat stays`);
     assert.equal(r.records.get('a').fields.price, 160);
   }
+});
+
+/* ------------------------------------------------------------------ Which interval counts */
+
+const S = (wall, dev = 'devA') => core.formatStamp(wall, 0, dev);
+
+test('effective interval: repeat counts only when it agrees with the cycle and is not older (8 cases)', () => {
+  const weekly = every(1, 'week');
+  // [cycle, repeat, stamps, want]
+  const cases = [
+    ['monthly', weekly, undefined, weekly], // agrees, no stamps (a file, a plain item)
+    ['annual', weekly, undefined, ANNUAL], // disagrees: cycle wins
+    ['monthly', weekly, { repeat: S(2000), cycle: S(1000) }, weekly], // agrees, newer
+    ['monthly', weekly, { repeat: S(1000), cycle: S(1000) }, weekly], // agrees, same stamp (written together)
+    ['monthly', weekly, { repeat: S(1000), cycle: S(2000) }, MONTHLY], // agrees, older: an older device set the cycle since
+    ['annual', weekly, { repeat: S(2000), cycle: S(1000) }, ANNUAL], // disagrees, newer
+    ['annual', weekly, { repeat: S(1000), cycle: S(2000) }, ANNUAL], // disagrees, older
+    ['monthly', weekly, { cycle: S(1000) }, MONTHLY], // a cycle stamp but no repeat stamp: not trusted
+  ];
+  for (const [cycle, repeat, stamps, want] of cases) {
+    assert.deepEqual(effectiveInterval({ cycle, repeat }, stamps), want, JSON.stringify([cycle, stamps]));
+  }
+  assert.deepEqual(effectiveInterval({ cycle: 'monthly', repeat: weekly }, { repeat: S(1, 'devB'), cycle: S(1, 'devA') }), weekly, 'same wall: the device id orders stamps');
+});
+
+test('effective interval: a missing repeat means "follow the cycle", never "every 1 month"', () => {
+  assert.equal(effectiveInterval({ cycle: 'annual' }), ANNUAL);
+  assert.equal(effectiveInterval({ cycle: 'annual', repeat: undefined }), ANNUAL);
+  assert.equal(effectiveInterval({ cycle: 'annual', repeat: null }), ANNUAL);
+  assert.equal(effectiveInterval({ cycle: 'monthly' }), MONTHLY);
+  assert.equal(effectiveInterval({ cycle: 'weekly' }), MONTHLY, 'a cycle 1.19.0 doesn\'t know reads as monthly, as before');
+  assert.equal(effectiveInterval({}), MONTHLY);
+  assert.equal(effectiveInterval({ cycle: 'once', repeat: every(1, 'week') }), null, 'a one-off has none, whatever it carries');
+  for (const bad of [every(1, 'fortnight'), every(121, 'month'), 'weekly', { every: '1', unit: 'week' }]) {
+    assert.equal(effectiveInterval({ cycle: 'monthly', repeat: bad }), MONTHLY, JSON.stringify(bad));
+  }
+  assert.deepEqual(effectiveInterval({ cycle: 'monthly', repeat: { every: 3, unit: 'month', future: true } }), every(3, 'month'), 'extra keys ignored');
+});
+
+test('the item view leaves out a repeat that is older than the cycle; the record keeps it', () => {
+  const rec = (tr, tc) => ({
+    id: 'a', fields: { name: 'x', cycle: 'monthly', repeat: every(1, 'week'), del: false },
+    ts: { name: S(500), cycle: S(tc), repeat: S(tr), del: S(500) },
+  });
+  assert.deepEqual(storage.toItem(rec(2000, 1000)).repeat, every(1, 'week'), 'newer');
+  assert.deepEqual(storage.toItem(rec(1000, 1000)).repeat, every(1, 'week'), 'same stamp');
+  const stale = rec(1000, 2000);
+  assert.equal('repeat' in storage.toItem(stale), false, 'older: not part of the item');
+  assert.deepEqual(stale.fields.repeat, every(1, 'week'), 'still stored');
+  const plain = { id: 'b', fields: { name: 'y', cycle: 'monthly', del: false }, ts: { name: S(1), cycle: S(1), del: S(1) } };
+  assert.deepEqual(storage.toItem(plain), { id: 'b', name: 'y', cycle: 'monthly' }, 'no repeat: nothing added');
 });

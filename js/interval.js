@@ -61,6 +61,30 @@ export function shadowCycle(interval) {
   return interval.every * NOMINAL_DAYS[interval.unit] <= MONTHLY_UP_TO_DAYS ? 'monthly' : 'annual';
 }
 
+/**
+ * The interval an item steps by: its `repeat` when that counts, else the one its `cycle` implies
+ * (monthly every 1 month, annual every 12 months, once null). The rule (docs/plan-intervals-groups.md,
+ * decision "Which wins, repeat or cycle", and 4.1 "How the interval is read"):
+ * - `repeat` counts only on a recurring item, only as a readable interval (READ_LIMITS), only when
+ *   its shadow is the item's `cycle` (every format-5 writer writes them as a pair, so a mismatch
+ *   means an older device changed the cycle since), and, given the record's stamps
+ *   ({ repeat, cycle }), only when its stamp isn't older than the cycle's (an older device's later
+ *   cycle change wins even if it happens to agree again).
+ * - A MISSING `repeat` means "not known here", never "every 1 month": the item follows its cycle,
+ *   and nothing that lacks the field (a 1.19.0 copy, a stale backup) ever clears a stored one.
+ * Without stamps (a backup file, a plain item) only the agreement test applies.
+ */
+export function effectiveInterval(item, stamps) {
+  const cycle = item?.cycle;
+  if (cycle === 'once') return null;
+  const r = item?.repeat;
+  if (isReadableInterval(r) && shadowCycle(r) === cycle) {
+    const older = stamps && typeof stamps.cycle === 'string' && !(typeof stamps.repeat === 'string' && stamps.repeat >= stamps.cycle);
+    if (!older) return r === MONTHLY || r === ANNUAL ? r : { every: r.every, unit: r.unit };
+  }
+  return intervalOfCycle(cycle);
+}
+
 /* -------------------------------------------------------------------------- Calendar days */
 
 const floorDiv = (a, b) => Math.floor(a / b);
