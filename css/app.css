@@ -156,6 +156,7 @@
   --tag-h: 22px;
   --seg-pad: 3px;
   --seg-btn-w: 40px;
+  --seg-btn-w-narrow: 30px; /* the header's segments when it's narrow (phones under 360px), so four views and Sort fit */
   --cal-cell-h: 3rem;   /* a calendar day: its number and a row of dots */
   --cal-dot: 6px;       /* a calendar day's dots, in the group colours */
   --icon-sm: 18px;
@@ -383,6 +384,7 @@ button { cursor: pointer; }
   padding-top: var(--safe-top);
 }
 .header-inner {
+  container: header / inline-size; /* for the narrow header's segments (.header-actions) */
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   min-height: var(--header-h);
 }
@@ -438,6 +440,10 @@ button { cursor: pointer; }
 .seg-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .seg-btn-text { width: auto; padding: 0 var(--space-3); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .seg-btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
+/* A narrow header (phones under 360px, or 360px with a classic scrollbar): narrower segments and
+   gap, so the four views and Sort fit beside the page title without squeezing it onto two lines.
+   Measured on the header itself, so a scrollbar's width counts. */
+@container header (max-width: 327.98px) { .header-actions { --seg-btn-w: var(--seg-btn-w-narrow); gap: var(--space-1); } }
 
 .segmented-wide { display: flex; width: 100%; }
 .seg-option { flex: 1; position: relative; }
