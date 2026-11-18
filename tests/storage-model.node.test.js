@@ -145,7 +145,7 @@ test('a schemaVersion 4 export restores currency and colours; other settings in 
   assert.deepEqual(plans.merge.localSettings, { groupColors: { Mine: 'g4', Entertainment: 'g2' } });
   assert.deepEqual(plans.replace.localSettings, plans.replace.settings);
   assert.equal(plans.replace.summary.withSettings, true);
-  assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors']);
+  assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors', 'groupSlots']);
 });
 
 test('a file without settings leaves settings alone', () => {

@@ -17,7 +17,7 @@ import { firstEmoji, uid } from './util.js';
 import { t } from './i18n.js';
 import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
-import { isReadableInterval, shadowCycle, dayNumber, dayOf } from './interval.js';
+import { isReadableInterval, shadowCycle, effectiveInterval, dayNumber, dayOf } from './interval.js';
 
 export const APP_ID = 'substracker';
 
@@ -872,25 +872,36 @@ export function versionNoteOps(replica, { deviceId, version, fmt, now = Date.now
  * Record fields for a settings change ({ defaultCurrency?, groupColors? }, groupColors a patch by
  * group name). With replaceColors, colours in the record that the change doesn't name are cleared.
  */
-export function settingsFields(record, change, { replaceColors = false } = {}) {
+export function settingsFields(record, change, { replaceColors = false, keepMatching = false } = {}) {
   const fields = {};
+  const named = new Set();
   const cur = change?.defaultCurrency;
   if (typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur)) fields[CURRENCY_FIELD] = cur.toUpperCase();
+  const slots = isObj(change?.groupSlots) ? change.groupSlots : {};
   for (const [raw, swatch] of Object.entries(isObj(change?.groupColors) ? change.groupColors : {})) {
     const name = typeof raw === 'string' ? raw.trim() : '';
-    if (isGroupName(name) && isSwatchKey(swatch)) fields[colorField(name)] = { name, swatch };
+    if (!isGroupName(name) || !isSwatchKey(swatch)) continue;
+    const field = colorField(name);
+    named.add(field);
+    // A slot comes with the colour only when it matches the swatch (slotOf), as a backup carries it.
+    const value = slotOf({ swatch, slot: slots[raw] }) !== null ? { name, swatch, slot: slots[raw] } : { name, swatch };
+    // keepMatching (imports): a colour the record already has, same swatch (and same slot, when the
+    // change has one), is left as it is, so keys this version doesn't write (auto, later ones) stay.
+    const now = record?.fields?.[field];
+    if (keepMatching && isObj(now) && now.name === name && now.swatch === swatch && (!('slot' in value) || now.slot === value.slot)) continue;
+    fields[field] = value;
   }
   if (replaceColors) {
     for (const [k, v] of Object.entries(record?.fields ?? {})) {
-      if (k.startsWith(COLOR_PREFIX) && v !== null && !(k in fields)) fields[k] = null;
+      if (k.startsWith(COLOR_PREFIX) && v !== null && !named.has(k)) fields[k] = null;
     }
   }
   return fields;
 }
 
 /** Ops for an explicit settings change (a choice in the app or an import). Unchanged values make none. */
-export function settingsOps(replica, change, { replaceColors, ...opts } = {}) {
-  const fields = settingsFields(replica.records.get(SETTINGS_ID), change, { replaceColors });
+export function settingsOps(replica, change, { replaceColors, keepMatching, ...opts } = {}) {
+  const fields = settingsFields(replica.records.get(SETTINGS_ID), change, { replaceColors, keepMatching });
   return sync.setFields(replica, SETTINGS_ID, fields, opts);
 }
 
@@ -1105,24 +1116,91 @@ export async function requestPersistence() {
 /* --------------------------------------------------------------------------
    Export / import
    -------------------------------------------------------------------------- */
-// Backups: { app, schemaVersion: 4, exportedAt, items, settings }: the live (not deleted) items with
-// their ids, and the settings worth restoring (BACKUP_SETTINGS). Nothing else from the device goes in:
+// Backups: { app, schemaVersion: 5, exportedAt, items, settings }: the live (not deleted) items with
+// their ids, and the settings worth restoring (BACKUP_SETTINGS). Format 5 (docs/plan-intervals-groups.md
+// 4.3) is format 4 plus an item's `repeat` and the colours' `groupSlots`, each only where present.
+// Nothing else from the device goes in:
 // no sync bookkeeping (device id, clock, cursor, outbox, field stamps), no entitlement flags, and no
 // appearance or other preferences. Import restores the two settings as explicit changes, so they sync.
 // Older files still import: schemaVersion 3 has the same envelope, and files from 1.0–1.2 use
 // { format, version: 1|2, … } with records under `subscriptions` (v1) or `items` (v2).
 
 /** The settings a backup carries. An allowlist, so anything added to settings later stays out until listed here. */
-export const BACKUP_SETTINGS = ['defaultCurrency', 'groupColors'];
+export const BACKUP_SETTINGS = ['defaultCurrency', 'groupColors', 'groupSlots'];
 
-/** Everything needed to restore this device's items, as a plain object ready for JSON.stringify. */
-export async function exportAll() {
-  const [items, settings] = await Promise.all([getAll(), getSettings()]);
+/** The backup format this version writes. Files up to it import as this version's own. */
+export const BACKUP_VERSION = 5;
+const LEGACY_BACKUP_SETTINGS = ['defaultCurrency', 'groupColors'];
+
+/**
+ * A backup of `items` (live, as getAll gives them) and `settings` (as getSettings gives them), in
+ * format `version` (5, or 4 as 1.19.0 wrote it: the same items, without groupSlots). Pure.
+ */
+export function backupPayload(items, settings, exportedAt, version = BACKUP_VERSION) {
   // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
   // carries the full current shape.
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
-  const kept = Object.fromEntries(BACKUP_SETTINGS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
-  return { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), items: full, settings: kept };
+  const keys = version >= 5 ? BACKUP_SETTINGS : LEGACY_BACKUP_SETTINGS;
+  const kept = Object.fromEntries(keys.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
+  return { app: APP_ID, schemaVersion: version, exportedAt, items: full, settings: kept };
+}
+
+/**
+ * The export check (docs/plan-intervals-groups.md 4.3): read the payload back with this version's
+ * reader and with 1.19.0's rules, and compare it with the live items. Null when it all holds, else
+ * a short description (counts only). It holds when:
+ * - parseBackup reads it without an error;
+ * - every item passes what 1.19.0's import requires (so a 1.19.0 device can import the file): an id
+ *   (1-64 characters, not the settings id, no two alike), a name, a price of 0 or more, a currency
+ *   code, a type of expense or income if any, a cycle of monthly, annual or once, and a date on a one-off;
+ * - every live item comes back with the same interval (effectiveInterval), so no repeat that
+ *   counts is lost, and the palette slots come back as they are.
+ */
+export function checkBackup(payload, items, settings = {}) {
+  let parsed;
+  try { parsed = parseBackup(JSON.parse(JSON.stringify(payload))); } catch (err) {
+    return `this version can't read it back (${err instanceof ImportError ? 'import error' : 'error'})`;
+  }
+  const ids = new Set();
+  let legacyBad = 0;
+  for (const s of payload.items) {
+    const ok = typeof s.id === 'string' && s.id.length >= 1 && s.id.length <= 64 && s.id !== SETTINGS_ID && !ids.has(s.id)
+      && typeof s.name === 'string' && s.name.trim() !== '' && typeof s.price === 'number' && Number.isFinite(s.price) && s.price >= 0
+      && typeof s.currency === 'string' && /^[A-Za-z]{3}$/.test(s.currency) && (s.type === undefined || TYPES.includes(s.type))
+      && CYCLES.includes(s.cycle) && (s.cycle !== 'once' || isDay(s.date));
+    ids.add(s.id);
+    if (!ok) legacyBad++;
+  }
+  if (legacyBad) return `${legacyBad} of ${payload.items.length} items would not import on 1.19.0`;
+  const back = new Map(parsed.items.map(({ item }) => [item.id, item]));
+  const moved = items.filter((s) => !back.has(s.id) || !sync.sameValue(effectiveInterval(back.get(s.id)), effectiveInterval(s))).length;
+  if (moved || back.size !== items.length) return `${moved} of ${items.length} items come back with another interval`;
+  const slots = cleanSlots(parsed.settings?.groupSlots, cleanColors(parsed.settings?.groupColors));
+  if (!sync.sameValue(slots, cleanSlots(settings.groupSlots, settings.groupColors))) return "palette slots don't come back as they are";
+  return null;
+}
+
+/**
+ * What exporting writes, from `items` and `settings` (pure): { payload, format, problem }. Format 5
+ * when checkBackup holds; otherwise format 4, exactly as 1.19.0 would have written it, with the
+ * problem (counts only). The app doesn't say so on screen yet (that needs a message in 1.20.0).
+ */
+export function exportBackupFrom(items, settings, exportedAt) {
+  const payload = backupPayload(items, settings, exportedAt);
+  const problem = checkBackup(payload, items, settings);
+  if (!problem) return { payload, format: BACKUP_VERSION, problem: null };
+  return { payload: backupPayload(items, settings, exportedAt, 4), format: 4, problem };
+}
+
+/** What exporting this device's data writes: { payload, format, problem } (exportBackupFrom). */
+export async function exportBackup() {
+  const [items, settings] = await Promise.all([getAll(), getSettings()]);
+  return exportBackupFrom(items, settings, new Date().toISOString());
+}
+
+/** Everything needed to restore this device's items, as a plain object ready for JSON.stringify. */
+export async function exportAll() {
+  return (await exportBackup()).payload;
 }
 
 /** A problem with an import file. `message` is written for the person importing. */
@@ -1228,6 +1306,22 @@ function normalize(raw, exportedAt) {
   };
 }
 
+/**
+ * A shared-settings import's ops (importAll with shared settings; pure): the items (importOps), then
+ * the settings. Replace clears colours the file doesn't have; a colour the record already has as
+ * the file says is left as it is, keys this version doesn't write included (keepMatching).
+ */
+export function importChange(replica, plan, opts) {
+  const replaceColors = plan.clear && 'groupColors' in plan.settings;
+  return [...importOps(replica, plan, opts), ...settingsOps(replica, plan.settings, { replaceColors, keepMatching: true, ...opts })];
+}
+
+/** Palette slots from a file: name → slot (0-29) for the names in `colors` whose swatch the slot matches. */
+function cleanSlots(raw, colors) {
+  if (!isObj(raw) || !isObj(colors)) return {};
+  return Object.fromEntries(Object.entries(raw).filter(([k, v]) => slotOf({ swatch: colors[k], slot: v }) !== null));
+}
+
 /** Group colours from a file: a plain name → swatch-key map. The app drops unknown keys on load. */
 function cleanColors(raw) {
   if (!isObj(raw)) return {};
@@ -1249,7 +1343,7 @@ export function planFromBackup(backup, existing, current) {
   const have = new Map(existing.map((s) => [s.id, s]));
   const inFile = new Set(backup.items.map(({ item }) => item.id));
   const withSettings = backup.settings !== null;
-  const base = { total: backup.items.length, existing: existing.length, newerVersion: backup.version > SCHEMA_VERSION, withSettings };
+  const base = { total: backup.items.length, existing: existing.length, newerVersion: backup.version > BACKUP_VERSION, withSettings };
 
   // Merge: match by id; the newer `updatedAt` wins, and a missing or unreadable date counts as oldest.
   // Deleted items aren't "here", so an item deleted since the backup counts as new and comes back.
@@ -1270,16 +1364,20 @@ export function planFromBackup(backup, existing, current) {
   // set). `localSettings` is the same result as whole values, for a device whose settings aren't
   // shared yet and are stored as plain values.
   const fileColors = withSettings ? cleanColors(backup.settings.groupColors) : {};
+  // Format 5: a colour's palette slot comes with it when the file has one that matches its swatch.
+  const fileSlots = withSettings ? cleanSlots(backup.settings.groupSlots, fileColors) : {};
+  const slotPart = Object.keys(fileSlots).length ? { groupSlots: fileSlots } : {};
   const cur = withSettings ? backup.settings.defaultCurrency : null;
   const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;
-  const replaceSettings = withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {};
+  const replaceLocal = withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {};
+  const replaceSettings = withSettings ? { ...replaceLocal, ...slotPart } : {};
 
   return {
     merge: {
       summary: { ...base, mode: 'merge', added, updated, kept, removed: 0 },
       clear: false,
       writes: mergeWrites,
-      settings: withSettings ? { groupColors: fileColors } : {},
+      settings: withSettings ? { groupColors: fileColors, ...slotPart } : {},
       localSettings: withSettings ? { groupColors: { ...cleanColors(current.groupColors), ...fileColors } } : {},
     },
     replace: {
@@ -1294,7 +1392,7 @@ export function planFromBackup(backup, existing, current) {
       clear: true,
       writes: backup.items.map(({ item }) => item),
       settings: replaceSettings,
-      localSettings: replaceSettings,
+      localSettings: replaceLocal,
     },
   };
 }
@@ -1322,8 +1420,7 @@ export async function importAll(json, mode) {
   if (source === RECORDS && settingsShared) {
     const replaceColors = plan.clear && 'groupColors' in plan.settings;
     // Replace takes the file's colours as they are, so this device's own picks go too.
-    await commit((replica) => [...importOps(replica, plan), ...settingsOps(replica, plan.settings, { replaceColors })],
-      { settings: replaceColors ? { [AUTO_COLORS]: {} } : {} });
+    await commit((replica) => importChange(replica, plan), { settings: replaceColors ? { [AUTO_COLORS]: {} } : {} });
     return plan.summary;
   }
   if (source === RECORDS) {

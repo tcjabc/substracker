@@ -12,8 +12,10 @@
 // later change there can't leave the harness out of date unnoticed:
 //   save / remove   storage.save / storage.remove on the records store (commit + putRecord / deleteRecord)
 //   choose          storage.saveSettings with shared settings (settingsOps)
-//   exportBackup    storage.exportAll + app.js exportData (sorted by name, w keys left out)
-//   importBackup    storage.importAll with shared settings (importOps + settingsOps)
+//   exportBackup    storage.exportAll + app.js exportData (sorted by name, w keys left out); where
+//                   the version has exportBackupFrom (format 5), that pure function itself
+//   importBackup    storage.importAll with shared settings: importChange where the version has it
+//                   (format 5), else importOps + settingsOps as 1.19.0's importAll
 //   formSave        app.js openForm, then readForm + mergeFormEdit (run from the version's app.js
 //                   source, with a stand-in form that behaves like the 1.19.0 page) + save
 //
@@ -371,9 +373,17 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
     /** storage.exportAll, then app.js exportData: items sorted by name, automatic Wallet colours left out. */
     exportBackup(exportedAt = new Date(now()).toISOString()) {
       const all = settings();
-      const full = items().map((x) => ({ ...x, type: x.type === 'income' ? 'income' : 'expense', date: x.date ?? '', emoji: x.emoji ?? '' }));
-      const kept = Object.fromEntries(storage.BACKUP_SETTINGS.filter((key) => all[key] !== undefined).map((key) => [key, all[key]]));
-      const payload = { app: storage.APP_ID, schemaVersion: storage.SCHEMA_VERSION, exportedAt, items: full, settings: kept };
+      let payload;
+      if (storage.exportBackupFrom) {
+        // A version with format 5 has the whole export as a pure function: use it as it is.
+        ({ payload } = storage.exportBackupFrom(items(), all, exportedAt));
+        device.lastExport = storage.exportBackupFrom(items(), all, exportedAt);
+      } else {
+        // 1.19.0's exportAll, step by step.
+        const full = items().map((x) => ({ ...x, type: x.type === 'income' ? 'income' : 'expense', date: x.date ?? '', emoji: x.emoji ?? '' }));
+        const kept = Object.fromEntries(storage.BACKUP_SETTINGS.filter((key) => all[key] !== undefined).map((key) => [key, all[key]]));
+        payload = { app: storage.APP_ID, schemaVersion: storage.SCHEMA_VERSION, exportedAt, items: full, settings: kept };
+      }
       payload.items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
       const colours = payload.settings?.groupColors;
       if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !mod.walletMath.isWalletKey(v)));
@@ -384,7 +394,8 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
       if (mode !== 'merge' && mode !== 'replace') throw new Error(`Unknown import mode: ${mode}`);
       const plan = storage.planFromBackup(storage.parseBackup(json), items(), settings())[mode];
       const replaceColors = plan.clear && 'groupColors' in plan.settings;
-      local((replica) => [...storage.importOps(replica, plan, { now: now() }), ...storage.settingsOps(replica, plan.settings, { replaceColors, now: now() })]);
+      if (storage.importChange) local((replica) => storage.importChange(replica, plan, { now: now() })); // format 5: the pure function
+      else local((replica) => [...storage.importOps(replica, plan, { now: now() }), ...storage.settingsOps(replica, plan.settings, { replaceColors, now: now() })]);
       if (replaceColors) s.local.autoGroupColors = {};
       return plan.summary;
     },

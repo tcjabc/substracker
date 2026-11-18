@@ -509,7 +509,7 @@ test('export → JSON → replace import into an empty database round-trips, set
   const file = JSON.stringify(await storage.exportAll());
   const parsed = JSON.parse(file);
   eq(Object.keys(parsed), ['app', 'schemaVersion', 'exportedAt', 'items', 'settings'], 'envelope keys');
-  eq([parsed.app, parsed.schemaVersion], ['substracker', 4], 'header');
+  eq([parsed.app, parsed.schemaVersion], ['substracker', 5], 'header (format 5)');
   eq(parsed.settings, { defaultCurrency: 'USD', groupColors: { Entertainment: 'g3' } }, 'only the backup settings');
   for (const word of ['pro', 'entitlement', 'palette', 'ocean', 'deviceId', 'hlc', 'outbox', 'syncCursor', '"ts"', '"del"']) {
     assert(!file.includes(`"${word}"`), `export must not contain ${word}`);

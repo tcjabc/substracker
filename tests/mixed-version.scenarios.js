@@ -540,7 +540,9 @@ test('round trip: 1.19.0 backup -> current import -> current export -> 1.19.0 im
   assert.equal(sum1.newerVersion, false);
   assert.deepEqual(C.items(), original, 'current has exactly the items');
   const file2 = C.exportBackup('2026-11-19T00:00:00.000Z');
-  assert.equal(file2, file1, 'the current export is the same file, byte for byte');
+  // Format 5 adds nothing when there is no repeat or slot: the same file but for its version number.
+  assert.equal(JSON.parse(file2).schemaVersion, 5);
+  assert.equal(file2.replace('"schemaVersion": 5,', '"schemaVersion": 4,'), file1, 'the current export is the same file, byte for byte, but for the version');
 
   const L2 = await h.device('legacy2', { version: 'legacy', joined: false });
   L2.importBackup(file2, 'replace');
@@ -614,10 +616,10 @@ test('the code the harness follows is still in js/ (update tests/helpers/mixed-s
     'await commit((r) => sync.putRecord(r, item.id, itemFields(item)), { ids: [item.id] });',
     'await commit((r) => sync.deleteRecord(r, id), { ids: [id] });',
     'await commit((r) => settingsOps(r, shared), { ids: [SETTINGS_ID], settings: local });',
-    "const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));",
-    'const kept = Object.fromEntries(BACKUP_SETTINGS.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));',
-    "const replaceColors = plan.clear && 'groupColors' in plan.settings;",
-    'await commit((replica) => [...importOps(replica, plan), ...settingsOps(replica, plan.settings, { replaceColors })],',
+    'return (await exportBackup()).payload;',
+    'return exportBackupFrom(items, settings, new Date().toISOString());',
+    'const [items, settings] = await Promise.all([getAll(), getSettings()]);',
+    'await commit((replica) => importChange(replica, plan), { settings: replaceColors ? { [AUTO_COLORS]: {} } : {} });',
     'return effectiveSettings(local, rec);',
   ]) assert.ok(storageSrc.includes(line), `js/storage.js: ${line}`);
   for (const line of [

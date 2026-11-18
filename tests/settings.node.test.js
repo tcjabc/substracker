@@ -222,8 +222,8 @@ test('old export formats still import their settings', () => {
   assert.deepEqual(shared(r).groupColors, { Food: 'g2' });
 });
 
-test('the export allowlist is exactly the two shared settings', () => {
-  assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors']);
+test('the export allowlist is exactly the shared settings (format 5 adds the palette slots of the colours)', () => {
+  assert.deepEqual(storage.BACKUP_SETTINGS, ['defaultCurrency', 'groupColors', 'groupSlots']);
   const view = storage.effectiveSettings({ autoCurrency: 'GBP', autoGroupColors: { A: 'g1' }, pro: true, palette: 'ocean' }, undefined);
   const kept = Object.fromEntries(storage.BACKUP_SETTINGS.filter((k) => view[k] !== undefined).map((k) => [k, view[k]]));
   assert.deepEqual(kept, { defaultCurrency: 'GBP', groupColors: { A: 'g1' } }, 'what exportAll keeps: no pro, palette or auto keys');

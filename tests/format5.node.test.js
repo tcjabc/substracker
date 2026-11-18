@@ -298,3 +298,105 @@ test('nothing in the app writes a version note, a repeat or a slot yet', () => {
   const app = readFileSync(new URL('app.js', dir), 'utf8');
   assert.ok(!/repeat\s*:/.test(app) && !/slot\s*:/.test(app), 'the app builds no repeat or slot values');
 });
+
+/* ------------------------------------------------------------------ Backup format 5 */
+
+const legacy = await import('./legacy-1.19.0/storage.js');
+const AT = '2026-11-19T00:00:00.000Z';
+const liveOf = (r) => [...r.records.values()].filter((x) => x.id !== storage.SETTINGS_ID).map(storage.toItem).filter(Boolean);
+
+test('export writes format 5: repeat and groupSlots where present, and nothing new otherwise', () => {
+  const plain = [item({ id: 'p' })];
+  const bare = storage.exportBackupFrom(plain, { defaultCurrency: 'TWD', groupColors: { Hobbies: 'g3' } }, AT);
+  assert.equal(bare.format, 5);
+  assert.equal(bare.problem, null);
+  assert.deepEqual(Object.keys(bare.payload), ['app', 'schemaVersion', 'exportedAt', 'items', 'settings']);
+  assert.equal(bare.payload.schemaVersion, 5);
+  const as4 = storage.backupPayload(plain, { defaultCurrency: 'TWD', groupColors: { Hobbies: 'g3' } }, AT, 4);
+  assert.deepEqual({ ...bare.payload, schemaVersion: 4 }, as4, 'the same as format 4 but for the version');
+  const rich = storage.exportBackupFrom([item({ repeat: every(1, 'week') })], { groupColors: { Hobbies: 'w5' }, groupSlots: { Hobbies: 4 } }, AT);
+  assert.equal(rich.format, 5);
+  assert.deepEqual(rich.payload.items[0].repeat, every(1, 'week'));
+  assert.deepEqual(rich.payload.settings.groupSlots, { Hobbies: 4 });
+  assert.equal(storage.BACKUP_VERSION, 5);
+  assert.equal(storage.SCHEMA_VERSION, 4, 'the data format in meta moves to 5 only with 1.20.0\'s first-launch step');
+});
+
+test('the export check: something 1.19.0 couldn\'t import, or an interval that wouldn\'t come back, falls back to format 4', () => {
+  const settings = { groupColors: {} };
+  const bad = storage.exportBackupFrom([item({ id: 'p' }), item({ id: 'q', cycle: 'weekly' })], settings, AT);
+  assert.equal(bad.format, 4);
+  // This version's reader is as strict as 1.19.0's about these fields, so it is the first to say so;
+  // the 1.19.0 rules in checkBackup stay as a backstop should the reader ever accept more.
+  assert.match(bad.problem, /can't read it back|would not import on 1\.19\.0/);
+  assert.equal(bad.payload.schemaVersion, 4);
+  assert.deepEqual(bad.payload, storage.backupPayload([item({ id: 'p' }), item({ id: 'q', cycle: 'weekly' })], settings, AT, 4), 'what 1.19.0 would have written');
+  const undatedOnce = storage.exportBackupFrom([item({ cycle: 'once', nextRenewal: '', date: '' })], settings, AT);
+  assert.equal(undatedOnce.format, 4);
+  // Forced by hand: a payload that loses a repeat which counts on the live item.
+  const live = [item({ repeat: every(1, 'week') })];
+  const lossy = storage.backupPayload([item()], settings, AT);
+  assert.match(storage.checkBackup(lossy, live, settings), /1 of 1 items come back with another interval/);
+  assert.equal(storage.checkBackup(storage.backupPayload(live, settings, AT), live, settings), null);
+  assert.match(storage.checkBackup(storage.backupPayload(live, settings, AT), live, { groupColors: { A: 'w1' }, groupSlots: { A: 0 } }), /palette slots/);
+});
+
+test('import reads formats 3, 4 and 5 as this version\'s own and flags anything newer', () => {
+  for (const [v, newer] of [[3, false], [4, false], [5, false], [6, true], [9, true]]) {
+    const plan = storage.planFromBackup(storage.parseBackup(fileOf([item()], { schemaVersion: v })), [], {});
+    assert.equal(plan.merge.summary.newerVersion, newer, `format ${v}`);
+  }
+});
+
+test('a format-4 file imports exactly as 1.19.0 imports it (items, settings, ops)', () => {
+  const file = {
+    app: 'substracker', schemaVersion: 4, exportedAt: T2,
+    items: [item({ id: 'a' }), item({ id: 'b', cycle: 'annual', price: 12.5, currency: 'usd' }), item({ id: 'c', cycle: 'once', date: '2026-12-24', nextRenewal: 'x' }), item({ id: 'd', type: 'income', category: 'x' })],
+    settings: { defaultCurrency: 'eur', groupColors: { Hobbies: 'g3', Food: 'w2' }, pro: true },
+  };
+  for (const mode of ['merge', 'replace']) {
+    const run = (mod) => {
+      const r = { clock: core.newClock('devA'), records: new Map() };
+      core.putRecord(r, 'z', { name: 'Old', cycle: 'monthly', price: 1, currency: 'TWD' }, { now: 500, newId: () => 'x0' });
+      core.setFields(r, mod.SETTINGS_ID, { [mod.colorField('Food')]: { name: 'Food', swatch: 'g1' } }, { now: 600, newId: () => 'x1' });
+      let k = 0;
+      const plan = mod.planFromBackup(mod.parseBackup(JSON.stringify(file)), [], mod.settingsFromRecord(r.records.get(mod.SETTINGS_ID)))[mode];
+      const o = { now: 1000, newId: () => `i${++k}` };
+      const replaceColors = plan.clear && 'groupColors' in plan.settings;
+      const ops = mod.importChange ? mod.importChange(r, plan, o) : [...mod.importOps(r, plan, o), ...mod.settingsOps(r, plan.settings, { replaceColors, ...o })];
+      return { ops, records: [...r.records.values()], summary: plan.summary };
+    };
+    assert.deepEqual(run(storage), run(legacy), `${mode}: the same ops and records as 1.19.0`);
+  }
+});
+
+test('import brings in palette slots that match their colour, and keeps a colour that is already as the file says', () => {
+  const r = replicaOf();
+  const fuel = { name: 'Fuel', swatch: 'w7', slot: 6, auto: true, later: 1 };
+  core.setFields(r, storage.SETTINGS_ID, { [C('Fuel')]: fuel }, opts(500));
+  const file = fileOf([item()], { settings: { groupColors: { Gaming: 'w8', Fuel: 'w7', Food: 'w2' }, groupSlots: { Gaming: 7, Fuel: 6, Food: 5, Ghost: 3 } } });
+  const plan = storage.planFromBackup(storage.parseBackup(file), [], storage.settingsFromRecord(r.records.get(storage.SETTINGS_ID))).replace;
+  assert.deepEqual(plan.settings.groupSlots, { Gaming: 7, Fuel: 6 }, 'only slots that match their colour (Food\'s 5 is not w2, Ghost has no colour)');
+  const ops = storage.importChange(r, plan, opts(1000));
+  const f = r.records.get(storage.SETTINGS_ID).fields;
+  assert.deepEqual(f[C('Gaming')], { name: 'Gaming', swatch: 'w8', slot: 7 });
+  assert.deepEqual(f[C('Food')], { name: 'Food', swatch: 'w2' });
+  assert.deepEqual(f[C('Fuel')], fuel, 'already as the file says: left as it is, auto and later keys too');
+  assert.ok(!ops.some((op) => op.f === C('Fuel')));
+});
+
+test('format 5 round trip: export, import into an empty device, export again gives the same file', () => {
+  const r = replicaOf();
+  const file = fileOf([item({ repeat: every(2, 'week') }), item({ id: 'b', cycle: 'annual', repeat: every(6, 'month') }), item({ id: 'c' })],
+    { settings: { defaultCurrency: 'TWD', groupColors: { Hobbies: 'w5' }, groupSlots: { Hobbies: 19 } } });
+  storage.importChange(r, storage.planFromBackup(storage.parseBackup(file), [], {}).replace, opts(1000));
+  const settings = storage.effectiveSettings({}, r.records.get(storage.SETTINGS_ID));
+  const first = storage.exportBackupFrom(liveOf(r), settings, AT);
+  assert.equal(first.format, 5);
+  const r2 = replicaOf('devB');
+  storage.importChange(r2, storage.planFromBackup(storage.parseBackup(first.payload), [], {}).replace, opts(2000));
+  const second = storage.exportBackupFrom(liveOf(r2), storage.effectiveSettings({}, r2.records.get(storage.SETTINGS_ID)), AT);
+  assert.deepEqual(second.payload, first.payload);
+  assert.deepEqual(first.payload.items.find((x) => x.id === 'a').repeat, every(2, 'week'));
+  assert.deepEqual(first.payload.settings.groupSlots, { Hobbies: 19 });
+});
