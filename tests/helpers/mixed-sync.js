@@ -53,7 +53,8 @@ export function loadVersion(version) {
         at('services.js'), at('i18n.js'), at('wallet-math.js'),
       ]);
       const appSource = readFileSync(new URL('app.js', v.dir), 'utf8').replace(/\r\n/g, '\n');
-      return { version, label: v.label, storage, engine, core, crypto, util, insights, services, i18n, walletMath, appSource };
+      const groupSlots = await at('group-slots.js').catch(() => null); // shared slots: not in 1.19.0
+      return { version, label: v.label, storage, engine, core, crypto, util, insights, services, i18n, walletMath, groupSlots, appSource };
     })());
   }
   return loaded.get(version);
@@ -398,6 +399,29 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
         payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([, v]) => !mod.walletMath.isWalletKey(v)));
       }
       return JSON.stringify(payload, null, 2);
+    },
+    /**
+     * The slot step of app.js ensureGroupColors (js/group-slots.js), on this device's items and
+     * record: a shared slot for each live group without a colour, and the household's repair.
+     * Versions without shared slots (1.19.0) do nothing. Returns the writes [{ name, slot }].
+     */
+    ensureSlots() {
+      const gs = mod.groupSlots;
+      if (!gs) return [];
+      const names = [...new Set(items().filter((x) => x.type !== 'income').map(mod.insights.groupOf))].sort(mod.insights.byGroupName);
+      const rec = device.settingsRecord() ?? { fields: {}, ts: {} };
+      const { shared, picks } = gs.slotsFromRecord(rec);
+      const map = settings().groupColors;
+      const held = new Map();
+      for (const n of names) {
+        if (shared.has(n)) continue;
+        if (picks.has(n)) held.set(n, null);
+        else if (mod.walletMath.isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1);
+      }
+      const plan = gs.planSlots({ live: names, shared: new Map([...shared].filter(([n]) => names.includes(n))), held });
+      const writes = [...plan.assign, ...plan.moves];
+      if (writes.length) local((r) => core.setFields(r, SETTINGS_ID, gs.slotFields(writes), { now: now() }));
+      return writes;
     },
     /** storage.importAll(json, mode) with shared settings: throws ImportError for a bad file. Returns the summary. */
     importBackup(json, mode) {

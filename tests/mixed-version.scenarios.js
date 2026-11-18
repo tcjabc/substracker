@@ -630,6 +630,9 @@ test('the code the harness follows is still in js/ (update tests/helpers/mixed-s
     'if (colours) payload.settings.groupColors = Object.fromEntries(Object.entries(colours).filter(([k]) => state.colorPicks.has(k)));',
     'if (slots) payload.settings.groupSlots = Object.fromEntries(Object.entries(slots).filter(([k]) => state.colorPicks.has(k)));',
     'f.cycle.value = sub.cycle;',
+    'const plan = planSlots({ live: names, shared: new Map([...shared].filter(([n]) => names.includes(n))), held });',
+    'else if (isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1); // this device\'s own automatic colour',
+    'storage.saveColourValues(fields).catch((err) => console.error(err));',
   ]) assert.ok(appSrc.includes(line), `js/app.js: ${line}`);
   const mod = await loadVersion('current');
   assert.ok(/^const isDay = /m.test(mod.appSource));
