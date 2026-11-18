@@ -51,6 +51,7 @@ const SHELL = [
   './js/wallet-math.js',
   './js/wallet.js',
   './js/csv-export.js',
+  './js/due-soon.js',
   './js/i18n.js',
   // Locales: English is bundled with js/i18n.js; every other locale file is listed here too, so a
   // language picked on the device works offline (js/i18n.js loads it on first use).

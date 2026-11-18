@@ -32,6 +32,8 @@ test('every file in js/ is precached by sw.js (or deliberately runtime-cached)',
     if (f in RUNTIME_CACHED) continue;
     assert.ok(shell.has(`./js/${f}`), `sw.js SHELL is missing ./js/${f}`);
   }
+  // The due-soon banner's calculation runs on every Money tab visit: precached, never runtime-only.
+  assert.ok(shell.has('./js/due-soon.js') && !runtime.has('./js/due-soon.js'), 'js/due-soon.js is in the SHELL');
   // Locale files load on first use (js/i18n.js) but are precached, so every language works offline.
   const locales = (await readdir(new URL('js/locales/', root))).filter((f) => f.endsWith('.js'));
   assert.ok(locales.includes('en.js'), 'js/locales/en.js exists');

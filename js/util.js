@@ -110,12 +110,15 @@ function addCycle(date, cycle, originalDay) {
   return new Date(y, m, Math.min(originalDay, last));
 }
 
-/** The next renewal on or after today, rolling a past stored date forward by its cycle. */
-export function nextRenewal(sub) {
+/**
+ * The next renewal on or after today, rolling a past stored date forward by its cycle. Display
+ * only: the stored date is never rewritten. `now` is for the pure modules and their tests.
+ */
+export function nextRenewal(sub, now = new Date()) {
   if (isOnce(sub)) return null;
   const start = parseDate(sub.nextRenewal);
   if (!start) return null;
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   let d = start;
   let guard = 0;
