@@ -1,4 +1,5 @@
 import { formatLocale, relativeDays, t } from './i18n.js';
+import { intervalOfCycle, indexOnOrAfter, occurrence, dayOf, dateOf } from './interval.js';
 
 export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
@@ -101,18 +102,15 @@ export function parseDate(str) {
   return new Date(y, m - 1, d);
 }
 
-function addCycle(date, cycle, originalDay) {
-  const months = cycle === 'annual' ? 12 : 1;
-  const y = date.getFullYear();
-  const m = date.getMonth() + months;
-  // Clamp to the last day of the target month (e.g. Jan 31 -> Feb 28), keep the original day after.
-  const last = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(originalDay, last));
-}
+// How many intervals the stored date may roll forward: the step loop this replaced gave up after
+// 1200 and returned a date in the past for older dates (docs/plan-intervals-groups.md, bug b).
+const ROLL_LIMIT = 1200;
 
 /**
- * The next renewal on or after today, rolling a past stored date forward by its cycle. Display
- * only: the stored date is never rewritten. `now` is for the pure modules and their tests.
+ * The next renewal on or after today, rolling a past stored date forward by its cycle (js/interval.js:
+ * monthly every 1 month, annual every 12, clamped from the stored day). Never a date before the
+ * stored one. Display only: the stored date is never rewritten. `now` is for the pure modules and
+ * their tests.
  */
 export function nextRenewal(sub, now = new Date()) {
   if (isOnce(sub)) return null;
@@ -120,10 +118,11 @@ export function nextRenewal(sub, now = new Date()) {
   if (!start) return null;
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
-  let d = start;
-  let guard = 0;
-  while (d < today && guard++ < 1200) d = addCycle(d, sub.cycle, start.getDate());
-  return d;
+  if (Number.isNaN(today.getTime())) return start; // nothing to compare with
+  const anchor = dayOf(start);
+  const interval = intervalOfCycle(sub.cycle);
+  const k = Math.min(Math.max(0, indexOnOrAfter(anchor, interval, dayOf(today))), ROLL_LIMIT);
+  return k === 0 ? start : dateOf(occurrence(anchor, interval, k));
 }
 
 export function daysUntil(date) {
