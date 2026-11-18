@@ -76,6 +76,14 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | donut chart | 圓環圖 | |
 | key (chart legend) | 圖例 | |
 | Jump to now | 回到本月 | |
+| Calendar (view) | 月曆 | The Money tab's fourth view; "Calendar view" → 月曆檢視. 月曆 (a month grid) rather than 行事曆 (a schedule app) |
+| Previous / next month | 上個月 / 下個月 | |
+| Today (calendar button) | 今天 | Its title "Go to this month" → 回到本月, as Jump to now |
+| payment (on a calendar day) | 款項 | ⚠ Counted with 筆: "2 payments" → 2 筆款項 (income and expenses alike) |
+| Cash due in {month} | {month}應付金額 | "2026年11月應付金額"; no space after the month |
+| Nothing due | 無應付款項 | Also "Nothing due on this day" → 這天無應付款項 |
+| Week starts on | 每週起始日 | ⚠ Settings; Automatic → 自動, then the weekday in （） |
+| weekday names | 一 二 三 四 五 六 日 | The calendar's column heads use Intl's single characters (narrow), as Taiwanese calendars do; full names 星期一 in labels |
 | Sync | 同步 | |
 | household | 家庭 | ⚠ The set of devices that sync together; the English is "household" too |
 | device | 裝置 | |

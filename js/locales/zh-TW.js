@@ -39,6 +39,8 @@ export default {
   'money.view.list.title': '清單檢視',
   'money.view.wallet': '錢包',
   'money.view.wallet.title': '錢包檢視',
+  'money.view.calendar': '月曆',
+  'money.view.calendar.title': '月曆檢視',
 
   // Sort groups (Money tab)
   'sort.az': '名稱',
@@ -681,6 +683,28 @@ export default {
   'settings.dueSoon.days.other': '{count} 天',
   'settings.dueSoon.income': '包含即將入帳的收入',
   'settings.dueSoon.income.hint': '也列出近期會入帳的收入。',
+
+  // 「收支」頁的月曆檢視。月份與星期名稱由 Intl 依介面語言產生（js/i18n.js dateWords）。
+  'calendar.label': '月曆',
+  'calendar.prev': '上個月',
+  'calendar.next': '下個月',
+  'calendar.today': '今天',
+  'calendar.today.title': '回到本月',
+  'calendar.keys': '方向鍵可在日期間移動，Page Up 與 Page Down 可切換月份，Enter 可顯示當天項目。',
+  'calendar.summary': '{month}應付金額',
+  'calendar.income': '入帳 {amount}',
+  'calendar.nothingMonth': '{month}無應付款項',
+  'calendar.more': '+{count}',
+  'calendar.day.payments.other': '{count}\u00A0筆款項',
+  'calendar.day.nothing': '無應付款項',
+  'calendar.day.today': '今天',
+  'calendar.list.label': '{date}的款項',
+  'calendar.list.empty': '這天無應付款項',
+  'calendar.row': '{name}，{group}，{amount}',
+  'calendar.row.income': '{name}，收入，{amount}',
+  'settings.calendar': '月曆',
+  'settings.weekStart': '每週起始日',
+  'settings.weekStart.auto': '自動（{day}）',
 
   // Settings, messages and errors (js/app.js, js/files.js)
   'common.dismiss': '關閉',

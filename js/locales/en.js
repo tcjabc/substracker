@@ -42,6 +42,8 @@ export default {
   'money.view.list.title': 'List view',
   'money.view.wallet': 'Wallet',
   'money.view.wallet.title': 'Wallet view',
+  'money.view.calendar': 'Calendar',
+  'money.view.calendar.title': 'Calendar view',
 
   // Sort groups (Money tab)
   'sort.az': 'A to Z',
@@ -699,6 +701,30 @@ export default {
   'settings.dueSoon.days.other': '{count} days',
   'settings.dueSoon.income': 'Include upcoming income',
   'settings.dueSoon.income.hint': 'Also list income with a payment date coming up.',
+
+  // Calendar view on the Money tab (js/app.js; what falls on each day: js/calendar-math.js).
+  // Month and weekday names come from Intl in the UI's language (js/i18n.js dateWords).
+  'calendar.label': 'Calendar',
+  'calendar.prev': 'Previous month',
+  'calendar.next': 'Next month',
+  'calendar.today': 'Today',
+  'calendar.today.title': 'Go to this month',
+  'calendar.keys': 'Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day.',
+  'calendar.summary': 'Cash due in {month}',
+  'calendar.income': '{amount} income',
+  'calendar.nothingMonth': 'Nothing due in {month}',
+  'calendar.more': '+{count}', // after the first three dots of a day
+  'calendar.day.payments.one': '{count} payment',
+  'calendar.day.payments.other': '{count} payments',
+  'calendar.day.nothing': 'nothing due',
+  'calendar.day.today': 'today',
+  'calendar.list.label': 'Due on {date}',
+  'calendar.list.empty': 'Nothing due on this day',
+  'calendar.row': '{name}, {group}, {amount}',
+  'calendar.row.income': '{name}, income, {amount}',
+  'settings.calendar': 'Calendar',
+  'settings.weekStart': 'Week starts on',
+  'settings.weekStart.auto': 'Automatic ({day})',
 
   // Settings, messages and errors (js/app.js, js/files.js)
   'common.dismiss': 'Dismiss',

@@ -16,14 +16,16 @@
 import en from './locales/en.js';
 
 /**
- * The UI locales: tag → { name (in its own language), load, collation }. English is bundled.
- * `collation` is the locale for ordering group names (A to Z); without one, the device's own
- * order, as English always had. zh-TW sorts by Zhuyin (ㄅㄆㄇㄈ), Taiwan's standard order.
+ * The UI locales: tag → { name (in its own language), load, collation, weekdays }. English is
+ * bundled. `collation` is the locale for ordering group names (A to Z); without one, the device's
+ * own order, as English always had. zh-TW sorts by Zhuyin (ㄅㄆㄇㄈ), Taiwan's standard order.
+ * `weekdays` is how the calendar's column heads name the days ('short' unless given): zh-TW uses
+ * the single characters 一 二 三 (its 'narrow' names), as Taiwanese calendars do.
  */
 export const LOCALES = Object.freeze({
   en: Object.freeze({ name: 'English', load: null }),
   // A new locale is one line here, its file in js/locales/ and its sw.js SHELL entry.
-  'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js'), collation: 'zh-TW-u-co-zhuyin' }),
+  'zh-TW': Object.freeze({ name: '繁體中文', load: () => import('./locales/zh-TW.js'), collation: 'zh-TW-u-co-zhuyin', weekdays: 'narrow' }),
 });
 export const FALLBACK = 'en';
 /** The pseudo-locale (dev only, from the address); its document lang is the standard pseudo tag. */
@@ -289,6 +291,22 @@ export function relativeDays(n, locale, { capital = true } = {}) {
   return state.locale === PSEUDO && locale === undefined ? pseudo(out) : out;
 }
 const wordsLocale = () => (state.locale === PSEUDO ? FALLBACK : state.locale);
+
+/**
+ * A date written by Intl with words in it (month and weekday names, for the calendar): in the UI's
+ * language, like relativeDays(), so a zh-CN phone in zh-TW reads 週一, not 周一. When the device
+ * speaks that language in the same script, its own variant is kept, so the order is the device's
+ * ("5 December 2026" on an en-GB phone, "December 5, 2026" on an en-US one). Bracketed in the
+ * pseudo-locale, so its longer names show where they would be cut.
+ */
+export function dateWords(date, options, device = deviceFormatLocale()) {
+  const ui = wordsLocale();
+  const loc = device && sameLanguage(device, ui) ? device : ui;
+  const s = new Intl.DateTimeFormat(loc, options).format(date);
+  return state.locale === PSEUDO ? pseudo(s) : s;
+}
+/** How the calendar's column heads name the weekdays in the UI's language: LOCALES `weekdays`. */
+export const weekdayStyle = () => (Object.hasOwn(LOCALES, state.locale) && LOCALES[state.locale].weekdays) || 'short';
 
 /* Pseudo-locale --------------------------------------------------------------------------------- */
 

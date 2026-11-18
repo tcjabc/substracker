@@ -377,6 +377,7 @@ const SAME_AS_ENGLISH = new Set([
   'app.name', 'app.title', 'settings.version', 'chart.focus.row', // Peek Budget, "{tab} · {app}", "{app} {version}", "{name} {amount}"
   'form.name.placeholder.expense', 'form.domain.placeholder', 'form.emoji.placeholder', // "e.g." is translated; Netflix etc. aren't
   'chart.yearShort', // '26 under the month: 26年 doesn't fit the narrow months at the chart's edges
+  'calendar.more', // "+{count}" after a calendar day's dots: a number and a sign, no words
 ]);
 
 test('zh-TW has every English key, in Chinese, with only the "other" plural form', () => {
