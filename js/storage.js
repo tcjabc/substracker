@@ -1041,6 +1041,29 @@ export async function getPickedGroupColors() {
   return settingsFromRecord(await result(db.transaction(RECORDS).objectStore(RECORDS).get(SETTINGS_ID))).groupColors;
 }
 
+/** A copy of the shared settings record (an empty one when nothing is in it yet; null before settings are shared). Read-only. */
+export async function getSettingsRecord() {
+  const db = await open();
+  if (!settingsShared) return null;
+  const rec = await result(db.transaction(RECORDS).objectStore(RECORDS).get(SETTINGS_ID));
+  return rec ? JSON.parse(JSON.stringify(rec)) : { id: SETTINGS_ID, fields: {}, ts: {} };
+}
+
+/**
+ * Write group colour values as they are ({ field: value }, js/group-slots.js slotFields): the
+ * automatic slots the app assigns and repairs. They sync like any setting. Nothing before settings
+ * are shared (the device keeps its own automatic colours then). Returns the ops written.
+ */
+export async function saveColourValues(fields) {
+  await open();
+  if (!settingsShared || !Object.keys(fields).length) return [];
+  for (const [k, v] of Object.entries(fields)) {
+    const ok = k.startsWith(COLOR_PREFIX) && isObj(v) && isGroupName(v.name) && isSwatchKey(v.swatch) && colorField(v.name) === k;
+    if (!ok) throw new Error('Storage: not a colour value');
+  }
+  return commit((r) => sync.setFields(r, SETTINGS_ID, fields), { ids: [SETTINGS_ID] });
+}
+
 async function readSettings(store) {
   const rows = await result(store.getAll());
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
