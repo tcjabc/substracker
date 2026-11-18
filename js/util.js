@@ -297,4 +297,4 @@ export const catViewFrom = (pref) => (pref === 'donut' || pref === 'list' ? pref
 export const yearStackFrom = (pref) => (pref === 'type' ? 'type' : 'category');
 
 /** The Money tab view from the saved preference: a saved Grid or List is kept, else the Wallet. */
-export const viewFrom = (pref) => (pref === 'grid' || pref === 'list' ? pref : 'wallet');
+export const viewFrom = (pref) => (pref === 'grid' || pref === 'list' || pref === 'calendar' ? pref : 'wallet');

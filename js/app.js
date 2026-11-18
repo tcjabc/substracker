@@ -15,6 +15,8 @@ import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
 import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays } from './i18n.js';
 import { dueSoon, WINDOWS, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
+import { createCalendar } from './calendar.js';
+import { weekStartFrom, resolveWeekStart } from './calendar-math.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -55,7 +57,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
-  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List, per device
+  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List | Calendar, per device
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups whose colour someone chose (left alone by the automatic colours)
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
@@ -488,6 +490,8 @@ const SORT_NAMES = { az: 'sort.name.az', total: 'sort.name.total', items: 'sort.
 /** The Sort button shows the order in use (its label, and its colour when it isn't A–Z). */
 function renderSortButton() {
   const btn = $('#sort-btn');
+  // Sort orders groups; the calendar has none, so there the button stays in place, disabled.
+  btn.disabled = state.view === 'calendar';
   btn.dataset.sort = state.groupSort;
   btn.setAttribute('aria-label', t('sort.button', { order: t(SORT_NAMES[state.groupSort]) }));
   $$('#sort-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
@@ -740,6 +744,37 @@ function renderWallet(list, { reorder = false } = {}) {
   wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() }, { reorder });
 }
 
+/* Calendar view (js/calendar.js, js/calendar-math.js) ------------------------------------------- */
+let calendar = null;
+let calendarHost = null;
+
+/** Settings → Calendar → Week starts on: 'auto' (the default), 'mon' or 'sun'. Per device. */
+const weekStartPref = () => weekStartFrom(storage.getPref('weekStart'));
+/** The locale whose conventions "Automatic" follows: the formatting locale, else the device's. */
+const weekLocale = () => formatLocale() ?? new Intl.DateTimeFormat().resolvedOptions().locale;
+const weekStart = () => resolveWeekStart(weekStartPref(), weekLocale());
+
+function renderCalendar(list) {
+  if (!calendarHost) {
+    calendarHost = document.createElement('div');
+    calendarHost.id = 'calendar';
+    calendar = createCalendar(calendarHost, {
+      items: () => state.subs,
+      currency: () => state.settings.defaultCurrency,
+      weekStart,
+      reduced: () => reduceEffects(),
+      dotColour: (group) => swatchVar(groupSwatch(group)),
+      logo: (s) => logoHTML(s, 'sm'),
+      onEdit: (s) => openForm(s),
+      // Only the month's figure rolls (from the old month's to the new one's); the days are text.
+      rollSummary: (el, value, cur) => roller.show(value > 0 ? el : null, 'calendar:due', value, cur, { visible: moneyOnScreen() }),
+    });
+    calendarHost.calendar = calendar; // for tests, like the wallet's host.wallet
+  }
+  if (calendarHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(calendarHost); }
+  calendar.update();
+}
+
 /**
  * The Money tab's groups in the order Sort asks for (Income first, then the expense groups), on
  * the strip's cash basis for the period: js/wallet-math.js walletGroups and sortGroups. The
@@ -769,6 +804,10 @@ function renderSubs({ reorder = false } = {}) {
     return;
   }
   wallet?.close();
+  if (state.view === 'calendar') {
+    if (all.length) renderCalendar(list); else list.textContent = '';
+    return;
+  }
 
   // Income first (an implicit section, no categories), then expenses grouped by category, in the
   // order Sort asks for (items A–Z within each group).
