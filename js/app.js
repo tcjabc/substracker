@@ -13,10 +13,10 @@ import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
-import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays } from './i18n.js';
+import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays, dateWords } from './i18n.js';
 import { dueSoon, WINDOWS, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
 import { createCalendar } from './calendar.js';
-import { weekStartFrom, resolveWeekStart } from './calendar-math.js';
+import { WEEK_STARTS, weekStartFrom, resolveWeekStart, localeWeekStart } from './calendar-math.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -773,6 +773,24 @@ function renderCalendar(list) {
   }
   if (calendarHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(calendarHost); }
   calendar.update();
+}
+
+/**
+ * Settings → Calendar → Week starts on: Automatic (the region's own first day, named in brackets),
+ * Monday or Sunday. Weekday names come from Intl in the UI's language. Per device, never synced or
+ * exported.
+ */
+function bindWeekStart() {
+  const select = $('#set-week-start');
+  // 16 November 2026 is a Monday, the 15th a Sunday.
+  const dayName = (n) => dateWords(new Date(2026, 10, n === 1 ? 16 : 15), { weekday: 'long' });
+  const names = { auto: t('settings.weekStart.auto', { day: dayName(localeWeekStart(weekLocale())) }), mon: dayName(1), sun: dayName(0) };
+  select.innerHTML = WEEK_STARTS.map((v) => `<option value="${v}">${esc(names[v])}</option>`).join('');
+  select.value = weekStartPref();
+  select.addEventListener('change', () => {
+    storage.setPref('weekStart', weekStartFrom(select.value));
+    if (state.view === 'calendar') renderSubs();
+  });
 }
 
 /**
@@ -1702,6 +1720,7 @@ function bindSettings() {
 
   bindLanguage();
   bindDueSettings();
+  bindWeekStart();
 
   // Per device, like the theme: a localStorage preference, never synced or exported.
   $('#set-motion').addEventListener('change', (e) => {
