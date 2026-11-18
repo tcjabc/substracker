@@ -665,7 +665,7 @@ export default {
 
   // Due-soon banner (Money tab, js/app.js, js/due-soon.js)
   'dueSoon.label': '即將到期',
-  'dueSoon.summary.other': '未來 {days} 天內有 {count} 筆到期',
+  'dueSoon.summary.other': '{days}\u00A0天內有 {count}\u00A0筆到期', // \u00A0 keeps each number with its word: a second line starts at 3 筆到期
   'dueSoon.total': '應付 {amount}',
   'dueSoon.income': '入帳 {amount}',
   'dueSoon.undated.other': '{count} 個項目需要設定日期',
