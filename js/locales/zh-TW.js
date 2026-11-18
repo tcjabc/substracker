@@ -206,6 +206,17 @@ export default {
   // Groups: app-made group names (the key stays English; only the label is translated)
   'group.income': '收入',
   'group.uncategorised': '未分類',
+  'group.preset.housing': '居住',
+  'group.preset.utilities': '生活帳單',
+  'group.preset.food': '餐飲',
+  'group.preset.transport': '交通',
+  'group.preset.software': '軟體與雲端',
+  'group.preset.entertainment': '娛樂',
+  'group.preset.hobbies': '嗜好',
+  'group.preset.education': '教育',
+  'group.preset.shopping': '購物',
+  'group.preset.health': '健康與運動',
+  'group.preset.insurance': '保險與金融',
 
   // Shared
   'common.items.other': '{count} 個項目',

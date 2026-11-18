@@ -135,6 +135,26 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | logo | 標誌 | ⚠ Many Taiwanese apps just write Logo |
 | optional | 選填 | |
 
+## Default groups
+
+The 11 groups the group picker and Import with AI suggest (`group.preset.*`). A name someone picks is
+stored as plain text in the language in use at the time and is theirs from then on: it is never
+translated or renamed afterwards.
+
+| English | zh-TW | Notes |
+|---|---|---|
+| Housing | 居住 | ⚠ |
+| Utilities | 生活帳單 | Household bills, internet included (水電瓦斯 would say water, power and gas only) |
+| Food | 餐飲 | |
+| Transport | 交通 | |
+| Software & cloud | 軟體與雲端 | |
+| Entertainment | 娛樂 | |
+| Hobbies | 嗜好 | ⚠ |
+| Education | 教育 | |
+| Shopping | 購物 | |
+| Health & fitness | 健康與運動 | ⚠ |
+| Insurance & finance | 保險與金融 | ⚠ |
+
 ## Colour names
 
 The group colours someone can pick, read aloud by screen readers and shown in the colour picker.

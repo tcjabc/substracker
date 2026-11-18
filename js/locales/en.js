@@ -211,6 +211,17 @@ export default {
   // Groups: app-made group names (the key stays English; only the label is translated)
   'group.income': 'Income',
   'group.uncategorised': 'Uncategorised',
+  'group.preset.housing': 'Housing',
+  'group.preset.utilities': 'Utilities',
+  'group.preset.food': 'Food',
+  'group.preset.transport': 'Transport',
+  'group.preset.software': 'Software & cloud',
+  'group.preset.entertainment': 'Entertainment',
+  'group.preset.hobbies': 'Hobbies',
+  'group.preset.education': 'Education',
+  'group.preset.shopping': 'Shopping',
+  'group.preset.health': 'Health & fitness',
+  'group.preset.insurance': 'Insurance & finance',
 
   // Shared
   'common.items.one': '{count} item',

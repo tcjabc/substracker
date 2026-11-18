@@ -2,7 +2,7 @@ import * as storage from './storage.js';
 import { deliverFile } from './files.js';
 import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js';
 import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
-import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
+import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
 import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
@@ -1444,7 +1444,9 @@ function fillCurrencySelect(select, selected) {
 
 function fillCategoryList() {
   const used = state.subs.filter((s) => !isIncome(s)).map((s) => s.category).filter(Boolean);
-  const all = [...new Set([...used, ...DEFAULT_CATEGORIES])];
+  // The household's own groups first, then the default groups in the language in use, as suggestions
+  // only (choosing one writes its name as plain text; nothing is renamed or added by itself).
+  const all = [...new Set([...used, ...DEFAULT_GROUPS.map((g) => t(g.key))])];
   $('#category-names').innerHTML = all.map((c) => `<option value="${esc(c)}">`).join('');
 }
 
@@ -1525,7 +1527,7 @@ function bindForm() {
   const suggestFromName = () => {
     const svc = state.formType === 'income' ? null : matchService(f.name.value);
     if (auto.domain) f.domain.value = svc ? svc.domain : '';
-    if (auto.category) f.category.value = svc ? svc.category : '';
+    if (auto.category) f.category.value = svc ? t(DEFAULT_GROUPS.find((g) => g.id === svc.group).key) : '';
     updateFormLogo();
   };
   f.name.addEventListener('input', () => {

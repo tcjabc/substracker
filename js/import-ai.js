@@ -13,7 +13,7 @@
 import { CURRENCIES, uid, isOnce, mergeSyncNote, replaceConfirmSync } from './util.js';
 import { t, formatLocale } from './i18n.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
-import { DEFAULT_CATEGORIES } from './services.js';
+import { DEFAULT_CATEGORIES, LEGACY_CATEGORIES } from './services.js';
 
 export const AI_SCHEMA_VERSION = 1;
 export const MAX_AI_CHARS = 500_000;
@@ -419,7 +419,7 @@ const keyOfItem = (s) => duplicateKey({ name: s.name, amount: s.price, currency:
  */
 export function reviewRows(rawRows, existing = []) {
   const have = new Set(existing.map(keyOfItem));
-  const knownCategories = [...DEFAULT_CATEGORIES, ...existing.map((s) => s.category).filter(Boolean)];
+  const knownCategories = [...DEFAULT_CATEGORIES, ...LEGACY_CATEGORIES, ...existing.map((s) => s.category).filter(Boolean)];
   const seen = new Map();
   return rawRows.map((raw, i) => {
     const { n, fields, problems } = checkRow(tidyRow(raw, knownCategories), i + 1);
