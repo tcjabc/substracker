@@ -1,2 +1,4 @@
 # Test fixtures are byte-exact copies of pasted text (line breaks included): never convert them.
 tests/fixtures/** -text
+# The frozen 1.19.0 modules (tests/legacy-1.19.0/README.md) are checked byte for byte: never convert them.
+tests/legacy-1.19.0/**/*.js -text
