@@ -33,6 +33,11 @@
     <div class="container header-inner">
       <h1 class="page-title" id="page-title">Money</h1>
       <div class="header-actions" id="subs-actions">
+        <div class="segmented">
+          <button type="button" class="seg-btn sort-btn" id="sort-btn" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="sort-menu" aria-label="Sort groups: A to Z" title="Sort groups">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h5"/></svg>
+          </button>
+        </div>
         <div class="segmented" role="group" aria-label="View">
           <button type="button" class="seg-btn" data-view="wallet" aria-pressed="true" title="Wallet view">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
@@ -125,12 +130,19 @@
             </span>
             <button type="button" class="btn" id="btn-export">Export</button>
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row-wrap">
             <span class="setting-label">
               Export as CSV
               <span class="setting-hint">For spreadsheets, not a backup: items only, and it can't be imported.</span>
             </span>
-            <button type="button" class="btn" id="btn-export-csv" aria-label="Export as CSV, for spreadsheets">CSV</button>
+            <span class="setting-actions">
+              <button type="button" class="btn" id="btn-export-csv" aria-label="Download CSV, for spreadsheets, not a backup">Download CSV</button>
+              <button type="button" class="btn" id="btn-copy-csv" aria-label="Copy CSV, for spreadsheets, not a backup">Copy CSV</button>
+            </span>
+          </div>
+          <div class="setting-fallback" id="csv-fallback" hidden>
+            <p class="setting-hint" id="csv-fallback-text" role="status">Couldn't copy. Select the CSV below and copy it.</p>
+            <textarea class="input ai-text" id="csv-copy-text" rows="6" readonly aria-labelledby="csv-fallback-text"></textarea>
           </div>
           <div class="setting-row">
             <span class="setting-label">
@@ -598,9 +610,17 @@
   </dialog>
 
   <!-- Group colour picker, positioned under the tapped group dot on the Money page -->
-  <div class="swatch-pop" id="swatch-pop" role="dialog" aria-labelledby="swatch-pop-title" hidden>
-    <p class="swatch-pop-title" id="swatch-pop-title"></p>
+  <div class="pop swatch-pop" id="swatch-pop" role="dialog" aria-labelledby="swatch-pop-title" hidden>
+    <p class="pop-title" id="swatch-pop-title"></p>
     <div class="swatch-grid" id="swatch-grid"></div>
+  </div>
+
+  <!-- Money tab: Sort groups (per device). Items: role menuitemradio; js/app.js bindSortMenu. -->
+  <div class="pop menu-pop" id="sort-menu" role="menu" aria-labelledby="sort-menu-title" hidden>
+    <p class="pop-title" id="sort-menu-title">Sort groups</p>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1">A to Z</button>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1">Total <span class="menu-hint">high to low</span></button>
+    <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1">Items <span class="menu-hint">most first</span></button>
   </div>
 
   <datalist id="service-names"></datalist>

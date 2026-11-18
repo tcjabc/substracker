@@ -53,7 +53,7 @@ export function amountInYear(s, year) {
 }
 
 const fmtCache = new Map();
-export function money(amount, currency) {
+function moneyFormat(currency) {
   const key = currency;
   if (!fmtCache.has(key)) {
     let f;
@@ -68,7 +68,22 @@ export function money(amount, currency) {
     }
     fmtCache.set(key, f);
   }
-  return fmtCache.get(key).format(amount);
+  return fmtCache.get(key);
+}
+export function money(amount, currency) {
+  return moneyFormat(currency).format(amount);
+}
+
+/**
+ * `money(amount, currency)` as its parts ({ type, value }, Intl formatToParts types: 'currency',
+ * 'minusSign', 'integer', 'group', 'decimal', 'fraction', 'literal'…), from the same formatter, so
+ * joining the values gives exactly money()'s text. The rolling totals (js/count-anim.js) use it.
+ * Where the formatter can't give parts, digit runs come back as 'integer' and the rest as 'literal'.
+ */
+export function moneyParts(amount, currency) {
+  const f = moneyFormat(currency);
+  if (typeof f.formatToParts === 'function') return f.formatToParts(amount);
+  return (f.format(amount).match(/\d+|\D+/g) || []).map((v) => ({ type: /\d/.test(v) ? 'integer' : 'literal', value: v }));
 }
 
 export const cycleLabel = (c) => (c === 'annual' ? '/ yr' : c === 'once' ? '' : '/ mo');

@@ -29,6 +29,8 @@ const css = (rgb, a) => (a == null ? `rgb(${rgb.join(' ')})` : `rgb(${rgb.join('
  *                 the floating buttons when the stack is scrolled to its end
  *   logo(s, size) logo markup for an item (deferred, on a neutral tile)
  *   loadLogos(el) start loading the deferred logos inside `el`
+ *   total(el, g, near)  optional: after each draw, for every card's total element (`near`: on or
+ *                 near the screen), so the app can roll the figure when it changes
  * update(data) draws the cards; see app.js renderSubs for its shape.
  */
 export function createWallet(host, opts) {
@@ -189,6 +191,18 @@ export function createWallet(host, opts) {
     const c = cards.find((x) => x.g.key === f.key);
     const target = (f.id && c?.el.querySelector(`.w-item[data-id="${CSS.escape(f.id)}"]`)) || c?.band;
     target?.focus({ preventScroll: true });
+  }
+
+  /**
+   * Whether card `i`'s band is on screen or just off it (the same idea as the deferred logos): in
+   * the stack, from where it sits; with a card open, only that card; reduced, a plain list (no rolls
+   * then anyway).
+   */
+  function nearScreen(i) {
+    if (reduced()) return true;
+    if (S.e >= 0) return i === S.e;
+    const d = i - S.f;
+    return d > -1.5 && cardPose(d).y < H + GEOM.band;
   }
 
   /* Geometry ------------------------------------------------------------------------------ */
@@ -507,8 +521,11 @@ export function createWallet(host, opts) {
     /**
      * Draw `next` = { groups (each with fillVar), currency, period, year, month }. The open card
      * stays open (redrawn without animation) while its group exists; otherwise it closes.
+     * `reorder`: the groups are in a new order (Sort changed). An open card stays open and becomes
+     * the front card, so closing it puts it back where it can be seen; with none open the stack
+     * goes back to the top, where the new order starts.
      */
-    update(next) {
+    update(next, { reorder = false } = {}) {
       const openKey = S.e >= 0 && S.pT === 1 ? cards[S.e]?.g.key : null;
       if (S.e >= 0) { opts.overlays?.remove(OVERLAY); S.e = -1; S.p = S.pT = 0; S.pv = 0; }
       if (raf) { cancelAnimationFrame(raf); raf = 0; lastT = 0; }
@@ -519,9 +536,12 @@ export function createWallet(host, opts) {
       build();
       measure();
       const again = openKey ? cards.findIndex((c) => c.g.key === openKey) : -1;
+      if (reorder && !reduced()) { S.f = again >= 0 ? clamp(again, 0, maxF) : 0; S.target = S.f; }
       if (again >= 0) expand(again, { instant: true, quiet: true });
       else if (openKey) announce('Closed: that group is gone.');
       render();
+      // Card totals: the app's rolling totals (js/count-anim.js), told which cards can be seen.
+      if (opts.total) cards.forEach((c, i) => opts.total(c.band.querySelector('.w-total'), c.g, nearScreen(i)));
     },
     /** The theme changed: refit every card's colours. */
     recolour() { cards.forEach(colour); },

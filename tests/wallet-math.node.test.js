@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import {
   WALLET_LIGHT, WALLET_DARK, WALLET_KEYS, isWalletKey, assignAutoColours, fitCard, parseColour, contrast,
   shiftL, mix, walletGroups, othersText, periodCash, cardPose, maxScroll, rubberBand, releasePlan,
-  sampleVelocity, GEOM, collapsedHeight, DEPTH, faceText,
+  sampleVelocity, GEOM, collapsedHeight, DEPTH, faceText, sortGroups, groupSortFrom, GROUP_SORTS,
 } from '../js/wallet-math.js';
 import { stripSummary } from '../js/insights-calc.js';
 import { viewFrom } from '../js/util.js';
@@ -214,6 +214,78 @@ test('cards: month totals, nothing due, undated, and other currencies counted bu
   assert.equal(periodCash(ITEMS[1], 'annual', Y, M), 12800);
   assert.equal(othersText([]), '');
   assert.deepEqual(walletGroups([], { currency: 'TWD', period: 'monthly', year: Y, month: M }), [], 'no items: no cards');
+});
+
+/* Sort ------------------------------------------------------------------------------------- */
+// ITEMS plus two groups with nothing in TWD: Cloud (two USD items) and Games (one JPY item), and a
+// TWD group, Books, with the same month total as Uncategorised (100) to check the A–Z tie-break.
+const SORT_ITEMS = [
+  ...ITEMS,
+  { ...base, id: 'aws', name: 'AWS', price: 15, currency: 'USD', cycle: 'monthly', nextRenewal: day(Y, M, 9), category: 'Cloud' },
+  { ...base, id: 'vps', name: 'VPS', price: 6, currency: 'USD', cycle: 'monthly', nextRenewal: day(Y, M, 12), category: 'Cloud' },
+  { ...base, id: 'psn', name: 'PSN', price: 900, currency: 'JPY', cycle: 'monthly', nextRenewal: day(Y, M, 14), category: 'Games' },
+  { ...base, id: 'kindle', name: 'Kindle', price: 100, cycle: 'monthly', nextRenewal: day(Y, M, 20), category: 'Books' },
+];
+const sorted = (sort, period = 'monthly', items = SORT_ITEMS) =>
+  sortGroups(walletGroups(items, { currency: 'TWD', period, year: Y, month: M }), sort, 'TWD').map((g) => g.name);
+
+test('sort: A–Z is the order the Money tab always had, and the default for any other saved value', () => {
+  const today = walletGroups(SORT_ITEMS, { currency: 'TWD', period: 'monthly', year: Y, month: M }).map((g) => g.name);
+  assert.deepEqual(sorted('az'), today, 'unchanged');
+  assert.deepEqual(today, ['Income', 'AI', 'Books', 'Cloud', 'Education', 'Fitness', 'Games', 'House', 'Insurance', 'Uncategorised']);
+  for (const pref of [null, undefined, '', 'nope', 'AZ', 'Total']) {
+    assert.equal(groupSortFrom(pref), 'az', String(pref));
+    assert.deepEqual(sorted(pref), today, `${pref}: today's order`);
+  }
+  assert.equal(groupSortFrom('total'), 'total');
+  assert.equal(groupSortFrom('items'), 'items');
+  assert.deepEqual(GROUP_SORTS, ['az', 'total', 'items']);
+});
+
+test('sort by total: this month high to low, ties A–Z, other-currency-only groups last by item count', () => {
+  // House 30,000 · Insurance 12,800 · AI 330 · Books 100 = Uncategorised 100 (A–Z, Uncategorised
+  // last) · Education 0 = Fitness 0 (nothing due, undated) · then Cloud (2 USD) and Games (1 JPY).
+  assert.deepEqual(sorted('total'), ['Income', 'House', 'Insurance', 'AI', 'Books', 'Uncategorised', 'Education', 'Fitness', 'Cloud', 'Games']);
+});
+
+test('sort by total: Annual uses the year, so the order follows the year totals', () => {
+  // House 360,000 · Insurance 13,660 · AI 3,960 · Education 2,490 · Books 1,200 = Uncategorised 1,200
+  // · Fitness 0 (undated) · Cloud · Games. Education moves up: its annual plan renews in January.
+  assert.deepEqual(sorted('total', 'annual'), ['Income', 'House', 'Insurance', 'AI', 'Education', 'Books', 'Uncategorised', 'Fitness', 'Cloud', 'Games']);
+  assert.notDeepEqual(sorted('total', 'annual'), sorted('total', 'monthly'), 'Monthly and Annual differ here');
+});
+
+test('sort by items: most items first, ties A–Z; every currency counts', () => {
+  // AI 2 (one USD) · Cloud 2 · Insurance 2 · then the groups with 1, A–Z, Uncategorised last.
+  assert.deepEqual(sorted('items'), ['Income', 'AI', 'Cloud', 'Insurance', 'Books', 'Education', 'Fitness', 'Games', 'House', 'Uncategorised']);
+});
+
+test('sort: Income stays first; empty groups, no groups and the input left alone', () => {
+  const groups = [
+    { name: 'Zed', income: false, items: [{ currency: 'TWD' }], total: 5 },
+    { name: 'Empty', income: false, items: [], total: 0 },
+    { name: 'Income', income: true, items: [{ currency: 'TWD' }], total: 1 },
+    { name: 'Abc', income: false, items: [{ currency: 'USD' }], total: 0 },
+    { name: 'Nil', income: false, total: 0 },
+  ];
+  const copy = JSON.stringify(groups);
+  assert.deepEqual(sortGroups(groups, 'total', 'TWD').map((g) => g.name), ['Income', 'Zed', 'Empty', 'Nil', 'Abc'], 'an empty group counts as 0, not as other-currency only');
+  assert.deepEqual(sortGroups(groups, 'items', 'TWD').map((g) => g.name), ['Income', 'Abc', 'Zed', 'Empty', 'Nil']);
+  assert.deepEqual(sortGroups(groups, 'az', 'TWD').map((g) => g.name), ['Income', 'Abc', 'Empty', 'Nil', 'Zed']);
+  assert.equal(JSON.stringify(groups), copy, 'not changed in place');
+  assert.deepEqual(sortGroups([], 'total', 'TWD'), []);
+  assert.deepEqual(sorted('total', 'monthly', ITEMS.filter((s) => s.type === 'income')), ['Income'], 'income only');
+  assert.deepEqual(sorted('items', 'monthly', ITEMS.filter((s) => s.type !== 'income'))[0], 'AI', 'no income: groups only');
+});
+
+test('sort: the groups keep their items and totals; only the order changes', () => {
+  const groups = walletGroups(SORT_ITEMS, { currency: 'TWD', period: 'monthly', year: Y, month: M });
+  const before = new Map(groups.map((g) => [g.name, g]));
+  for (const mode of GROUP_SORTS) {
+    const out = sortGroups(groups, mode, 'TWD');
+    assert.equal(out.length, groups.length, mode);
+    for (const g of out) assert.equal(g, before.get(g.name), `${mode}: ${g.name} is the same card`);
+  }
 });
 
 /* Geometry and motion ------------------------------------------------------------------------ */

@@ -92,11 +92,14 @@
   --text-lg: 1.25rem;
   --text-xl: 1.625rem;
   --text-2xl: 2rem;
+  --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
   --leading: 1.45;
   --leading-tight: 1.2;
+  /* A tick, used as a mask (so it takes any colour): the chosen item in a menu. */
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
 
   /* Space */
   --space-1: 0.25rem;
@@ -500,6 +503,17 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .summary-cell:last-child { padding-top: var(--space-2); border-top: var(--border-width) solid var(--border); }
 .summary-value { font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); text-align: right; }
 .summary-cell:last-child .summary-value { font-size: var(--text-lg); }
+/* Rolling totals (js/count-anim.js): the real text stays, transparent, so the box keeps its size and
+   is what screen readers read; the digits roll over it (generated content, aria-hidden), each one a
+   column one figure wide, with tabular figures. Only while a roll plays; then it's plain text again. */
+.odo { position: relative; display: inline-block; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.odo-txt { color: transparent; }
+.odo-roll { position: absolute; inset: 0; display: flex; align-items: flex-start; white-space: pre; pointer-events: none; }
+.odo-l::before { content: attr(data-t); }
+.odo-c { position: relative; overflow: hidden; }
+.odo-c::before { content: attr(data-z); visibility: hidden; }
+.odo-s { position: absolute; top: 0; left: 0; right: 0; text-align: center; }
+.odo-s::before { content: attr(data-s); display: block; white-space: pre; }
 .summary-income .summary-value { color: var(--positive); }
 .summary-short .summary-value, .summary-short .stat-sub { color: var(--warn); opacity: 1; }
 .summary-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-3); }
@@ -529,15 +543,36 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .group-dot::before { content: ""; width: var(--dot); height: var(--dot); border-radius: var(--radius-full); background: var(--swatch); }
 .group-dot:hover, .group-dot[aria-expanded="true"] { background: var(--surface-2); }
 
-/* Swatch popover */
-.swatch-pop {
+/* Popovers: the swatch picker and the Sort menu share one surface. */
+.pop {
   position: absolute; z-index: 15;
   padding: var(--space-3); display: grid; gap: var(--space-2);
   background: var(--surface); border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
   animation: pop-in var(--dur) var(--ease);
 }
-.swatch-pop-title { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-muted); }
+.pop-title { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-muted); }
+
+/* Sort menu: under the header's Sort button; the header is sticky, so it's fixed too. */
+.menu-pop { position: fixed; z-index: 25; gap: 0; padding: var(--space-2); min-width: 12rem; transform-origin: top right; }
+.menu-pop .pop-title { padding: var(--space-1) var(--space-2) var(--space-2); }
+.menu-item {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-height: var(--tap); padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text);
+  font-size: var(--text-base); font-weight: var(--weight-medium); text-align: left;
+}
+.menu-item::before { content: ""; flex: none; width: var(--icon-sm); height: var(--icon-sm); }
+.menu-item[aria-checked="true"] { font-weight: var(--weight-semibold); }
+.menu-item[aria-checked="true"]::before {
+  background: var(--accent);
+  -webkit-mask: var(--icon-check) center / contain no-repeat; mask: var(--icon-check) center / contain no-repeat;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
+.menu-item:focus-visible { outline-offset: -2px; }
+.menu-hint { color: var(--text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); }
+/* A non-default order shows on the button itself, so the reordered groups are never a surprise. */
+.sort-btn:not([data-sort="az"]) { color: var(--accent); }
 .swatch-grid { display: grid; grid-template-columns: repeat(5, var(--swatch-size)); gap: var(--space-2); }
 .swatch {
   width: var(--swatch-size); height: var(--swatch-size); padding: 0;
@@ -882,7 +917,15 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .setting-row:last-child { border-bottom: 0; }
 .setting-label { font-weight: var(--weight-medium); display: grid; gap: var(--hairline-gap); }
-.setting-hint { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
+.setting-hint { font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--weight-regular); }
+/* A row with more than one action: the buttons move under the label when they don't fit beside it. */
+.setting-row-wrap { flex-wrap: wrap; row-gap: var(--space-2); }
+.setting-row-wrap .setting-label { flex: 1 1 12rem; }
+.setting-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Clipboard blocked: the text to copy by hand, under the row that tried. */
+.setting-fallback { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-4) var(--space-3); border-bottom: var(--border-width) solid var(--border); }
+.setting-fallback[hidden] { display: none; }
+.setting-fallback .ai-text { width: 100%; }
 .footnote { font-size: var(--text-xs); color: var(--text-faint); margin: var(--space-2) var(--space-1) 0; }
 
 /* Developer sync screen (hidden in normal use) */

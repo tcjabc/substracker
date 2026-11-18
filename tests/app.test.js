@@ -20,7 +20,7 @@ import { logoHTML } from '../js/logos.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion'];
+const PREFS = ['tab', 'catView', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -1466,7 +1466,268 @@ test('Year chart: the key hides behind Show key (remembered per device); focus m
   goTab('subs');
 });
 
-test('Export as CSV: live items only, with the BOM, columns, quoting and formula escaping, via the download path', async () => {
+/* ------------------------------------------------------------------ Sort groups */
+// The Money tab's Sort (js/app.js bindSortMenu, js/wallet-math.js sortGroups). The seed's groups:
+// Health (Gym, Yoga: undated, nothing due), Utilities (Phone, Cloud: due this month) and
+// Uncategorised (Domain, six months away, plus two USD plans). One extra group, Aardvark, with a
+// small TWD amount due this month, makes Total differ from A to Z.
+const sortBtn = () => $('#sort-btn');
+const sortMenu = () => $('#sort-menu');
+const sortItem = (k) => $(`#sort-menu [data-sort="${k}"]`);
+const walletOrder = () => wCards().map((c) => text($('.w-name', c)));
+const sectionOrder = () => $$('#subs-list .money-group .section-title > span').map((el) => el.firstChild.textContent.trim());
+const AARDVARK = { ...base, id: 'test-sort-aardvark', name: 'Ant food', price: 50, cycle: 'monthly', nextRenewal: day(Y, M, 3), category: 'Aardvark' };
+/** Pick an order from the Sort menu the way a person does: open it, click the item. */
+function pickSort(k) {
+  sortBtn().click();
+  assert(!sortMenu().hidden, 'menu open');
+  sortItem(k).click();
+}
+/** Expected orders worked out from the items themselves (not with sortGroups). */
+async function expectedOrders() {
+  const items = (await storage.getAll()).filter((s) => !isIncome(s));
+  const groups = new Map();
+  for (const s of items) {
+    const g = groupOf(s);
+    if (!groups.has(g)) groups.set(g, { name: g, n: 0, twd: 0, total: 0 });
+    const e = groups.get(g);
+    e.n++;
+    if (s.currency === 'TWD') { e.twd++; e.total += dueInMonth(s, Y, M); }
+  }
+  const az = (a, b) => (a.name === 'Uncategorised') - (b.name === 'Uncategorised') || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  const list = [...groups.values()];
+  const inc = (await storage.getAll()).some(isIncome) ? ['Income'] : [];
+  const only = (g) => g.n > 0 && g.twd === 0;
+  return {
+    az: [...inc, ...list.slice().sort(az).map((g) => g.name)],
+    total: [...inc, ...list.slice().sort((a, b) => only(a) - only(b) || (only(a) ? b.n - a.n : b.total - a.total) || az(a, b)).map((g) => g.name)],
+    items: [...inc, ...list.slice().sort((a, b) => b.n - a.n || az(a, b)).map((g) => g.name)],
+  };
+}
+
+test('Sort: A to Z by default (today\'s order); the menu is labelled, keyboard operable and on the overlay stack', async () => {
+  goTab('subs');
+  viewBtn('wallet').click();
+  await wSettled();
+  eq(localStorage.getItem('substracker.groupSort'), null, 'never chosen on this device');
+  eq(sortBtn().getAttribute('aria-label'), 'Sort groups: A to Z', 'the button says the order in use');
+  eq(sortBtn().getAttribute('aria-haspopup'), 'menu', 'opens a menu');
+  eq(sortBtn().getAttribute('aria-expanded'), 'false', 'closed');
+  eq(walletOrder(), (await expectedOrders()).az, 'the order the Money tab always had');
+  sortBtn().click();
+  assert(!sortMenu().hidden, 'opens');
+  eq(sortBtn().getAttribute('aria-expanded'), 'true', 'expanded');
+  eq(sortMenu().getAttribute('role'), 'menu', 'a menu');
+  eq($$('#sort-menu [data-sort]').map((b) => [b.getAttribute('role'), b.dataset.sort, b.getAttribute('aria-checked')]),
+    [['menuitemradio', 'az', 'true'], ['menuitemradio', 'total', 'false'], ['menuitemradio', 'items', 'false']], 'three radio items, A to Z checked');
+  eq(document.activeElement, sortItem('az'), 'focus on the checked item');
+  eq(overlays.top(), 'sort-menu', 'on the overlay stack');
+  const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  key('ArrowDown');
+  eq(document.activeElement, sortItem('total'), 'ArrowDown');
+  key('End');
+  eq(document.activeElement, sortItem('items'), 'End');
+  key('ArrowDown');
+  eq(document.activeElement, sortItem('az'), 'wraps round');
+  key('Escape');
+  assert(sortMenu().hidden, 'Escape closes it');
+  eq(document.activeElement, sortBtn(), 'focus back on the button');
+  eq(overlays.top(), null, 'off the stack');
+  sortBtn().click();
+  backIs('closed', 'Android Back closes the menu');
+  assert(sortMenu().hidden, 'closed by Back');
+  eq(document.activeElement, sortBtn(), 'focus back after Back');
+  eq(localStorage.getItem('substracker.groupSort'), null, 'closing without choosing changes nothing');
+});
+
+test('Sort: per device, never in a backup, the settings or the sync outbox', async () => {
+  const opsBefore = await storage.pendingCount();
+  pickSort('items');
+  eq(localStorage.getItem('substracker.groupSort'), 'items', 'remembered on this device');
+  eq(sortBtn().getAttribute('aria-label'), 'Sort groups: Items, most first', 'the button says so');
+  eq(sortBtn().dataset.sort, 'items', 'and shows it');
+  assert(sortMenu().hidden, 'the menu closes');
+  eq(document.activeElement, sortBtn(), 'focus back on the button');
+  const backup = JSON.stringify(await storage.exportAll());
+  assert(!/groupSort|"sort"/.test(backup), 'not in a backup');
+  assert(!('groupSort' in await storage.getSettings()), 'not a shared setting');
+  eq(await storage.pendingCount(), opsBefore, 'no op for sync');
+  const ops = JSON.stringify(await storage.pendingOps());
+  assert(!/groupSort/.test(ops), 'nothing about it queued');
+  pickSort('az');
+  eq(localStorage.getItem('substracker.groupSort'), 'az', 'back to A to Z');
+});
+
+test('Sort: Wallet, Grid and List all follow it; an open card stays open and comes to the front', async () => {
+  await storage.save(AARDVARK);
+  await reloadApp();
+  goTab('subs');
+  viewBtn('wallet').click();
+  await wSettled();
+  const want = await expectedOrders();
+  assert(JSON.stringify(want.total) !== JSON.stringify(want.az) && JSON.stringify(want.items) !== JSON.stringify(want.az), 'the three orders differ here');
+  eq(walletOrder(), want.az, 'Wallet: A to Z');
+  const w = wallet();
+  wBand('Utilities').click();
+  await until(() => w.state().open === 'g:Utilities' && !w.state().animating, 'Utilities open');
+  pickSort('total');
+  eq(walletOrder(), want.total, 'Wallet: by total');
+  eq(wCards()[0].querySelector('.w-name').textContent.trim(), 'Income', 'Income stays first');
+  eq(w.state().open, 'g:Utilities', 'the open card stays open');
+  eq(w.state().f, Math.min(want.total.indexOf('Utilities'), w.state().maxScroll), 'and is the front card, to close back into view');
+  eq(overlays.top(), 'wallet-card', 'still on the overlay stack, so Back closes it');
+  pickSort('items');
+  eq(walletOrder(), want.items, 'Wallet: by items, still open');
+  eq(w.state().open, 'g:Utilities', 'still open');
+  backIs('closed', 'Back closes the card');
+  await wSettled();
+  pickSort('total');
+  eq(w.state().f, 0, 'with no card open the stack goes back to the top');
+  viewBtn('grid').click();
+  eq(sectionOrder(), want.total, 'Grid: by total');
+  viewBtn('list').click();
+  eq(sectionOrder(), want.total, 'List: by total');
+  pickSort('items');
+  eq(sectionOrder(), want.items, 'List: by items');
+  viewBtn('grid').click();
+  eq(sectionOrder(), want.items, 'Grid: by items');
+  pickSort('az');
+  eq(sectionOrder(), want.az, 'Grid: A to Z');
+  viewBtn('wallet').click();
+  await wSettled();
+  await storage.remove(AARDVARK.id);
+  await reloadApp();
+});
+
+/* ------------------------------------------------------------------ Rolling totals */
+// js/count-anim.js on the Money strip and the Wallet card totals.
+const roller = () => $('#money-summary').roller;
+const rolling = () => $$('.odo');
+const rollsDone = () => until(() => roller().stats().running === 0 && !rolling().length, 'the rolls finish', 3000);
+const stripTexts = () => $$('#money-summary .summary-value').map(text);
+const bandLabels = () => $$('#wallet .w-band').map((b) => b.getAttribute('aria-label'));
+const odoAnimations = () => document.getAnimations().filter((a) => a.effect?.target?.closest?.('.odo'));
+const reloadApp = () => $('#money-summary').reload();
+const setMotion = (on) => { $('#set-motion').checked = on; $('#set-motion').dispatchEvent(new Event('change')); };
+/** Resolves when the toast next goes away (a repeated confirmation blinks), within `ms`. */
+function toastBlink(ms = 3000) {
+  return new Promise((resolve, reject) => {
+    const el = $('#toast');
+    const mo = new MutationObserver(() => { if (el.hidden) { mo.disconnect(); clearTimeout(t); resolve(); } });
+    const t = setTimeout(() => { mo.disconnect(); reject(new Error('Timed out: the toast did not go and come back')); }, ms);
+    mo.observe(el, { attributes: true, attributeFilter: ['hidden'] });
+  });
+}
+/** Pretend the app went to the background and came back. */
+function resumeApp() {
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+
+test('Rolling totals: play when the Money tab comes to the front and when the app comes back, not on redraws', async () => {
+  setMotion(false);
+  {
+    goTab('subs');
+    viewBtn('wallet').click();
+    await wSettled();
+    await rollsDone();
+    const texts = stripTexts();
+    let started = roller().stats().started;
+    goTab('settings');
+    goTab('subs');
+    assert(roller().stats().started >= started + 3, 'the strip rolls when the tab comes to the front');
+    assert($$('#money-summary .odo').length === 3, 'all three strip figures');
+    eq(stripTexts(), texts, 'the text is the final value all the way through');
+    assert(rolling().every((o) => o.querySelector('.odo-roll').getAttribute('aria-hidden') === 'true'), 'the rolling digits are hidden from screen readers');
+    assert(rolling().every((o) => getComputedStyle(o.querySelector('.odo-txt')).color === 'rgba(0, 0, 0, 0)'), 'the real text is there, transparent');
+    assert(!$('#money-summary [aria-live]') && !$$('#money-summary .odo [aria-live]').length, 'no live region');
+    await rollsDone();
+    eq(stripTexts(), texts, 'plain text again afterwards');
+    eq($$('#money-summary .summary-value').map((el) => el.children.length), [0, 0, 0], 'no leftover markup');
+
+    started = roller().stats().started;
+    $('#money-summary [data-period="monthly"]').click(); // a redraw: same period, same numbers
+    await reloadApp(); // and a full redraw, as after a sync
+    eq(roller().stats().started, started, 'a redraw with the same numbers does not roll');
+
+    $('#money-summary [data-period="annual"]').click();
+    assert(roller().stats().started > started, 'a changed figure rolls (old value to new)');
+    await rollsDone();
+    started = roller().stats().started;
+    $('#money-summary [data-period="monthly"]').click();
+    assert(roller().stats().started > started, 'and back');
+    await rollsDone();
+
+    started = roller().stats().started;
+    resumeApp();
+    assert(roller().stats().started >= started + 3, 'coming back to the app rolls them again');
+    await rollsDone();
+    started = roller().stats().started;
+    goTab('settings');
+    resumeApp();
+    eq(roller().stats().started, started, 'not while another tab is showing');
+    goTab('subs');
+    await rollsDone();
+  }
+});
+
+test('Rolling totals: the Wallet labels are unchanged; only cards near the screen roll, at most 10 at once', async () => {
+  const extra = Array.from({ length: 13 }, (_, i) => ({
+    ...base, id: `test-roll-${i}`, name: `Roll ${i}`, price: 1000 + i * 37, cycle: 'monthly', nextRenewal: day(Y, M, 4), category: `Roll group ${String(i).padStart(2, '0')}`,
+  }));
+  for (const s of extra) await storage.save(s);
+  await reloadApp();
+  try {
+    // The labels as they are with no roll (Reduce motion), then during a roll: the same.
+    setMotion(true);
+    goTab('subs');
+    viewBtn('wallet').click();
+    const still = bandLabels();
+    setMotion(false);
+    await wSettled();
+    eq(wCards().length, 17, '16 groups and Income');
+    eq(bandLabels(), still, 'redrawn: the same labels');
+    goTab('settings');
+    goTab('subs');
+    await wSettled();
+    const rolled = $$('#wallet .w-total .odo').length;
+    assert(rolled > 0, 'cards on screen roll');
+    assert(rolled < 16, `cards far off screen just show their total (${rolled} rolled)`);
+    assert(roller().stats().running <= 10, `at most 10 at once (${roller().stats().running})`);
+    eq(bandLabels(), still, 'during the roll: the same labels');
+    eq(wBand('Utilities').getAttribute('aria-label'), `Utilities, 2 items, ${text($('.w-total', wCard('Utilities')))} this month`, 'the label carries the final total, as before');
+    const top = wCards().slice(0, 3).map((c) => c.querySelector('.w-total'));
+    assert(top.every((el) => /\d/.test(text(el))), 'totals read as their final value');
+    await rollsDone();
+    eq(bandLabels(), still, 'afterwards: the same labels');
+  } finally {
+    for (const s of extra) await storage.remove(s.id);
+    await reloadApp();
+    goTab('subs');
+    await rollsDone();
+  }
+});
+
+test('Rolling totals: Reduce motion and effects: the number just changes, 0 animation frames', async () => {
+  setMotion(true);
+  try {
+    goTab('subs');
+    viewBtn('wallet').click();
+    await rollsDone();
+    const started = roller().stats().started;
+    goTab('settings');
+    goTab('subs');
+    resumeApp();
+    $('#money-summary [data-period="annual"]').click();
+    const annual = stripTexts();
+    $('#money-summary [data-period="monthly"]').click();
+    eq(roller().stats().started, started, 'nothing rolled');
+    eq(rolling().length, 0, 'no rolling markup');
+    eq(odoAnimations().length, 0, 'no animations');
+    assert(JSON.stringify(annual) !== JSON.stringify(stripTexts()), 'the figures still changed');
+  } finally { setMotion(false); }
+});
+
+test('Download CSV: live items only, with the BOM, columns, quoting and formula escaping, via the download path', async () => {
   goTab('settings');
   assert(text($('#btn-export-csv').closest('.setting-row')).includes('For spreadsheets, not a backup'), 'labelled as not a backup');
   const extra = [
@@ -1502,8 +1763,80 @@ test('Export as CSV: live items only, with the BOM, columns, quoting and formula
   assert(rows.includes(`CSV Past Annual,1200,TWD,annual,${cloudNext},Utilities,expense`), 'a past renewal shows its next date, as the app does');
   assert(rows.includes(`CSV Pay,40000,TWD,monthly,${nextOf(day(Y, M, 25))},,income`), 'income: no category');
   assert(rows.includes('CSV Undated,900,TWD,monthly,,Health,expense'), 'no date: blank');
-  await until(() => text($('#toast-text')) === `Exported ${live.length} items as CSV`, 'the toast');
+  await until(() => text($('#toast-text')) === `Saved substracker-${day(Y, M, now.getDate())}.csv`, 'the toast names the file');
   for (const s of extra) await storage.remove(s.id).catch(() => {});
+});
+
+/* ------------------------------------------------------------------ Copy CSV */
+
+test('Copy CSV: the downloaded file without its byte-order mark; "Copied N items" and "Saved <file>" every time', async () => {
+  goTab('settings');
+  const row = $('#btn-copy-csv').closest('.setting-row');
+  eq(row, $('#btn-export-csv').closest('.setting-row'), 'beside Download CSV');
+  eq(text($('#btn-export-csv')), 'Download CSV', 'renamed');
+  eq(text($('#btn-copy-csv')), 'Copy CSV', 'the new button');
+  assert(text(row).includes('For spreadsheets, not a backup'), 'labelled as not a backup');
+  for (const b of ['#btn-export-csv', '#btn-copy-csv']) assert(/for spreadsheets, not a backup$/.test($(b).getAttribute('aria-label')), `${b}: says so to screen readers too`);
+  const blobs = [];
+  const realUrl = URL.createObjectURL;
+  URL.createObjectURL = (b) => { blobs.push(b); return realUrl.call(URL, b); };
+  const toastSeen = async (msg) => {
+    await until(() => !$('#toast').hidden && text($('#toast-text')) === msg, msg);
+  };
+  try {
+    $('#btn-export-csv').click();
+    await until(() => blobs.length === 1, 'the file');
+    const file = `substracker-${day(Y, M, now.getDate())}.csv`;
+    await toastSeen(`Saved ${file}`);
+    // A second click: the confirmation goes and comes back, so it never looks like nothing happened.
+    const blink = toastBlink();
+    $('#btn-export-csv').click();
+    await until(() => blobs.length === 2, 'the second file');
+    await blink;
+    await toastSeen(`Saved ${file}`);
+  } finally { URL.createObjectURL = realUrl; }
+  const bytes = new Uint8Array(await blobs[0].arrayBuffer());
+  const fileText = new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
+  setClipboard('record');
+  try {
+    copied.length = 0;
+    $('#btn-copy-csv').click();
+    await until(() => copied.length === 1, 'copied');
+    eq(fileText.charCodeAt(0), 0xfeff, 'the file has the mark');
+    eq(copied[0], fileText.slice(1), 'the copy is the file minus the mark, byte for byte');
+    assert(copied[0].charCodeAt(0) !== 0xfeff, 'no mark on the clipboard');
+    const n = (await storage.getAll()).length;
+    await toastSeen(`Copied ${n} items`);
+    const blink = toastBlink();
+    $('#btn-copy-csv').click();
+    await until(() => copied.length === 2, 'copied again');
+    await blink;
+    await toastSeen(`Copied ${n} items`);
+    assert($('#csv-fallback').hidden, 'no fallback when the clipboard works');
+  } finally { setClipboard('real'); copied.length = 0; }
+});
+
+test('Copy CSV: a blocked clipboard shows the CSV selected, to copy by hand', async () => {
+  goTab('settings');
+  setClipboard('blocked');
+  try {
+    $('#btn-copy-csv').click();
+    await until(() => !$('#csv-fallback').hidden, 'the fallback');
+    const box = $('#csv-copy-text');
+    eq(document.activeElement, box, 'focused');
+    eq([box.selectionStart, box.selectionEnd], [0, box.value.length], 'all of it selected');
+    assert(box.readOnly, 'read-only');
+    // A textarea gives its value with LF line ends; the CSV itself has CRLF.
+    assert(box.value.startsWith('Name,Amount,Currency,Cycle,Next date,Category,Type\n') && box.value.charCodeAt(0) !== 0xfeff, 'the CSV, no mark');
+    eq(text($('#csv-fallback-text')), "Couldn't copy. Select the CSV below and copy it.", 'says what to do');
+    await until(() => text($('#toast-text')) === "Couldn't copy: the CSV is selected below", 'and a toast, so the click is seen to do something');
+  } finally { setClipboard('record'); }
+  try {
+    copied.length = 0;
+    $('#btn-copy-csv').click();
+    await until(() => copied.length === 1 && $('#csv-fallback').hidden, 'a working clipboard hides it again');
+  } finally { setClipboard('real'); copied.length = 0; }
+  goTab('subs');
 });
 
 /** The next monthly date on or after today for a stored YYYY-MM-DD in this month. */
@@ -1920,6 +2253,7 @@ async function run() {
   localStorage.removeItem('substracker.reduceMotion'); // unset: follows the system
   localStorage.removeItem('substracker.yearStack'); // unset, as on a fresh device: By category
   localStorage.removeItem('substracker.yearKey'); // unset: the year chart's key starts hidden
+  localStorage.removeItem('substracker.groupSort'); // unset: A to Z, the Money tab's order before Sort
   localStorage.removeItem('substracker.theme');
 
   // Bring in the app's own markup, then the app itself (which starts on import).

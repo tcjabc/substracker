@@ -1,4 +1,4 @@
-// "Export as CSV": the live items as a spreadsheet file. It is for reading in a spreadsheet, not a
+// "Export as CSV" (Download CSV, Copy CSV): the live items for a spreadsheet. It is for reading in a spreadsheet, not a
 // backup: it holds no settings, ids or sync data, and the app can't import it (the JSON export is
 // the backup). Pure functions, also used by the Node tests.
 //
@@ -49,11 +49,23 @@ export function itemRow(item) {
 const byName = (a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' });
 
 /**
- * The CSV text for `items` (live items, as storage.getAll() gives them), sorted by name, with the
- * byte-order mark first. Nothing that isn't an item gets in: the settings record and deleted items
- * aren't items, and anything without a name is left out too.
+ * The items that become rows: live items (as storage.getAll() gives them), sorted by name. Nothing
+ * that isn't an item gets in: the settings record and deleted items aren't items, and anything
+ * without a name is left out too.
  */
+export function csvItems(items) {
+  return items.filter((s) => s && typeof s.name === 'string' && s.id !== 'settings').sort(byName);
+}
+
+/**
+ * The CSV text for `items` without the byte-order mark: what "Copy CSV" puts on the clipboard
+ * (a pasted mark would land in the first cell). Same rows, columns and escaping as the file.
+ */
+export function itemsCsvText(items) {
+  return [CSV_COLUMNS, ...csvItems(items).map(itemRow)].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+/** The CSV file's text for `items` ("Download CSV"): the byte-order mark, then itemsCsvText. */
 export function itemsCsv(items) {
-  const rows = items.filter((s) => s && typeof s.name === 'string' && s.id !== 'settings').sort(byName).map(itemRow);
-  return CSV_BOM + [CSV_COLUMNS, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  return CSV_BOM + itemsCsvText(items);
 }

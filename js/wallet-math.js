@@ -198,6 +198,36 @@ export function walletGroups(items, { currency, period, year, month }) {
   return groups;
 }
 
+/* Group order ---------------------------------------------------------------------------------- */
+/** The Money tab's group orders (Sort, per device). 'az' is the order the tab always had, and the default. */
+export const GROUP_SORTS = Object.freeze(['az', 'total', 'items']);
+/** The order from the saved preference: a saved Total or Items is kept, else A–Z. */
+export const groupSortFrom = (pref) => (pref === 'total' || pref === 'items' ? pref : 'az');
+
+/**
+ * `groups` (walletGroups' cards, or anything with { name, income, items, total }) in the order
+ * `sort` asks for; Income stays first whatever the order. Only the groups move: their items and
+ * their colours stay as they are (colours follow the group, see app.js ensureGroupColors).
+ *   'az'     A–Z with Uncategorised last: walletGroups' own order, unchanged.
+ *   'total'  the period's cash in `currency` (the strip's basis), high to low. A group whose items
+ *            are all in other currencies has no total to compare, so those come after the rest,
+ *            most items first. A group with nothing due this period counts as 0.
+ *   'items'  number of items, high to low.
+ * Ties break A–Z (Uncategorised last). Returns a new array; `groups` isn't changed.
+ */
+export function sortGroups(groups, sort, currency) {
+  const mode = groupSortFrom(sort);
+  const income = groups.filter((g) => g.income);
+  const rest = groups.filter((g) => !g.income);
+  if (mode === 'az') return [...income, ...rest.slice().sort((a, b) => byGroupName(a.name, b.name))];
+  const count = (g) => g.items?.length ?? 0;
+  const foreignOnly = (g) => count(g) > 0 && g.items.every((s) => s.currency !== currency);
+  const cmp = mode === 'items'
+    ? (a, b) => count(b) - count(a)
+    : (a, b) => foreignOnly(a) - foreignOnly(b) || (foreignOnly(a) ? count(b) - count(a) : (b.total || 0) - (a.total || 0));
+  return [...income, ...rest.slice().sort((a, b) => cmp(a, b) || byGroupName(a.name, b.name))];
+}
+
 /** "+1 in USD", "+2 in USD · +1 in JPY", or ''. */
 export const othersText = (others) => others.map((o) => `+${o.count} in ${o.currency}`).join(' · ');
 

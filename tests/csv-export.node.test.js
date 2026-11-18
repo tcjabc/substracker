@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { itemsCsv, csvCell, itemRow, itemDate, CSV_BOM, CSV_COLUMNS } from '../js/csv-export.js';
+import { itemsCsv, itemsCsvText, csvItems, csvCell, itemRow, itemDate, CSV_BOM, CSV_COLUMNS } from '../js/csv-export.js';
 import { yearStackFrom, dayStamp, todayStamp } from '../js/util.js';
 
 const now = new Date();
@@ -92,6 +92,30 @@ test('only items: no settings record, nothing without a name', () => {
   const csv = itemsCsv([item({ name: 'Kept' }), { id: 'settings', fields: { defaultCurrency: 'TWD' } }, { id: 'settings', name: 'settings' }, null, { id: 'x' }]);
   assert.deepEqual(lines(csv).slice(1, -1).map((l) => l.split(',')[0]), ['Kept']);
   assert.equal(lines(itemsCsv([])).length, 2, 'just the header for an empty list');
+});
+
+test('Copy CSV: exactly the downloaded file without the byte-order mark', () => {
+  const sets = [
+    [],
+    [item()],
+    [item({ name: 'Rent, "flat 2"' }), item({ name: '=cmd|calc', category: '@SUM(1)' }), item({ name: '中華電信 5G', cycle: 'once', date: '2027-02-03', nextRenewal: '' }),
+      item({ name: 'two\nlines', type: 'income', category: 'ignored' }), item({ name: '\tTabbed', price: 9.5 }), item({ name: '-5 off', cycle: 'annual' }),
+      { id: 'settings', fields: { defaultCurrency: 'TWD' } }, null, { id: 'x' }],
+  ];
+  for (const items of sets) {
+    const file = itemsCsv(items), copy = itemsCsvText(items);
+    assert.equal(file, CSV_BOM + copy, `${items.length} items: the file is the mark plus the copy`);
+    assert.notEqual(copy.charCodeAt(0), 0xfeff, 'no mark on the clipboard');
+    assert.ok(!copy.includes(CSV_BOM), 'no mark anywhere');
+    assert.equal(copy.split('\r\n').length - 2, csvItems(items).length, 'one line per counted item, plus the header');
+  }
+  // The escaping cases come through the copy the same way.
+  const copy = itemsCsvText(sets[2]);
+  assert.ok(copy.startsWith('Name,Amount,Currency,Cycle,Next date,Category,Type\r\n'), 'header first');
+  for (const cell of ['"Rent, ""flat 2"""', "'=cmd|calc", "'@SUM(1)", '"two\nlines"', "'\tTabbed", "'-5 off", '中華電信 5G']) {
+    assert.ok(copy.includes(cell), `copy has ${JSON.stringify(cell)}`);
+  }
+  assert.equal(csvItems(sets[2]).length, 6, 'the settings record, null and the nameless entry are not items');
 });
 
 test('year chart stacking: By category unless this device saved By type', () => {

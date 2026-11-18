@@ -5,19 +5,20 @@ import { overlays, createBackHandler, setBackHandler, pressBack } from './overla
 import { SERVICES, DEFAULT_CATEGORIES, matchService, cleanDomain } from './services.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
-import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES } from './wallet-math.js';
+import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, sortGroups, groupSortFrom } from './wallet-math.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
-import { initImportAiSheet } from './import-ai-sheet.js';
+import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
-import { itemsCsv } from './csv-export.js';
+import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
+import { createRoller } from './count-anim.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
 import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight, shareText } from './donut-flat.js';
 import {
-  CURRENCIES, localeCurrency, uid, esc, money, cycleLabel, isIncome, isOnce, firstEmoji,
+  CURRENCIES, localeCurrency, uid, esc, money, moneyParts, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
   chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom,
 } from './util.js';
@@ -26,7 +27,7 @@ import {
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 
 // Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
 // colour syncs as { name, swatch } with one of these keys.
@@ -50,6 +51,7 @@ const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
   view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List, per device
+  groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups whose colour someone chose (left alone by the automatic colours)
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
@@ -188,6 +190,10 @@ async function init() {
   });
   bindEditTaps();
   bindGroupColors();
+  bindSortMenu();
+  // For tests, like the wallet's host.wallet: the rolling totals, and reading the data again.
+  $('#money-summary').roller = roller;
+  $('#money-summary').reload = () => reloadData();
   bindDialogFormFallback();
   bindBackButton();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
@@ -316,6 +322,7 @@ function bindTabs() {
 }
 
 function setTab(tab, { focus = true } = {}) {
+  const was = state.tab;
   state.tab = tab;
   storage.setPref('tab', tab);
   $$('.tab').forEach((t) => {
@@ -334,6 +341,8 @@ function setTab(tab, { focus = true } = {}) {
   document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') renderInsights();
+  // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
+  if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); }
   // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
   if (walletShown()) wallet?.relayout();
 }
@@ -365,11 +374,14 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 
 
 /* Group colours ------------------------------------------------------------- */
 /**
- * Give every expense group a colour, in display (stack) order. A colour someone chose stays exactly
- * as it is. The others come from the Wallet palette (js/wallet-math.js assignAutoColours): up to 15
- * groups get 15 different colours in palette order, more cycle, and an automatic colour is never
- * the same as the group's neighbour. An automatic colour from the old ten moves to the new palette.
- * Income has no colour.
+ * Give every expense group a colour, in A–Z group order (the default stack order). A colour someone
+ * chose stays exactly as it is. The others come from the Wallet palette (js/wallet-math.js
+ * assignAutoColours): up to 15 groups get 15 different colours in palette order, more cycle, and an
+ * automatic colour is never the same as the group's A–Z neighbour. An automatic colour from the old
+ * ten moves to the new palette. Income has no colour.
+ * Sort (Total or Items) never changes a colour: colours follow the group, so a group looks the same
+ * in every order and in Insights. The neighbour guarantee is for A–Z order only; another order can
+ * put two similar (or, past 15 groups, equal) colours next to each other. See the README.
  */
 function ensureGroupColors() {
   const map = state.settings.groupColors;
@@ -455,6 +467,82 @@ function bindGroupColors() {
   window.addEventListener('resize', () => close(false));
 }
 
+/* Sort groups --------------------------------------------------------------- */
+const SORT_NAMES = { az: 'A to Z', total: 'Total, high to low', items: 'Items, most first' };
+
+/** The Sort button shows the order in use (its label, and its colour when it isn't A–Z). */
+function renderSortButton() {
+  const btn = $('#sort-btn');
+  btn.dataset.sort = state.groupSort;
+  btn.setAttribute('aria-label', `Sort groups: ${SORT_NAMES[state.groupSort]}`);
+  $$('#sort-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
+}
+
+// The Sort menu: opened from the header's Sort button on the Money tab. A menu of three radio items
+// (arrow keys, Home, End, Enter or Space; Escape, Tab or Back close it). On the overlay stack, so
+// Android Back closes it. The choice is this device's own (localStorage); never synced or exported.
+function bindSortMenu() {
+  const btn = $('#sort-btn');
+  const menu = $('#sort-menu');
+  const items = () => $$('.menu-item', menu);
+
+  const close = (refocus) => {
+    overlays.remove('sort-menu');
+    if (menu.hidden) return;
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    if (refocus) btn.focus();
+  };
+  const open = () => {
+    renderSortButton();
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    overlays.open('sort-menu', { close: () => close(true), isOpen: () => !menu.hidden, isShown: () => state.tab === 'subs' });
+    // Under the button, right edges lined up, inside the side gutter.
+    const r = btn.getBoundingClientRect();
+    const gutter = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    menu.style.top = `${r.bottom + gutter / 4}px`;
+    menu.style.left = `${Math.max(gutter, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - gutter))}px`;
+    (items().find((b) => b.getAttribute('aria-checked') === 'true') ?? items()[0]).focus();
+  };
+  const choose = (sort) => {
+    close(true);
+    const next = groupSortFrom(sort);
+    if (next === state.groupSort) return;
+    state.groupSort = next;
+    storage.setPref('groupSort', next);
+    renderSubs({ reorder: true });
+  };
+
+  btn.addEventListener('click', () => { if (menu.hidden) open(); else close(true); });
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sort]');
+    if (b) choose(b.dataset.sort);
+  });
+  menu.addEventListener('keydown', (e) => {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    let j = null;
+    if (e.key === 'ArrowDown') j = (i + 1) % list.length;
+    else if (e.key === 'ArrowUp') j = (i - 1 + list.length) % list.length;
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = list.length - 1;
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
+    else if (e.key === 'Tab') { close(false); return; }
+    if (j === null) return;
+    e.preventDefault();
+    list[j].focus();
+  });
+  btn.addEventListener('keydown', (e) => {
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menu.hidden) { e.preventDefault(); open(); }
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) close(false);
+  });
+  window.addEventListener('resize', () => close(false));
+  renderSortButton();
+}
+
 function renewalTag(sub) {
   const d = nextRenewal(sub);
   if (!d) return '';
@@ -486,7 +574,7 @@ function walletViewport() {
   return { height, inset };
 }
 
-function renderWallet(list) {
+function renderWallet(list, { reorder = false } = {}) {
   if (!walletHost) {
     walletHost = document.createElement('div');
     walletHost.id = 'wallet';
@@ -497,46 +585,50 @@ function renderWallet(list) {
       viewport: walletViewport,
       logo: (s, size) => logoHTML(s, size, { neutral: true, defer: true }),
       loadLogos: loadDeferredLogos,
+      // A card's total rolls when it changes (js/count-anim.js); only cards on or near the screen.
+      total: (el, g, near) => roller.show(g.total > 0 ? el : null, `wallet:${g.key}`, g.total, state.settings.defaultCurrency, { visible: near && moneyOnScreen() }),
     });
     walletHost.wallet = wallet; // for tests, like the year chart's host.yearChart
   }
   if (walletHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(walletHost); }
   const cur = state.settings.defaultCurrency;
   const now = new Date();
-  const groups = walletGroups(state.subs, { currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() })
-    .map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
-  wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() });
+  const groups = moneyGroups().map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
+  wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() }, { reorder });
 }
 
-function renderSubs() {
+/**
+ * The Money tab's groups in the order Sort asks for (Income first, then the expense groups), on
+ * the strip's cash basis for the period: js/wallet-math.js walletGroups and sortGroups. The
+ * Wallet, Grid and List all draw from this, so they always agree.
+ */
+function moneyGroups() {
+  const now = new Date();
+  const cur = state.settings.defaultCurrency;
+  const groups = walletGroups(state.subs, { currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() });
+  return sortGroups(groups, state.groupSort, cur);
+}
+
+function renderSubs({ reorder = false } = {}) {
   const list = $('#subs-list');
   const all = state.subs;
 
   $$('.seg-btn[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === state.view));
+  renderSortButton();
   $('#subs-empty').hidden = all.length > 0;
   list.hidden = all.length === 0;
   $('#money-summary').hidden = all.length === 0;
   renderMoneySummary();
   document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
   if (state.view === 'wallet') {
-    if (all.length) renderWallet(list); else { wallet?.close(); list.textContent = ''; }
+    if (all.length) renderWallet(list, { reorder }); else { wallet?.close(); list.textContent = ''; }
     return;
   }
   wallet?.close();
 
-  // Income first (an implicit section, no categories), then expenses grouped by category.
-  const groups = [];
-  const income = all.filter(isIncome).sort(byName);
-  if (income.length) groups.push({ name: 'Income', items: income });
-  const cats = new Map();
-  for (const s of all) {
-    if (isIncome(s)) continue;
-    const k = groupOf(s);
-    if (!cats.has(k)) cats.set(k, []);
-    cats.get(k).push(s);
-  }
-  [...cats.keys()].sort(byGroupName)
-    .forEach((k) => groups.push({ name: k, items: cats.get(k).sort(byName), colour: true }));
+  // Income first (an implicit section, no categories), then expenses grouped by category, in the
+  // order Sort asks for (items A–Z within each group).
+  const groups = moneyGroups().map((g) => ({ name: g.name, items: g.items, colour: !g.income }));
 
   const isList = state.view === 'list';
   list.innerHTML = groups.map((g, i) => {
@@ -566,7 +658,7 @@ function renderMoneySummary() {
   const cell = (label, value, cls = '', sub = '') => `
     <div class="summary-cell${cls}">
       <div class="stat-label">${label}</div>
-      <div class="summary-value">${esc(money(value, cur))}</div>
+      <div class="summary-value" data-roll="${label}" data-value="${value}">${esc(money(value, cur))}</div>
       ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
     </div>`;
 
@@ -585,7 +677,21 @@ function renderMoneySummary() {
     </div>
     ${undated.length ? `<button type="button" class="summary-note summary-note-action" data-id="${esc(undated[0].id)}">Excludes ${plural(undated.length, 'undated item')}</button>` : ''}
     ${others ? `<p class="summary-note">${esc(cur)} only. ${plural(others, 'item')} in other currencies ${others === 1 ? "isn't" : "aren't"} included.</p>` : ''}`;
+  // The three figures roll when they change, when the tab comes to the front and when the app comes back.
+  $$('#money-summary [data-roll]').forEach((el) => roller.show(el, `strip:${el.dataset.roll}`, Number(el.dataset.value), cur, { visible: moneyOnScreen() }));
 }
+
+/* Rolling totals (js/count-anim.js) ------------------------------------------ */
+// Up to 10 at once: the strip's three and the cards on screen. Never with Reduce motion and effects.
+const roller = createRoller({ reduced: () => reduceEffects(), parts: moneyParts, text: money, cap: 10 });
+/** Whether the Money tab is what's on screen (so a total that changes can be seen to change). */
+const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState === 'visible';
+// Coming back to the app on the Money tab plays them again, like coming back to the tab.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || state.tab !== 'subs' || !state.subs.length) return;
+  roller.replay();
+  renderSubs();
+});
 
 function onceDate(s) {
   const d = isOnce(s) ? parseDate(s.date) : null;
@@ -1392,6 +1498,7 @@ function bindSettings() {
 
   $('#btn-export').addEventListener('click', exportData);
   $('#btn-export-csv').addEventListener('click', exportCsv);
+  $('#btn-copy-csv').addEventListener('click', copyCsv);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -1476,17 +1583,48 @@ async function exportData() {
   }
 }
 
-/** "Export as CSV": the live items for a spreadsheet, through the same share sheet or download as a backup. */
+/** "Download CSV": the live items for a spreadsheet, through the same share sheet or download as a backup. */
 async function exportCsv() {
   try {
     const items = await storage.getAll();
+    const name = `substracker-${todayStamp()}.csv`;
     const blob = new Blob([itemsCsv(items)], { type: 'text/csv;charset=utf-8' });
-    const delivered = await deliverFile(blob, `substracker-${todayStamp()}.csv`, { dialogTitle: 'Save or send the CSV file' });
-    if (delivered) toast(`Exported ${plural(items.length, 'item')} as CSV`);
+    const delivered = await deliverFile(blob, name, { dialogTitle: 'Save or send the CSV file' });
+    if (delivered) toast(`Saved ${name}`, null, { again: true });
     return delivered === true;
   } catch (err) {
     console.error(err);
     toast('CSV export failed.');
+    return false;
+  }
+}
+
+/**
+ * "Copy CSV": the same rows, columns and escaping as Download CSV, without the byte-order mark,
+ * on the clipboard. Where the clipboard is blocked (some browsers, iPhone Safari, Android WebView)
+ * the CSV is shown selected under the row, to copy by hand, as Import with AI does with its prompt.
+ */
+async function copyCsv() {
+  const fallback = $('#csv-fallback');
+  const box = $('#csv-copy-text');
+  try {
+    const items = await storage.getAll();
+    const text = itemsCsvText(items);
+    const n = csvItems(items).length;
+    if (await copyText(text, null)) {
+      fallback.hidden = true;
+      toast(`Copied ${plural(n, 'item')}`, null, { again: true });
+      return true;
+    }
+    box.value = text;
+    fallback.hidden = false;
+    box.focus();
+    box.select();
+    toast("Couldn't copy: the CSV is selected below", null, { again: true });
+    return false;
+  } catch (err) {
+    console.error(err);
+    toast('Copy failed.');
     return false;
   }
 }
@@ -1548,9 +1686,21 @@ async function importFile(file) {
    Toast, storage persistence, service worker
    -------------------------------------------------------------------------- */
 let toastTimer;
-function toast(text, action) {
+/**
+ * Show `text` for a moment (or until its `action` is used, when sticky). `again`: a confirmation
+ * that may repeat (Copied, Saved): when the same text is already showing it goes away and comes
+ * back, so a second click is seen (and announced) to have worked too.
+ */
+function toast(text, action, { again = false } = {}) {
   const el = $('#toast');
   const btn = $('#toast-action');
+  if (again && !el.hidden && $('#toast-text').textContent === text) {
+    el.hidden = true;
+    $('#toast-text').textContent = '';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast(text, action), 60);
+    return;
+  }
   $('#toast-text').textContent = text;
   btn.hidden = !action;
   btn.onclick = action ? () => { el.hidden = true; action.run(); } : null;
