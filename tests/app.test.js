@@ -1348,7 +1348,14 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; a
   for (const theme of ['light', 'dark']) {
     $('#set-theme').value = theme; $('#set-theme').dispatchEvent(new Event('change'));
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    eq([fill('Health'), fill('Utilities'), fill('Uncategorised')], ['--wallet-1', '--wallet-2', '--wallet-3'].map(cssToken), `${theme}: slots 1–3 in order`);
+    // Every group has a shared slot in the record (js/group-slots.js); its card draws that slot's colour.
+    const rec = await storage.getSettingsRecord();
+    for (const g of ['Health', 'Utilities', 'Uncategorised']) {
+      const v = rec.fields[storage.colorField(g)];
+      assert(v && Number.isInteger(v.slot) && v.auto === true && v.swatch === `w${v.slot + 1}`, `${g}: a shared automatic slot`);
+      eq(fill(g), cssToken(`--wallet-${v.slot + 1}`), `${theme}: ${g} draws slot ${v.slot}`);
+    }
+    eq(rec.fields[storage.colorField('Utilities')].slot, 13, 'Utilities is a default group: its fixed slot');
     eq(fill('Income'), cssToken('--wallet-income'), `${theme}: Income is neutral`);
     for (const c of wCards()) {
       const ink = parseColour(getComputedStyle(c).color);
@@ -1366,13 +1373,15 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; a
   eq($$('#swatch-grid [data-swatch]').map((b) => b.dataset.swatch), Array.from({ length: 15 }, (_, i) => `w${i + 1}`), 'the 15 slot colours, no old g ones');
   $('#swatch-grid [data-swatch="w8"]').click();
   await until(async () => (await storage.getSettings()).groupColors.Health === 'w8', 'saved as a pick');
-  eq((await storage.getSettings()).groupSlots, { Health: 7 }, 'with its slot');
+  eq((await storage.getSettings()).groupSlots.Health, 7, 'with its slot');
+  eq((await storage.getSettingsRecord()).fields[storage.colorField('Health')], { name: 'Health', swatch: 'w8', slot: 7 }, 'a pick: no auto');
   viewBtn('wallet').click();
   await wSettled();
   eq(fill('Health'), cssToken('--wallet-8'), 'the picked slot colour');
   eq(fill('Utilities'), cssToken('--wallet-2'), 'the others keep theirs');
   const fills = wCards().map((c) => c.style.getPropertyValue('--card'));
-  assert(fills.every((f, i) => i === 0 || f !== fills[i - 1]), 'no two neighbours alike');
+  const divided = wCards().map((c) => c.classList.contains('w-divide'));
+  assert(fills.every((f, i) => i === 0 || f !== fills[i - 1] || divided[i]), 'two neighbours alike always get a divider');
   // A backup carries the picked colour only: automatic Wallet colours stay on this device.
   const blobs = [];
   const realUrl = URL.createObjectURL;
@@ -1382,9 +1391,12 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; a
     await until(() => blobs.length === 1, 'the backup file');
   } finally { URL.createObjectURL = realUrl; }
   const file = JSON.parse(await blobs[0].text());
-  eq(file.settings.groupColors, { Health: 'w8' }, 'only the picked colour is in the backup');
-  eq(file.settings.groupSlots, { Health: 7 }, 'with its slot');
-  assert(Object.values((await storage.getSettings()).groupColors).some(isWalletKey), 'the automatic colours are kept on the device');
+  // A backup carries the household's colours: the pick and the shared automatic slots, all with slots.
+  const shared = storage.settingsFromRecord(await storage.getSettingsRecord());
+  eq(file.settings.groupColors, shared.groupColors, 'the household\'s colours, as in the record');
+  eq(file.settings.groupSlots, shared.groupSlots, 'with their slots');
+  eq(file.settings.groupColors.Health, 'w8', 'the pick among them');
+  assert(Object.values(file.settings.groupColors).every(isWalletKey), 'all slot colours here');
 });
 
 test('Wallet: Reduce motion and effects: a plain list, no tilt or springs; a card opens and closes at once', async () => {
@@ -2387,11 +2399,11 @@ test('Import with AI: Replace all with the backup button beside it, at both step
 
 /* ------------------------------------------------------------------ Wallet divider */
 
-// The Wallet's stronger divider (js/wallet.js markDividers, js/wallet-math.js dividerIndices): under
-// Total and Items, above a card whose colour is within ΔE 26 of the card before it, in normal vision
-// or any colour-vision deficiency, with the theme's own colours. A–Z keeps today's look. Three groups
-// of its own, two of them with the same picked colour, after the Import with AI test left two items.
-test('Wallet divider: Total and Items mark close neighbours with a band of page colour; A–Z as today; both themes; reduced', async () => {
+// The Wallet's stronger divider (js/wallet.js markDividers, js/wallet-math.js dividerIndices): in
+// every sort, above a card whose colour is within ΔE 26 of the card before it, in normal vision or
+// any colour-vision deficiency, with the theme's own colours; nowhere else. Three groups of its own,
+// two of them with the same (old) picked colour, after the Import with AI test left two items.
+test('Wallet divider: every sort marks exactly the close neighbours with a band of page colour; both themes; reduced', async () => {
   const at = { ...base, cycle: 'monthly', nextRenewal: day(Y, M, 3), currency: 'TWD' };
   const extra = [
     { ...at, id: 'test-div-a', name: 'Alpha', price: 900, category: 'Dv Alpha' },
@@ -2409,10 +2421,7 @@ test('Wallet divider: Total and Items mark close neighbours with a band of page 
   const expected = () => dividerIndices(wCards().map((c) => parseColour(c.style.getPropertyValue('--card')))).map((i) => names()[i]);
   const setTheme = async (v) => { $('#set-theme').value = v; $('#set-theme').dispatchEvent(new Event('change')); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); };
   try {
-    pickSort('az');
-    await wSettled();
-    eq(divided(), [], 'A–Z: no dividers, today\'s look');
-    for (const sort of ['total', 'items']) {
+    for (const sort of ['az', 'total', 'items']) {
       pickSort(sort);
       await wSettled();
       eq(divided(), expected(), `${sort}: exactly the close neighbours`);
