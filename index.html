@@ -124,6 +124,30 @@
         </div>
       </div>
 
+      <div class="settings-group" id="due-settings">
+        <h2 class="group-title" data-i18n="settings.dueSoon">Due soon</h2>
+        <div class="panel">
+          <label class="setting-row">
+            <span class="setting-label" data-i18n="settings.dueSoon.show">
+              Show due-soon banner
+              <span class="setting-hint" data-i18n="settings.dueSoon.show.hint">A line on the Money tab with what comes due soon. Closing it hides it until tomorrow.</span>
+            </span>
+            <input type="checkbox" class="check" id="set-due">
+          </label>
+          <label class="setting-row">
+            <span class="setting-label" data-i18n="settings.dueSoon.window">Look ahead</span>
+            <select id="set-due-days" class="input input-compact"></select>
+          </label>
+          <label class="setting-row">
+            <span class="setting-label" data-i18n="settings.dueSoon.income">
+              Include upcoming income
+              <span class="setting-hint" data-i18n="settings.dueSoon.income.hint">Also list income with a payment date coming up.</span>
+            </span>
+            <input type="checkbox" class="check" id="set-due-income">
+          </label>
+        </div>
+      </div>
+
       <div class="settings-group">
         <h2 class="group-title" data-i18n="settings.sync.title">Sync</h2>
         <div class="panel">

@@ -14,7 +14,7 @@ import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
 import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays } from './i18n.js';
-import { dueSoon, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
+import { dueSoon, WINDOWS, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -678,6 +678,25 @@ function bindDueBanner() {
     renderSubs(); // the Wallet measures its space again, without the banner
     $('.seg-btn[data-view][aria-pressed="true"]')?.focus();
   });
+}
+
+/** Settings → Due soon: show the banner, how many days ahead, and whether income is listed. */
+function bindDueSettings() {
+  const show = $('#set-due');
+  const days = $('#set-due-days');
+  const income = $('#set-due-income');
+  days.innerHTML = WINDOWS.map((n) => `<option value="${n}">${esc(t('settings.dueSoon.days', { count: n }))}</option>`).join('');
+  const set = dueSettings();
+  show.checked = set.on;
+  days.value = String(set.windowDays);
+  income.checked = set.includeIncome;
+  show.addEventListener('change', () => { storage.setPref('dueSoon', show.checked ? 'on' : 'off'); renderSubs(); });
+  days.addEventListener('change', () => {
+    storage.setPref('dueSoonDays', days.value);
+    storage.setPref('dueSoonDismissed', ''); // a new window shows the banner again at once
+    renderSubs();
+  });
+  income.addEventListener('change', () => { storage.setPref('dueSoonIncome', income.checked ? 'on' : 'off'); renderSubs(); });
 }
 
 /** Whether the Wallet is what the Money tab shows right now. */
@@ -1643,6 +1662,7 @@ function bindSettings() {
   });
 
   bindLanguage();
+  bindDueSettings();
 
   // Per device, like the theme: a localStorage preference, never synced or exported.
   $('#set-motion').addEventListener('change', (e) => {
