@@ -1378,7 +1378,7 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; a
   viewBtn('wallet').click();
   await wSettled();
   eq(fill('Health'), cssToken('--wallet-8'), 'the picked slot colour');
-  eq(fill('Utilities'), cssToken('--wallet-2'), 'the others keep theirs');
+  eq(fill('Utilities'), cssToken('--wallet-14'), 'the others keep theirs (Utilities: its fixed slot 13)');
   const fills = wCards().map((c) => c.style.getPropertyValue('--card'));
   const divided = wCards().map((c) => c.classList.contains('w-divide'));
   assert(fills.every((f, i) => i === 0 || f !== fills[i - 1] || divided[i]), 'two neighbours alike always get a divider');
