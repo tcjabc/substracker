@@ -79,6 +79,33 @@ for (const [tz, offsets] of Object.entries(ZONES)) {
   }
 }
 
+// Outside the callers' domain (kept out of the grid above): a year or month that isn't a whole
+// number of type number, or a month outside 0–11. On purpose, the current code gives no days and
+// no cash for all of them. Where 1.19.0 answered something else, it's listed here.
+const OUTSIDE_DIFFERS = {
+  // The nine cases from the probe after the stepper went in. Four still differ from 1.19.0 (it
+  // answered NaN days or rolled the text '1' into a month); the other five are 1.19.0's answer again.
+  'monthly 2026-01-31 (2026, NaN)': { stepDays: [null], due: 100 },
+  'monthly 2026-01-31 (NaN, 0)': { stepDays: [null], due: 100 },
+  "monthly 2026-01-31 (2026, '1')": { stepDays: [30], due: 100 },
+  'annual 2026-01-15 (NaN, 0)': { stepDays: [null], due: 100 },
+  // The same rule for a monthly item: 1.19.0 rolled these months over into the next or last year.
+  'monthly 2026-01-31 (2026, 12)': { stepDays: [31], due: 100 },
+  'monthly 2026-01-31 (2027, -1)': { stepDays: [31], due: 100 },
+  'monthly 2026-01-31 (2026, 13)': { stepDays: [28], due: 100 },
+  'monthly 2026-01-31 (2026, 1.5)': { stepDays: [28], due: 100 },
+};
+
+for (const tz of Object.keys(ZONES)) {
+  test(`${tz}: outside the callers' domain, no days and no cash, and exactly these answers differ from 1.19.0`, async () => {
+    const { outside } = (await results)[tz];
+    assert.equal(outside.length, 28);
+    for (const c of outside) assert.deepEqual(c.now, { stepDays: [], due: 0 }, c.label);
+    const differs = Object.fromEntries(outside.filter((c) => JSON.stringify(c.old) !== JSON.stringify(c.now)).map((c) => [c.label, c.old]));
+    assert.deepEqual(differs, OUTSIDE_DIFFERS);
+  });
+}
+
 test('the fixed bugs, a few of their differences by example', async () => {
   const { a, b } = (await results)['America/New_York'].diffs;
   for (const line of [

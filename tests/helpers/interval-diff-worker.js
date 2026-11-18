@@ -195,9 +195,23 @@ eachDay(2023, 0, 1, 2026, 11, 31, (y, m, d) => {
   }
 }
 
+// 6. Outside the callers' domain, kept apart from the grid and its counts: a year or month that is
+// not a whole number of type number, or a month outside 0–11. Nothing in the app asks for these;
+// the current code answers [] and 0 on purpose (js/interval.js isYearMonth). Reported for every
+// case, with 1.19.0's answer beside it.
+const outside = [];
+for (const [cycle, anchor] of [['monthly', '2026-01-31'], ['annual', '2026-01-15'], ['annual', '2026-12-15'], ['once', '2027-01-10']]) {
+  const s = item(anchor, cycle);
+  for (const [qy, qm] of [[2026, 12], [2027, -1], [2026, 13], [2026, NaN], [NaN, 0], [2026, 1.5], [2026, '1']]) {
+    const old = { stepDays: oldStepDays(s, qy, qm), due: oldCalc.dueInMonth(s, qy, qm) };
+    const now = { stepDays: newStepDays(s, qy, qm), due: newCalc.dueInMonth(s, qy, qm) };
+    outside.push({ label: `${cycle} ${anchor} (${String(qy)}, ${typeof qm === 'string' ? `'${qm}'` : String(qm)})`, old: JSON.parse(JSON.stringify(old)), now });
+  }
+}
+
 const offsets = [new Date(2026, 0, 15, 12), new Date(2026, 6, 15, 12)].map((d) => d.getTimezoneOffset());
 const cap = (list, n = Infinity) => ({ count: list.length, sample: list.slice(0, n) });
 process.stdout.write(`${JSON.stringify({
   tz: process.env.TZ, resolved: Intl.DateTimeFormat().resolvedOptions().timeZone, offsets, compared, sections,
-  diffs: { a: cap(diffs.a), b: cap(diffs.b), unexpected: cap(diffs.unexpected, 50) },
+  diffs: { a: cap(diffs.a), b: cap(diffs.b), unexpected: cap(diffs.unexpected, 50) }, outside,
 })}\n`);

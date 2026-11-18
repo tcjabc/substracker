@@ -166,14 +166,23 @@ export function between(anchor, interval, from, to, { limit = MAX_RESULTS } = {}
   return out;
 }
 
-/** The occurrences in `month` (0–11) of `year`, earliest first. */
+/**
+ * True for a month the app can ask about: `year` a whole number and `month` a whole number 0–11,
+ * both of type number (nothing is coerced: the string '1' is no month).
+ */
+const isYearMonth = (year, month) => typeof year === 'number' && Number.isInteger(year)
+  && typeof month === 'number' && Number.isInteger(month) && month >= 0 && month <= 11;
+
+/** The occurrences in `month` (0–11) of `year`, earliest first; [] for any other year or month. */
 export function inMonth(anchor, interval, year, month) {
+  if (!isYearMonth(year, month)) return [];
   const first = normalizeDay({ year, month, day: 1 });
   return between(anchor, interval, first, { ...first, day: daysInMonth(first.year, first.month) });
 }
 
-/** How many occurrences fall in `month` (0–11) of `year`: worked out directly, never listed. */
+/** How many occurrences fall in `month` (0–11) of `year`, worked out directly; 0 for any other year or month. */
 export function countInMonth(anchor, interval, year, month) {
+  if (!isYearMonth(year, month)) return 0;
   checkAnchor(anchor);
   const s = stepOf(interval);
   const first = normalizeDay({ year, month, day: 1 });

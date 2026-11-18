@@ -13,6 +13,8 @@ import {
   isDay, normalizeDay, compareDays, dayOf, dateOf, occurrence, indexOnOrAfter, nextOnOrAfter, previousBefore, between,
   inMonth, countInMonth,
 } from '../js/interval.js';
+import { stepDays } from '../js/calendar-math.js';
+import { dueInMonth, incomeInMonth } from '../js/insights-calc.js';
 
 const D = (year, month1, day) => ({ year, month: month1 - 1, day }); // month written 1–12 here
 const iso = (d) => `${String(d.year).padStart(4, '0')}-${String(d.month + 1).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
@@ -175,4 +177,45 @@ test('bad input is refused, never stepped', () => {
   assert.throws(() => nextOnOrAfter(D(2026, 1, 1), MONTHLY, { year: NaN, month: 0, day: 1 }), TypeError);
   assert.throws(() => between(D(2026, 1, 1), MONTHLY, D(2026, 1, 1), { year: 2026, month: NaN, day: 1 }), TypeError);
   assert.deepEqual(isoDate('2026-11-19'), D(2026, 11, 19));
+});
+
+test('a year or month the app never asks about gives nothing, never a throw: inMonth [] and countInMonth 0', () => {
+  const a = D(2026, 1, 15);
+  for (const [year, month] of [[2026, 12], [2027, -1], [2026, 13], [2026, NaN], [NaN, 0], [2026, 1.5], [2026, '1'],
+    ['2026', 0], [Infinity, 0], [2026, Infinity], [2026.5, 0], [undefined, 0], [2026, null], [2026, -0.5]]) {
+    for (const interval of [MONTHLY, ANNUAL, every(1, 'week'), every(3, 'day')]) {
+      assert.deepEqual(inMonth(a, interval, year, month), [], `inMonth(${String(year)}, ${JSON.stringify(month) ?? month})`);
+      assert.equal(countInMonth(a, interval, year, month), 0, `countInMonth(${String(year)}, ${JSON.stringify(month) ?? month})`);
+    }
+  }
+  assert.deepEqual(inMonth(a, MONTHLY, 2026, 0).map(iso), ['2026-01-15'], 'whole numbers 0–11 as before');
+  assert.equal(countInMonth(a, MONTHLY, 2026, 11), 1);
+  assert.deepEqual(inMonth(a, MONTHLY, 50, 0).map(iso), ['0050-01-15'], 'years 0–99 are years like any other');
+  assert.equal(countInMonth(a, MONTHLY, -3, 5), 1);
+});
+
+// The nine cases found by probing outside the callers' domain after the stepper went in. With the
+// guard, the calendar gives no days and the cash basis 0 for all of them (cashInMonth, which isn't
+// exported, is behind both dueInMonth and incomeInMonth).
+const NINE = [
+  ['monthly', '2026-01-31', 2026, NaN],
+  ['monthly', '2026-01-31', NaN, 0],
+  ['monthly', '2026-01-31', 2026, '1'],
+  ['annual', '2026-01-15', 2026, 12],
+  ['annual', '2026-01-15', 2026, NaN],
+  ['annual', '2026-01-15', NaN, 0],
+  ['annual', '2026-12-15', 2027, -1],
+  ['annual', '2026-12-15', 2026, NaN],
+  ['annual', '2026-12-15', NaN, 0],
+];
+
+test('the nine probe cases: stepDays [] and dueInMonth / incomeInMonth 0, without throwing', () => {
+  for (const [cycle, anchor, year, month] of NINE) {
+    const label = `${cycle} ${anchor} (${String(year)}, ${JSON.stringify(month) ?? String(month)})`;
+    const expense = { type: 'expense', name: 'x', price: 100, currency: 'TWD', cycle, nextRenewal: anchor, date: '' };
+    const income = { ...expense, type: 'income' };
+    assert.deepEqual(stepDays(expense, year, month), [], `${label}: stepDays`);
+    assert.equal(dueInMonth(expense, year, month), 0, `${label}: dueInMonth`);
+    assert.equal(incomeInMonth(income, year, month), 0, `${label}: incomeInMonth`);
+  }
 });
