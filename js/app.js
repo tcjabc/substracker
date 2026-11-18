@@ -13,6 +13,7 @@ import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
+import { initLanguage, applyI18n, formatLocale } from './i18n.js';
 import { createKeyVault } from './secure-key.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
@@ -27,7 +28,7 @@ import {
   stripSummary, undatedItems,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 
 // Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
 // colour syncs as { name, swatch } with one of these keys.
@@ -176,6 +177,9 @@ function bindBackButton() {
    Boot
    -------------------------------------------------------------------------- */
 async function init() {
+  // The language first (English is bundled; another locale loads here), then its words in the markup.
+  try { await initLanguage(); } catch (err) { console.error(err); }
+  applyI18n();
   initLogoHandling();
   bindTabs();
   bindViewToggle();
@@ -683,7 +687,7 @@ function renderMoneySummary() {
 
 /* Rolling totals (js/count-anim.js) ------------------------------------------ */
 // Up to 10 at once: the strip's three and the cards on screen. Never with Reduce motion and effects.
-const roller = createRoller({ reduced: () => reduceEffects(), parts: moneyParts, text: money, cap: 10 });
+const roller = createRoller({ reduced: () => reduceEffects(), parts: moneyParts, text: money, cap: 10, locale: formatLocale });
 /** Whether the Money tab is what's on screen (so a total that changes can be seen to change). */
 const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState === 'visible';
 // Coming back to the app on the Money tab plays them again, like coming back to the tab.

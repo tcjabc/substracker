@@ -32,6 +32,14 @@ test('every file in js/ is precached by sw.js (or deliberately runtime-cached)',
     if (f in RUNTIME_CACHED) continue;
     assert.ok(shell.has(`./js/${f}`), `sw.js SHELL is missing ./js/${f}`);
   }
+  // Locale files load on first use (js/i18n.js) but are precached, so every language works offline.
+  const locales = (await readdir(new URL('js/locales/', root))).filter((f) => f.endsWith('.js'));
+  assert.ok(locales.includes('en.js'), 'js/locales/en.js exists');
+  for (const f of locales) assert.ok(shell.has(`./js/locales/${f}`), `sw.js SHELL is missing ./js/locales/${f}`);
+  for (const p of shell) {
+    const m = p.match(/^\.\/js\/locales\/(.+)$/);
+    if (m) assert.ok(locales.includes(m[1]), `sw.js SHELL lists ${p}, which doesn't exist`);
+  }
   // The exceptions must exist, really be runtime-cached by sw.js, and not also be precached.
   for (const f of Object.keys(RUNTIME_CACHED)) {
     assert.ok(scripts.includes(f), `js/${f} is listed as runtime-cached but doesn't exist`);

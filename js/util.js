@@ -1,3 +1,5 @@
+import { formatLocale, relativeDays, t } from './i18n.js';
+
 export const CURRENCIES = [
   'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'KRW', 'SGD', 'AUD', 'CAD', 'NZD', 'CHF', 'THB', 'MYR', 'PHP', 'IDR', 'VND', 'INR',
 ];
@@ -52,13 +54,16 @@ export function amountInYear(s, year) {
   return d && d.getFullYear() === year ? s.price : 0;
 }
 
+// One formatter per formatting locale and currency. The locale is js/i18n.js formatLocale():
+// undefined (the device's conventions, exactly as before languages existed) unless a language
+// other than the device's was picked.
 const fmtCache = new Map();
-function moneyFormat(currency) {
-  const key = currency;
+function moneyFormat(currency, locale = formatLocale()) {
+  const key = `${locale ?? ''}|${currency}`;
   if (!fmtCache.has(key)) {
     let f;
     try {
-      f = new Intl.NumberFormat(undefined, {
+      f = new Intl.NumberFormat(locale, {
         // "symbol" keeps dollar currencies distinct (NT$, HK$, US$ depending on locale).
         style: 'currency', currency, currencyDisplay: 'symbol',
         minimumFractionDigits: 0, maximumFractionDigits: 2,
@@ -70,23 +75,24 @@ function moneyFormat(currency) {
   }
   return fmtCache.get(key);
 }
-export function money(amount, currency) {
-  return moneyFormat(currency).format(amount);
+export function money(amount, currency, locale = formatLocale()) {
+  return moneyFormat(currency, locale).format(amount);
 }
 
 /**
- * `money(amount, currency)` as its parts ({ type, value }, Intl formatToParts types: 'currency',
- * 'minusSign', 'integer', 'group', 'decimal', 'fraction', 'literal'…), from the same formatter, so
- * joining the values gives exactly money()'s text. The rolling totals (js/count-anim.js) use it.
- * Where the formatter can't give parts, digit runs come back as 'integer' and the rest as 'literal'.
+ * `money(amount, currency, locale)` as its parts ({ type, value }, Intl formatToParts types:
+ * 'currency', 'minusSign', 'integer', 'group', 'decimal', 'fraction', 'literal'…), from the same
+ * formatter (same locale), so joining the values gives exactly money()'s text. The rolling totals
+ * (js/count-anim.js) use it. Where the formatter can't give parts, digit runs come back as
+ * 'integer' and the rest as 'literal'.
  */
-export function moneyParts(amount, currency) {
-  const f = moneyFormat(currency);
+export function moneyParts(amount, currency, locale = formatLocale()) {
+  const f = moneyFormat(currency, locale);
   if (typeof f.formatToParts === 'function') return f.formatToParts(amount);
   return (f.format(amount).match(/\d+|\D+/g) || []).map((v) => ({ type: /\d/.test(v) ? 'integer' : 'literal', value: v }));
 }
 
-export const cycleLabel = (c) => (c === 'annual' ? '/ yr' : c === 'once' ? '' : '/ mo');
+export const cycleLabel = (c) => (c === 'annual' ? t('cycle.perYear') : c === 'once' ? '' : t('cycle.perMonth'));
 
 /** Parse a stored YYYY-MM-DD date as a local date (no timezone shift). */
 export function parseDate(str) {
@@ -125,24 +131,23 @@ export function daysUntil(date) {
 
 /** "Renews in 3 days" for a plan; for income (`income` true) "Payment in 3 days", never "renews". */
 export function renewalText(date, income = false) {
-  const word = income ? 'Payment' : 'Renews';
   const n = daysUntil(date);
-  if (n === 0) return `${word} today`;
-  if (n === 1) return `${word} tomorrow`;
-  if (n < 7) return `${word} in ${n} days`;
-  const sameYear = date.getFullYear() === new Date().getFullYear();
-  return `${word} ` + date.toLocaleDateString(undefined, {
-    day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
-  });
+  if (n === 0) return income ? t('date.payment.today') : t('date.renews.today');
+  if (n === 1) return income ? t('date.payment.tomorrow') : t('date.renews.tomorrow');
+  if (n < 7) return income ? t('date.payment.inDays', { count: n }) : t('date.renews.inDays', { count: n });
+  return income ? t('date.payment.on', { date: shortDate(date) }) : t('date.renews.on', { date: shortDate(date) });
 }
 
 /** Short date for one-off items, e.g. "3 Nov" (with the year when it isn't this year). */
 export function shortDate(date) {
   const sameYear = date.getFullYear() === new Date().getFullYear();
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(formatLocale(), {
     day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
   });
 }
+
+/** "Today", "Tomorrow", "In 3 days" for `date` (js/i18n.js relativeDays). For the upcoming banner. */
+export const relativeDay = (date) => relativeDays(daysUntil(date));
 
 /** A local date as YYYY-MM-DD (no timezone shift), the way dates are stored. */
 export function dayStamp(d) {

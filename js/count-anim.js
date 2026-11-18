@@ -125,25 +125,29 @@ const stepsOf = (seg) => Math.abs(seg.to - seg.from);
  *   parts(value, cur)     the formatter's parts (util.js moneyParts)
  *   text(value, cur)      the formatter's text (util.js money)
  *   cap                   most totals rolling at once (others just show their value)
+ *   locale()              the formatting locale parts and text use (js/i18n.js formatLocale), so
+ *                         the digit glyphs are looked up per locale and the rolled text is always
+ *                         exactly text()'s
  * show(el, key, value, currency, { visible }) shows `value` in `el` (which already holds its final
  * text) and rolls it when the rules above say so and it's `visible`; `key` names the total across
  * redraws (the element may be a new one each time). With el null it only records the value (a
  * total shown as words, like "Nothing due"). replay() makes every total roll the next time it's
  * shown. stats() for tests: { started, running }.
  */
-export function createRoller({ reduced, parts, text, cap = 10 }) {
+export function createRoller({ reduced, parts, text, cap = 10, locale = () => undefined }) {
   const last = new Map();
   const runs = new Map(); // key → { el, anims }
   const glyphCache = new Map();
   let gen = 0, running = 0, started = 0;
 
   const glyphsFor = (cur) => {
-    if (!glyphCache.has(cur)) {
+    const key = `${locale() ?? ''}|${cur}`;
+    if (!glyphCache.has(key)) {
       const gl = [];
       for (let d = 0; d < 10; d++) gl.push(parts(d, cur).filter((p) => p.type === 'integer').map((p) => p.value).join('') || String(d));
-      glyphCache.set(cur, gl);
+      glyphCache.set(key, gl);
     }
-    return glyphCache.get(cur);
+    return glyphCache.get(key);
   };
   // Stop a total's roll now (it's drawn again): its place under the cap is free straight away.
   const stop = (key) => {
