@@ -19,6 +19,7 @@
 // amounts are never converted between currencies.
 
 import { isIncome, isOnce, parseDate, amountInYear } from './util.js';
+import { intervalOfCycle, countInMonth, dayOf } from './interval.js';
 import { t, compareNames } from './i18n.js';
 
 export const UNCATEGORISED = 'Uncategorised';
@@ -51,7 +52,11 @@ const price = (s) => (Number.isFinite(s.price) ? s.price : 0);
 const noDate = (s) => !isOnce(s) && !parseDate(s.nextRenewal);
 const isUndated = (s) => isOutgoing(s) && noDate(s);
 
-/** The cash an item moves in `month` (0-based) of `year`, whatever its type; 0 when none. */
+/**
+ * The cash an item moves in `month` (0-based) of `year`, whatever its type; 0 when none. A recurring
+ * item moves its price each time it falls in the month (js/interval.js counts them): monthly once
+ * every month, annual once in its month.
+ */
 function cashInMonth(s, year, month) {
   if (isOnce(s)) {
     const d = parseDate(s.date);
@@ -59,8 +64,8 @@ function cashInMonth(s, year, month) {
   }
   const d = parseDate(s.nextRenewal);
   if (!d) return 0; // undated: see undatedRecurring() / undatedIncome()
-  if (s.cycle === 'annual') return d.getMonth() === month ? price(s) : 0;
-  return price(s);
+  const times = countInMonth(dayOf(d), intervalOfCycle(s.cycle), year, month);
+  return times ? price(s) * times : 0;
 }
 
 /** What `s` costs in `month` (0-based) of `year` on a cash basis; 0 when nothing is due or it's income. */
