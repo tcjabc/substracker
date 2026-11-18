@@ -507,6 +507,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
    is what screen readers read; the digits roll over it (generated content, aria-hidden), each one a
    column one figure wide, with tabular figures. Only while a roll plays; then it's plain text again. */
 .odo { position: relative; display: inline-block; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Every figure that rolls uses tabular figures when still too, so a roll's start and end don't shift it. */
+[data-roll] { font-variant-numeric: tabular-nums; }
 .odo-txt { color: transparent; }
 .odo-roll { position: absolute; inset: 0; display: flex; align-items: flex-start; white-space: pre; pointer-events: none; }
 .odo-l::before { content: attr(data-t); }

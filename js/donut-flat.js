@@ -88,7 +88,7 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
         <div class="donut"${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
           <svg viewBox="0 0 200 200" role="img" aria-label="Donut chart of outgoings by category for ${esc(monthName)}. Amounts are listed below.">${arcs}</svg>
           <div class="donut-center">
-            <span class="donut-total">${esc(money(total, cur))}</span>
+            <span class="donut-total" data-roll="donut-total" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>
             <span class="donut-label">${esc(monthName)}</span>
           </div>
         </div>

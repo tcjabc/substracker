@@ -340,7 +340,7 @@ function setTab(tab, { focus = true } = {}) {
   $('#page-title').textContent = TAB_TITLES[tab];
   document.title = tab === 'subs' ? 'Peek Budget' : `${TAB_TITLES[tab]} · Peek Budget`;
   if (focus) window.scrollTo({ top: 0 });
-  if (tab === 'insights') renderInsights();
+  if (tab === 'insights') { if (was !== 'insights') roller.replay(); renderInsights(); }
   // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
   if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); }
   // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
@@ -688,10 +688,27 @@ const roller = createRoller({ reduced: () => reduceEffects(), parts: moneyParts,
 const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState === 'visible';
 // Coming back to the app on the Money tab plays them again, like coming back to the tab.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || state.tab !== 'subs' || !state.subs.length) return;
-  roller.replay();
-  renderSubs();
+  if (document.visibilityState !== 'visible' || !state.subs.length) return;
+  if (state.tab === 'subs') { roller.replay(); renderSubs(); }
+  // Insights rolls its figures where they are, without drawing the tab again (the Ring stays put).
+  if (state.tab === 'insights') { roller.replay(); rollInsights(); }
 });
+
+/**
+ * Insights' single figures (data-roll: the month's total and Avg, the yearly card, the donut's
+ * centre) roll by the same rules as the Money tab's. Per-slice amounts, legend rows, the Ring's
+ * caption and the year chart's readout don't: the readout changes on every frame of a swipe.
+ * Only figures on screen roll; the others just show their value.
+ */
+function rollInsights() {
+  const shown = state.tab === 'insights' && document.visibilityState === 'visible';
+  const vh = innerHeight;
+  $$('#insights [data-roll]').forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const onScreen = shown && r.width > 0 && r.bottom > 0 && r.top < vh;
+    roller.show(el, `insights:${el.dataset.roll}`, Number(el.dataset.value), el.dataset.cur, { visible: onScreen });
+  });
+}
 
 function onceDate(s) {
   const d = isOnce(s) ? parseDate(s.date) : null;
@@ -801,6 +818,7 @@ function renderInsights() {
   }));
   if (state.insightsMode === 'year') {
     renderYearView(root, { inCur, cur, currencies, modeHTML });
+    rollInsights();
     bindMode();
     return;
   }
@@ -883,9 +901,9 @@ function renderInsights() {
     <div class="stats">
       <div class="stat stat-primary">
         <div class="stat-label">${esc(monthName)}</div>
-        <div class="stat-value">${esc(money(monthly, cur))}</div>
+        <div class="stat-value" data-roll="month-due" data-value="${monthly}" data-cur="${esc(cur)}">${esc(money(monthly, cur))}</div>
         <div class="stat-sub">Cash due this month</div>
-        <div class="stat-sub">Avg ${esc(money(avg, cur))}/mo</div>
+        <div class="stat-sub">Avg <span data-roll="month-avg" data-value="${avg}" data-cur="${esc(cur)}">${esc(money(avg, cur))}</span>/mo</div>
       </div>
       ${yearCardHTML(year, y, cur, nUndated)}
       <div class="stat">
@@ -942,6 +960,7 @@ function renderInsights() {
       </div>
     </section>` : ''}`;
 
+  rollInsights();
   bindMode();
   $$('[data-month-step]', root).forEach((b) => b.addEventListener('click', () => {
     state.insightsMonth = new Date(y, m + Number(b.dataset.monthStep), 1);
@@ -1102,7 +1121,7 @@ async function mountRing(root, slices, total, cur, monthName) {
 function yearCardHTML(year, y, cur, nUndated) {
   const yearShort = year.income > 0 && year.leftOver < 0;
   const yearLine = (label, value, cls = '') => `
-          <div class="year-line${cls}"><dt>${label}</dt><dd>${esc(money(value, cur))}</dd></div>`;
+          <div class="year-line${cls}"><dt>${label}</dt><dd data-roll="year-${label}" data-value="${value}" data-cur="${esc(cur)}">${esc(money(value, cur))}</dd></div>`;
   return `
       <div class="stat stat-year">
         <div class="stat-label">${y}</div>

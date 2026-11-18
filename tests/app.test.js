@@ -1727,6 +1727,149 @@ test('Rolling totals: Reduce motion and effects: the number just changes, 0 anim
   } finally { setMotion(false); }
 });
 
+/* ------------------------------------------------------------------ Rolling totals: Insights */
+// The month's total and Avg, the yearly card and the donut's centre roll by the same rules; the
+// year chart's readout and the per-slice amounts never do.
+const insRolling = () => $$('#insights .odo').map((o) => o.parentElement.dataset.roll);
+const insTexts = () => $$('#insights [data-roll]').map((el) => [el.dataset.roll, text(el)]);
+const primary = () => $('#insights .stat-primary .stat-value');
+/** Only figures on screen roll. On this page the results list sits above the app, pushing it down;
+ * `onTop(true)` hides the list so the app is at the top of the page, as it is for real. */
+const onTop = (on) => { $('.t-wrap').hidden = on; window.scrollTo({ top: 0 }); };
+
+test('Rolling totals (Insights): the month total, Avg and yearly card roll when the tab comes to the front, on a month step, and on resume; not on a redraw', async () => {
+  setMotion(false);
+  onTop(true);
+  try { await insightsRolls(); } finally { onTop(false); }
+});
+
+async function insightsRolls() {
+  goTab('insights');
+  mode('month');
+  await rollsDone();
+  const still = insTexts();
+  eq(still.map(([k]) => k).slice(0, 2), ['month-due', 'month-avg'], 'the month card\'s two figures are marked');
+  assert(still.some(([k]) => k === 'year-Outgoings'), 'and the yearly card');
+  goTab('subs');
+  await rollsDone();
+  let started = roller().stats().started;
+  goTab('insights');
+  assert(roller().stats().started > started, 'coming to the tab rolls them');
+  for (const k of ['month-due', 'month-avg', 'year-Income', 'year-Outgoings', 'year-Left over']) assert(insRolling().includes(k), `${k} rolls`);
+  eq(insTexts(), still, 'the text content is the final value while rolling');
+  assert($$('#insights .odo-roll').every((r) => r.getAttribute('aria-hidden') === 'true'), 'digits hidden from screen readers');
+  eq($$('#insights [data-roll][aria-live], #insights [data-roll] [aria-live]').length, 0, 'no live region on or in a rolling figure');
+  await rollsDone();
+  eq(insTexts(), still, 'plain text again afterwards');
+
+  // A redraw with the same numbers (switching the category view) doesn't roll.
+  started = roller().stats().started;
+  $('#insights [data-catview="list"]').click();
+  $('#insights [data-catview="donut"]').click();
+  eq(roller().stats().started, started, 'no roll on a redraw');
+  eq(text($('#insights .donut-total')), text(primary()), 'the donut centre is the month total');
+
+  // Stepping to a month with a different total rolls old to new; the same Avg (same year) doesn't.
+  const before = text(primary());
+  let k = 1;
+  for (; k <= 11; k++) { await step(1); if (text(primary()) !== before) break; }
+  assert(text(primary()) !== before, 'found a month with another total');
+  assert(insRolling().includes('month-due'), 'the total rolls on a month step');
+  const d = $('#insights .donut-total').getBoundingClientRect();
+  eq(insRolling().includes('donut-total'), d.bottom > 0 && d.top < innerHeight, 'the donut centre rolls when it is on screen, else just changes');
+  eq(insTexts().find(([key]) => key === 'month-due')[1], text(primary()), 'its text is the new value');
+  await rollsDone();
+  await step(-k);
+  await rollsDone();
+  eq(insTexts(), still, 'back where it started');
+
+  started = roller().stats().started;
+  resumeApp();
+  assert(roller().stats().started > started, 'coming back to the app rolls them again');
+  eq(insTexts(), still, 'without drawing the tab again: same text');
+  await rollsDone();
+  goTab('settings');
+  await rollsDone();
+  started = roller().stats().started;
+  resumeApp();
+  eq(roller().stats().started, started, 'not while Settings is showing');
+
+  // Figures off screen just show their value: with the results list back above it, the app is below the fold.
+  onTop(false);
+  window.scrollTo({ top: 0 });
+  goTab('insights');
+  eq(roller().stats().started, started, 'nothing off screen rolls');
+  eq(insTexts(), still, 'the values are there');
+  onTop(true);
+}
+
+test('Rolling totals (Insights): the year chart readout stays static while it moves; the figures match the Money strip', async () => {
+  onTop(true);
+  try { await yearReadoutStatic(); } finally { onTop(false); }
+});
+
+async function yearReadoutStatic() {
+  goTab('insights');
+  mode('year');
+  await settle();
+  await rollsDone();
+  const started = roller().stats().started;
+  const read = text($('#year-chart .yc-read-name'));
+  const card = insTexts();
+  for (let i = 0; i < 3; i++) key('ArrowRight');
+  await until(() => chart().state().animating, 'the chart moves', 1000).catch(() => {});
+  assert(!$('#year-chart .odo'), 'no rolling digits in the chart while it moves');
+  await settle();
+  assert(text($('#year-chart .yc-read-name')) !== read, 'the readout followed the chart (as plain text)');
+  assert(!$('#year-chart .odo'), 'nor once it has settled');
+  eq(roller().stats().started, started, 'moving the chart rolls nothing');
+  eq(insTexts(), card, 'the yearly card is unchanged');
+  key('Home'); key('End'); await settle();
+  for (let i = 0; i < 3; i++) key('ArrowLeft');
+  await settle();
+
+  // This calendar year's card in Year view is the strip in Annual; this month's total is the strip's Outgoings.
+  const year = Object.fromEntries($$('#insights .yc-year-stats .year-line').map((l) => [text($('dt', l)), text($('dd', l))]));
+  goTab('subs');
+  $('#money-summary [data-period="annual"]').click();
+  await rollsDone();
+  eq(walletStrip(), year, 'Annual strip = yearly card');
+  $('#money-summary [data-period="monthly"]').click();
+  await rollsDone();
+  const outgoings = walletStrip().Outgoings;
+  goTab('insights');
+  mode('month');
+  // Back to the current month (earlier tests step away from it).
+  for (let i = 0; i < 36 && text($('#insights .month-label')) !== monthTitle(0); i++) {
+    const shown = new Date(`1 ${text($('#insights .month-label'))}`);
+    await step(shown < new Date(Y, M, 1) ? 1 : -1);
+  }
+  eq(text($('#insights .month-label')), monthTitle(0), 'this month');
+  await rollsDone();
+  eq(text(primary()), outgoings, 'this month\'s total = the strip\'s Outgoings');
+}
+
+test('Rolling totals (Insights): Reduce motion and effects: plain text, 0 animation frames', async () => {
+  setMotion(true);
+  onTop(true);
+  try {
+    goTab('subs');
+    goTab('insights');
+    mode('month');
+    const started = roller().stats().started;
+    await step(1);
+    await step(-1);
+    resumeApp();
+    mode('year');
+    mode('month');
+    eq(roller().stats().started, started, 'nothing rolled');
+    eq($$('#insights .odo').length, 0, 'no rolling markup');
+    eq(odoAnimations().length, 0, 'no animations');
+    assert(insTexts().every(([, t]) => /\d/.test(t)), 'figures shown as plain text');
+  } finally { setMotion(false); onTop(false); }
+  goTab('subs');
+});
+
 test('Download CSV: live items only, with the BOM, columns, quoting and formula escaping, via the download path', async () => {
   goTab('settings');
   assert(text($('#btn-export-csv').closest('.setting-row')).includes('For spreadsheets, not a backup'), 'labelled as not a backup');
