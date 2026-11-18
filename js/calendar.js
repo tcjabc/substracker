@@ -5,12 +5,15 @@
 //
 // Accessibility: a role="grid" of rows and gridcells, each day of the month a button labelled with
 // its full date, how many payments and the default currency's total ("5 December 2026, 2 payments,
-// NT$30,390"). Dots are never the only cue: days with items have a tinted cell, and the label says it all.
+// NT$30,390"). One day is in the tab order (roving tabindex); the arrow keys move by a day or a
+// week, Home and End to the week's ends, Page Up and Page Down by a month, Enter or Space shows the
+// day. The month heading is announced in one polite live region when the month changes, and only
+// then. Dots are never the only cue: days with items have a tinted cell, and the label says it all.
 //
 // Motion: a swipe drags the weeks and slides them out; with "Reduce motion and effects" the month
 // just changes (no animation frames). Only the month summary's figure may roll (opts.rollSummary).
 
-import { monthGrid, occurrences, addMonths, dayDots } from './calendar-math.js';
+import { monthGrid, occurrences, addMonths, dayDots, moveDay } from './calendar-math.js';
 import { t, dateWords, weekdayStyle, formatLocale } from './i18n.js';
 import { esc, money } from './util.js';
 import { othersText, parseColour, contrast } from './wallet-math.js';
@@ -18,6 +21,7 @@ import { groupLabel } from './insights-calc.js';
 
 const CHEV_L = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
 const CHEV_R = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 // A swipe counts once it's moved this far sideways (px) before moving as far up or down; it changes
 // the month past a share of the width, or on a fling.
 const SLOP = 10;
@@ -45,6 +49,10 @@ export function createCalendar(host, opts) {
   host.classList.add('calendar');
   host.setAttribute('aria-label', t('calendar.label'));
   host.setAttribute('role', 'region');
+  const live = document.createElement('p');
+  live.className = 'sr-only';
+  live.setAttribute('aria-live', 'polite');
+  live.id = 'cal-live';
 
   const now0 = todayParts();
   let shown = { year: now0.year, month: now0.month };
@@ -135,14 +143,17 @@ export function createCalendar(host, opts) {
         <span class="cal-summary-value" data-value="${occ.total}">${esc(money(occ.total, c))}</span>
         ${extra.length ? `<span class="cal-summary-sub">${esc(extra.join(' · '))}</span>` : ''}
       </div>
-      <div class="cal-grid" role="grid" aria-labelledby="cal-month">
+      <div class="cal-grid" role="grid" aria-labelledby="cal-month" aria-describedby="cal-keys">
         <div role="rowgroup" class="cal-heads"><div role="row" class="cal-row">${heads}</div></div>
         <div role="rowgroup" class="cal-weeks">${weeks}</div>
       </div>
+      <p class="sr-only" id="cal-keys">${esc(t('calendar.keys'))}</p>
       ${occ.count ? '' : `<p class="cal-note cal-empty">${esc(t('calendar.nothingMonth', { month: monthName() }))}</p>`}
       ${occ.undated.length ? `<button type="button" class="summary-note summary-note-action cal-undated" data-id="${esc(occ.undated[0].id)}">${esc(t('dueSoon.undated', { count: occ.undated.length }))}</button>` : ''}
       ${selected ? listHTML(occ.days[selected - 1]) : ''}`;
+    host.append(live);
     opts.rollSummary?.(host.querySelector('.cal-summary-value'), occ.total, c);
+    if (announce) live.textContent = monthName();
     if (focus) host.querySelector(`.cal-day[data-day="${tabDay}"]`)?.focus();
   }
 
@@ -213,6 +224,20 @@ export function createCalendar(host, opts) {
     if (row) {
       const s = opts.items().find((x) => x.id === row.dataset.id);
       if (s) opts.onEdit(s);
+    }
+  });
+
+  host.addEventListener('keydown', (e) => {
+    const day = e.target.closest?.('.cal-day');
+    if (!day || !KEYS.has(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    const to = moveDay({ ...shown, day: Number(day.dataset.day) }, e.key, opts.weekStart());
+    if (to.year === shown.year && to.month === shown.month) {
+      focusDay = to.day;
+      for (const b of host.querySelectorAll('.cal-day')) b.tabIndex = Number(b.dataset.day) === to.day ? 0 : -1;
+      host.querySelector(`.cal-day[data-day="${to.day}"]`)?.focus();
+    } else {
+      go(to, { focusOn: to.day });
     }
   });
 
