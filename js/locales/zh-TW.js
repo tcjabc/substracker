@@ -663,6 +663,25 @@ export default {
   'ai.replace.message': '這會刪除這台裝置上目前所有的項目，只保留匯入的項目。設定維持不變。此動作無法復原。',
   'ai.replace.syncWarning': '「全部取代」會刪除這裡，以及所有與你同步的裝置上目前的項目。',
 
+  // Due-soon banner (Money tab, js/app.js, js/due-soon.js)
+  'dueSoon.label': '即將到期',
+  'dueSoon.summary.other': '未來 {days} 天內有 {count} 筆到期',
+  'dueSoon.total': '應付 {amount}',
+  'dueSoon.income': '入帳 {amount}',
+  'dueSoon.undated.other': '{count} 個項目需要設定日期',
+  'dueSoon.dismiss': '今天不再顯示',
+  'dueSoon.range': '今天到 {date}',
+  'dueSoon.hint': '點選項目即可編輯。',
+  'dueSoon.row': '{name}，{when}，{amount}',
+  'dueSoon.row.income': '{name}，收入，{when}，{amount}',
+  'settings.dueSoon': '即將到期',
+  'settings.dueSoon.show': '顯示即將到期提醒',
+  'settings.dueSoon.show.hint': '在「收支」頁列出近期到期的項目。關閉提醒後，今天不會再顯示。',
+  'settings.dueSoon.window': '提前顯示',
+  'settings.dueSoon.days.other': '{count} 天',
+  'settings.dueSoon.income': '包含即將入帳的收入',
+  'settings.dueSoon.income.hint': '也列出近期會入帳的收入。',
+
   // Settings, messages and errors (js/app.js, js/files.js)
   'common.dismiss': '關閉',
   'settings.version': '{app} {version}',

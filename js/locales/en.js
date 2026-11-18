@@ -678,6 +678,28 @@ export default {
   'ai.replace.message': "This deletes all current items on this device and keeps only the imported ones. Settings stay as they are. This can't be undone.",
   'ai.replace.syncWarning': 'Replace all deletes the current items here and on every device you sync with.',
 
+  // Due-soon banner (Money tab, js/app.js, js/due-soon.js)
+  'dueSoon.label': 'Due soon',
+  'dueSoon.summary.one': '{count} due in the next {days} days',
+  'dueSoon.summary.other': '{count} due in the next {days} days',
+  'dueSoon.total': '{amount} due',
+  'dueSoon.income': '{amount} coming in',
+  'dueSoon.undated.one': '{count} item needs a date',
+  'dueSoon.undated.other': '{count} items need a date',
+  'dueSoon.dismiss': 'Hide until tomorrow',
+  'dueSoon.range': 'Today to {date}',
+  'dueSoon.hint': 'Tap an item to edit it.',
+  'dueSoon.row': '{name}, {when}, {amount}',
+  'dueSoon.row.income': '{name}, income, {when}, {amount}',
+  'settings.dueSoon': 'Due soon',
+  'settings.dueSoon.show': 'Show due-soon banner',
+  'settings.dueSoon.show.hint': 'A line on the Money tab with what comes due soon. Closing it hides it until tomorrow.',
+  'settings.dueSoon.window': 'Look ahead',
+  'settings.dueSoon.days.one': '{count} day',
+  'settings.dueSoon.days.other': '{count} days',
+  'settings.dueSoon.income': 'Include upcoming income',
+  'settings.dueSoon.income.hint': 'Also list income with a payment date coming up.',
+
   // Settings, messages and errors (js/app.js, js/files.js)
   'common.dismiss': 'Dismiss',
   'settings.version': '{app} {version}',
