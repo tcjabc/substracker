@@ -1462,3 +1462,5 @@ dialog::backdrop { background: var(--scrim); }
 /* "Reduce motion and effects" (Settings). js/app.js sets the class from the setting, which follows the
    system's prefers-reduced-motion until it is changed, so either way this one rule applies. */
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+/* A focus ring just appears: the rule above would still give it a 0.01ms transition. */
+.reduce-motion :focus-visible { transition: none !important; }
