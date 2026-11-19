@@ -233,8 +233,10 @@ export function createYearChart(host, opts) {
     // The centre month's label sits in a small accent pill (drawn first, so the text is on top).
     b.pill = el('rect', { class: 'yc-pill', 'data-for': i, height: 15, rx: 7.5, display: 'none' }, mlL);
     b.ml = el('text', { 'text-anchor': 'middle', class: 'yc-month' }, mlL);
-    b.yl = opts.rolling ? el('text', { 'text-anchor': 'middle', class: 'yc-month yc-year' }, mlL) : null;
-    if (b.yl) b.yl.textContent = t('chart.yearShort', { yy: String(d.y).slice(2) });
+    // The 'YY under the month: every month in Rolling; in This year only a month drawn past the
+    // loop's seam (render() decides), so January after December can't read as next January.
+    b.yl = el('text', { 'text-anchor': 'middle', class: 'yc-month yc-year' }, mlL);
+    b.yl.textContent = t('chart.yearShort', { yy: String(d.y).slice(2) });
     const label = t('chart.bar.label', { month: monthTitle(d), amount: money(d.total) });
     b.hit = el('rect', { class: 'yc-hit', 'data-i': i, role: 'option', id: `${uid}-${i}`, 'aria-label': label, 'aria-selected': 'false' }, hitL);
     return b;
@@ -311,6 +313,7 @@ export function createYearChart(host, opts) {
     const showT = mx < 0.99;
     const showC = mx > 0.01;
     const pts = opts.showIncome ? [] : null;
+    const posMod = ((pos % n) + n) % n; // the centre as a month index, for the seam test below
     for (const b of bars) {
       const g = clamp(b.g.x, 0, 1);
       const s = clamp(b.s.x, 0, 1);
@@ -404,11 +407,17 @@ export function createYearChart(host, opts) {
         set(b.pill, 'x', lx - pw / 2); set(b.pill, 'width', pw); set(b.pill, 'y', G.LABEL_Y - 11.5);
         set(b.pill, 'opacity', pr);
       } else set(b.pill, 'display', 'none');
-      if (b.yl) {
+      // This year is a loop of one year's months: a month drawn on the far side of the seam (its
+      // place in the loop isn't its place in the year) carries its year, and only in the carousel;
+      // the focus strip runs January to December.
+      const wrapped = Math.abs(rel - (b.i - posMod)) > 0.5;
+      const showYear = opts.rolling || (wrapped && g < 0.99);
+      set(b.yl, 'display', showYear ? 'inline' : 'none');
+      if (showYear) {
         set(b.yl, 'x', lerp(xc, b.xm, g)); set(b.yl, 'y', lerp(G.YEAR_Y, G.MINI_YEAR_Y, g));
         set(b.yl, 'class', `${pill ? 'yc-month yc-month-centre' : tone} yc-year`);
         setStyle(b.yl, 'fontSize', `${Math.round(size * 8.8) / 10}px`);
-        set(b.yl, 'opacity', lerp(edge, 1, g) * 0.85);
+        set(b.yl, 'opacity', (opts.rolling ? lerp(edge, 1, g) : edge * (1 - g)) * 0.85);
       }
       const lo = clamp((u - 0.55) / 0.45, 0, 1);
       if (lo > 0.005) {
