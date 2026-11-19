@@ -902,7 +902,12 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .w-band:focus-visible { outline: 3px solid var(--ink); outline-offset: -5px; }
 .w-name { grid-area: name; display: flex; align-items: center; gap: var(--space-1); min-width: 0; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
-.w-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name next to a wide total ("US$26.98" at 320px) takes a second line, breaking inside a word
+   only when it must, before it's cut. Two lines and the meta row still fit the band's height. */
+.w-name > span {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere; white-space: normal;
+}
 .w-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: transform var(--dur) var(--ease); }
 .is-open .w-chev { transform: rotate(180deg); }
 .w-total { grid-area: total; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
