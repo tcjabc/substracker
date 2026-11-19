@@ -812,7 +812,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 /* ==========================================================================
    Calendar tab (js/calendar.js). The month on the strip's card surface; days with items
    have a tinted cell (so the dots are never the only cue), today's number sits in an accent pill
-   and the selected day is outlined. Day numbers are plain text; only the month's figure may roll.
+   and the selected day is outlined. Day numbers are plain text; only the month's In, Out and Left over may roll.
    ========================================================================== */
 .calendar { margin-bottom: var(--space-6); }
 .cal-head { display: flex; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
@@ -821,12 +821,28 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   font-size: var(--text-md); font-weight: var(--weight-bold); line-height: var(--leading-tight); overflow-wrap: anywhere;
 }
 .cal-today { min-height: var(--control-sm); padding: 0 var(--space-3); font-size: var(--text-sm); }
-.cal-summary {
-  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3);
-  margin-bottom: var(--space-3); padding-inline: var(--space-2);
+/* The month's In, Out and Left over: three columns, a label over each figure, spread across the
+   width (In at the start, Out in the middle, Left over at the end). Figures never wrap or clip:
+   js/calendar.js fitFlow steps them down a size (is-tight, is-tighter) when the three don't fit.
+   Only Left over is coloured, with its arrow; In and Out are the page's text colour. */
+.cal-flow { margin-bottom: var(--space-3); padding-inline: var(--space-2); }
+.cal-flow-cells { display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; column-gap: var(--space-3); }
+.cal-flow-cell { display: grid; min-width: 0; row-gap: 1px; }
+.cal-flow-out { justify-items: center; text-align: center; }
+.cal-flow-left { justify-items: end; text-align: end; }
+.cal-flow-label { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-muted); white-space: nowrap; }
+.cal-flow-value {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight); white-space: nowrap;
 }
-.cal-summary-label { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
-.cal-summary-value { flex: none; margin-left: auto; font-size: var(--text-md); font-weight: var(--weight-bold); white-space: nowrap; }
+.cal-flow-cells.is-tight .cal-flow-value { font-size: var(--text-base); }
+.cal-flow-cells.is-tighter .cal-flow-value { font-size: var(--text-sm); }
+.cal-flow-arrow { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.cal-flow[data-dir="up"] .cal-flow-left .cal-flow-value { color: var(--positive-text); }
+.cal-flow[data-dir="down"] .cal-flow-left .cal-flow-value { color: var(--negative-text); }
+/* Amounts in other currencies, counted ("+1 in USD"), never in the figures above. */
+.cal-flow-note { margin: calc(-1 * var(--space-2)) 0 var(--space-3); padding-inline: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); text-align: end; }
 .cal-grid {
   padding: var(--space-2); overflow: hidden;
   background: var(--surface); border: var(--border-width) solid var(--border);

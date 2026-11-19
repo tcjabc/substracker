@@ -945,8 +945,9 @@ function renderCalendar() {
       dotColour: (group) => swatchVar(groupSwatch(group)),
       logo: (s) => logoHTML(s, 'sm'),
       onEdit: (s) => openForm(s),
-      // Only the month's figure rolls (from the old month's to the new one's); the days are text.
-      rollSummary: (el, value, cur) => roller.show(value > 0 ? el : null, 'calendar:due', value, cur, { visible: calendarOnScreen() }),
+      // Only the month's In, Out and Left over roll (from the old month's to the new one's); the
+      // days are text. Left over rolls its size: it shows no sign.
+      roll: (el, key, value, cur) => roller.show(value > 0 ? el : null, `calendar:${key}`, value, cur, { visible: calendarOnScreen() }),
     });
     calendarHost.calendar = calendar; // for tests, like the wallet's host.wallet
     return; // createCalendar has drawn it

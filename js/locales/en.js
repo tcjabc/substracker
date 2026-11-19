@@ -701,8 +701,12 @@ export default {
   'calendar.next': 'Next month',
   'calendar.today': 'Today',
   'calendar.today.title': 'Go to this month',
+  'calendar.flow.in': 'In', // the month's cash flow under its heading: In, Out, Left over
+  'calendar.flow.out': 'Out',
+  'calendar.flow.leftOver': 'Left over {amount}', // read aloud: more comes in than goes out, or the same
+  'calendar.flow.short': 'More going out than coming in, {amount}', // read aloud: more goes out; {amount} has no sign
+  'calendar.flow.label': 'In {in}. Out {out}. {left}', // the three read aloud as one
   'calendar.keys': 'Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day.',
-  'calendar.summary': 'Cash due in {month}',
   'calendar.income': '{amount} income',
   'calendar.nothingMonth': 'Nothing due in {month}',
   'calendar.more': '+{count}', // after the first three dots of a day

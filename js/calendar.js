@@ -10,17 +10,30 @@
 // day. The month heading is announced in one polite live region when the month changes, and only
 // then. Dots are never the only cue: days with items have a tinted cell, and the label says it all.
 //
+// Under the heading, the month's cash flow in the default currency: In (incomeDue), Out (cashDue)
+// and Left over (In − Out), the Money card's and Insights' functions, so the figures match by
+// construction. Left over shows its size with an arrow (up-right when more comes in, down-right
+// when more goes out) and no sign; only it is coloured. Other currencies are counted on one line,
+// never added in. Screen readers get the three as one labelled group that says the direction.
+//
 // Motion: a swipe drags the weeks and slides them out; with "Reduce motion and effects" the month
-// just changes (no animation frames). Only the month summary's figure may roll (opts.rollSummary).
+// just changes (no animation frames). Only the three cash-flow figures may roll (opts.roll).
 
 import { monthGrid, occurrences, addMonths, dayDots, moveDay } from './calendar-math.js';
 import { t, dateWords, weekdayStyle, formatLocale } from './i18n.js';
 import { esc, money } from './util.js';
 import { othersText, parseColour, contrast } from './wallet-math.js';
-import { groupLabel } from './insights-calc.js';
+import { groupLabel, incomeDue, cashDue } from './insights-calc.js';
 
 const CHEV_L = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
 const CHEV_R = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+// Left over's direction, drawn (not a font glyph or emoji, so it looks the same on every device).
+const ARROW = {
+  up: '<svg class="cal-flow-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>',
+  down: '<svg class="cal-flow-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 9v8H9"/></svg>',
+};
+// The figures step down a size, then another, when the three don't fit the width side by side.
+const FIT_STEPS = ['', 'is-tight', 'is-tighter'];
 const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 // A swipe counts once it's moved this far sideways (px) before moving as far up or down; it changes
 // the month past a share of the width, or on a fling.
@@ -42,7 +55,7 @@ const todayParts = () => { const d = new Date(); return { year: d.getFullYear(),
  *   dotColour(group)   a CSS colour for an expense group's dot (its picked or automatic colour)
  *   logo(s)            logo markup for an item in the day's list
  *   onEdit(item)       open an item's edit sheet (a row, or the "N items need a date" line)
- *   rollSummary(el, value, currency)  optional: the month summary's figure, so it can roll
+ *   roll(el, key, value, currency)  optional: a cash-flow figure ('in', 'out' or 'left', its size), so it can roll
  * update() draws it again (new items, settings or theme); its month and selected day are kept.
  */
 export function createCalendar(host, opts) {
@@ -130,8 +143,20 @@ export function createCalendar(host, opts) {
       return `<div role="gridcell" class="cal-cell" aria-selected="${sel}"><button type="button" class="cal-day${d.count ? ' has-items' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}" data-day="${cell.day}" tabindex="${cell.day === tabDay ? 0 : -1}"${isToday ? ' aria-current="date"' : ''} aria-label="${esc(dayLabel(d))}"><span class="cal-num" aria-hidden="true">${esc(num(cell.day))}</span><span class="cal-dots" aria-hidden="true">${dotHTML}</span></button></div>`;
     }).join('')}</div>`).join('');
 
-    // One line under the heading: the month's cash due in the default currency. Income and other
-    // currencies are on the days themselves (their labels and lists), never in this figure.
+    // Under the heading: the month's In, Out and Left over in the default currency (the cash basis,
+    // from insights-calc), other currencies counted on their own line and never added in.
+    const inCur = opts.items().filter((s) => s.currency === c);
+    const flowIn = incomeDue(inCur, shown.year, shown.month);
+    const flowOut = cashDue(inCur, shown.year, shown.month);
+    const left = flowIn - flowOut;
+    const dir = left > 0 ? 'up' : left < 0 ? 'down' : 'even';
+    const leftWords = t(left < 0 ? 'calendar.flow.short' : 'calendar.flow.leftOver', { amount: money(Math.abs(left), c) });
+    const flowLabel = t('calendar.flow.label', { in: money(flowIn, c), out: money(flowOut, c), left: leftWords });
+    const cell = (key, label, value, extra = '') => `
+        <div class="cal-flow-cell cal-flow-${key}">
+          <span class="cal-flow-label">${esc(label)}</span>
+          <span class="cal-flow-value">${extra}<span class="cal-flow-amount" data-flow="${key}" data-value="${value}">${esc(money(value, c))}</span></span>
+        </div>`;
     host.innerHTML = `
       <div class="cal-head">
         <button type="button" class="icon-btn cal-step" data-cal-step="-1" aria-label="${esc(t('calendar.prev'))}" title="${esc(t('calendar.prev'))}">${CHEV_L}</button>
@@ -139,10 +164,11 @@ export function createCalendar(host, opts) {
         <button type="button" class="icon-btn cal-step" data-cal-step="1" aria-label="${esc(t('calendar.next'))}" title="${esc(t('calendar.next'))}">${CHEV_R}</button>
         <button type="button" class="btn cal-today" data-cal-today title="${esc(t('calendar.today.title'))}">${esc(t('calendar.today'))}</button>
       </div>
-      <div class="cal-summary">
-        <span class="cal-summary-label">${esc(t('calendar.summary', { month: monthName() }))}</span>
-        <span class="cal-summary-value" data-value="${occ.total}">${esc(money(occ.total, c))}</span>
+      <div class="cal-flow" role="group" aria-label="${esc(flowLabel)}" data-dir="${dir}">
+        <div class="cal-flow-cells" aria-hidden="true">${cell('in', t('calendar.flow.in'), flowIn)}${cell('out', t('calendar.flow.out'), flowOut)}${cell('left', t('money.leftOver'), Math.abs(left), ARROW[dir] ?? '')}
+        </div>
       </div>
+      ${occ.others.length ? `<p class="cal-flow-note">${esc(othersText(occ.others))}</p>` : ''}
       <div class="cal-grid" role="grid" aria-labelledby="cal-month" aria-describedby="cal-keys">
         <div role="rowgroup" class="cal-heads"><div role="row" class="cal-row">${heads}</div></div>
         <div role="rowgroup" class="cal-weeks">${weeks}</div>
@@ -152,10 +178,31 @@ export function createCalendar(host, opts) {
       ${occ.undated.length ? `<button type="button" class="summary-note summary-note-action cal-undated" data-id="${esc(occ.undated[0].id)}">${esc(t('dueSoon.undated', { count: occ.undated.length }))}</button>` : ''}
       ${selected ? listHTML(occ.days[selected - 1]) : ''}`;
     host.append(live);
-    opts.rollSummary?.(host.querySelector('.cal-summary-value'), occ.total, c);
+    fitFlow();
+    for (const el of host.querySelectorAll('.cal-flow-amount')) opts.roll?.(el, el.dataset.flow, Number(el.dataset.value), c);
     if (announce) live.textContent = monthName();
     if (focus) host.querySelector(`.cal-day[data-day="${tabDay}"]`)?.focus();
   }
+
+  /**
+   * Step the three cash-flow figures down a size while they don't fit side by side (a long
+   * currency prefix, a narrow screen). Measured, so a hidden tab (no width) keeps the full size
+   * until it's drawn on screen; a change of width measures again.
+   */
+  function fitFlow() {
+    const row = host.querySelector('.cal-flow-cells');
+    if (!row?.clientWidth) return;
+    for (const step of FIT_STEPS) {
+      row.classList.remove(...FIT_STEPS.filter(Boolean));
+      if (step) row.classList.add(step);
+      if (row.scrollWidth <= row.clientWidth + 1) return;
+    }
+  }
+  let fitWidth = 0;
+  const fitter = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+    if (host.clientWidth && host.clientWidth !== fitWidth) { fitWidth = host.clientWidth; fitFlow(); }
+  }) : null;
+  fitter?.observe(host);
 
   function listHTML(d) {
     const c = cur();
@@ -308,6 +355,6 @@ export function createCalendar(host, opts) {
     get state() { return { ...shown, selected }; },
     /** Tests and the Settings preview: show `month` of `year`. */
     show: (year, month) => go({ year, month }),
-    destroy() { destroyed = true; host.textContent = ''; },
+    destroy() { destroyed = true; fitter?.disconnect(); host.textContent = ''; },
   };
 }
