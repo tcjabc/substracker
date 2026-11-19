@@ -1,5 +1,5 @@
-// The due-soon banner on the Money tab: which dated items come due in the next N days. Pure (no
-// DOM, no storage), shared by the app and tests/due-soon.node.test.js.
+// The due-soon chip on the Money card and its sheet: which dated items come due in the next N days.
+// Pure (no DOM, no storage), shared by the app and tests/due-soon.node.test.js.
 //
 // - Recurring items use the display-time next date (util.nextRenewal): a stored date that has
 //   passed rolls forward for display only, so nothing is rewritten and no sync op is made.
@@ -12,7 +12,7 @@
 //   Income in the window has its own figure; other currencies are only counted ("+1 in USD").
 //   Amounts in different currencies, or income and expenses, are never added together.
 
-import { isIncome, isOnce, parseDate, nextRenewal, dayStamp } from './util.js';
+import { isIncome, isOnce, parseDate, nextRenewal } from './util.js';
 import { undatedRecurring, undatedIncome } from './insights-calc.js';
 
 /** The windows Settings offers, in days; 7 is the default. */
@@ -20,8 +20,8 @@ export const WINDOWS = Object.freeze([3, 7, 14]);
 export const DEFAULT_WINDOW = 7;
 /** The window from the saved preference ('3', '7' or '14'), else 7. */
 export const windowFrom = (pref) => (WINDOWS.includes(Number(pref)) ? Number(pref) : DEFAULT_WINDOW);
-/** Show the banner unless it was turned off ('off'); include income only when turned on ('on'). */
-export const bannerOnFrom = (pref) => pref !== 'off';
+/** Show the chip unless it was turned off ('off'); include income only when turned on ('on'). */
+export const chipOnFrom = (pref) => pref !== 'off';
 export const includeIncomeFrom = (pref) => pref === 'on';
 
 /** A date's local calendar day as a whole number, so two days subtract exactly (no DST hours). */
@@ -83,8 +83,3 @@ export function dueSoon(items, now = new Date(), { windowDays = DEFAULT_WINDOW, 
     windowDays: days,
   };
 }
-
-/** The value saved when the banner is closed: today's local date (YYYY-MM-DD). */
-export const dismissKey = (now = new Date()) => dayStamp(now);
-/** Whether a saved dismissal still hides the banner: only on the same local day. */
-export const isDismissed = (saved, now = new Date()) => !!saved && saved === dismissKey(now);

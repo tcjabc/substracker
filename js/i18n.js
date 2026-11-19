@@ -282,7 +282,7 @@ export function applyI18n(root = document) {
  * today, starting with a capital where the language has them ({ capital: false } for the middle
  * of a sentence: "in 3 days"). These are words, so they're in the UI's language (not the
  * formatting locale: a zh-CN phone in zh-TW still reads 3 天後, English on a Japanese phone "In 3
- * days"); bracketed in the pseudo-locale. Used by the due-soon banner.
+ * days"); bracketed in the pseudo-locale. Used by the due-soon sheet.
  */
 export function relativeDays(n, locale, { capital = true } = {}) {
   const loc = locale ?? wordsLocale();

@@ -1,5 +1,5 @@
-// In-browser tests for the app screens (js/app.js): the Insights month view and the Money tab
-// summary strip on a cash basis (outgoings and income), the "needs a renewal date" and "needs a payment date" notices, and the
+// In-browser tests for the app screens (js/app.js): the Insights month view and the Money card on
+// a cash basis (Cash due and income; tests/money-card.html has the card's own tests), the "needs a renewal date" and "needs a payment date" notices, and the
 // add/edit form requiring a renewal or payment date (with field-level saves and rollover still
 // working), and the Insights Ring (3D) with its flat fallbacks and the Reduce motion and effects
 // setting, and Import with AI (the slide to confirm and its fallback, Back on every step, the review,
@@ -15,7 +15,7 @@ import { generateKey } from '../js/crypto.js';
 import { createWallet } from '../js/wallet.js';
 import { walletGroups, parseColour, contrast, isWalletKey } from '../js/wallet-math.js';
 import { dueInMonth, groupOf } from '../js/insights-calc.js';
-import { isIncome } from '../js/util.js';
+import { isIncome, renewalText, nextRenewal } from '../js/util.js';
 import { logoHTML } from '../js/logos.js';
 
 const results = [];
@@ -265,43 +265,48 @@ test('Ring: a lost WebGL context falls back to the flat donut for the session', 
   await step(-6);
 });
 
-/* ------------------------------------------------------- Money tab strip */
+/* ------------------------------------------------------- Money card (the strip until 1.21.0) */
 
-const stripCells = () => $$('#money-summary .summary-cell').map((c) =>
-  [text($('.stat-label', c)), text($('.summary-value', c)), text($('.stat-sub', c))]);
+// Cash due (the big figure), then Income and Left over, each [label, figure, note].
+const stripCells = () => [
+  [text($('#money-summary .mc-label')), text($('#money-summary [data-roll="cash"]')), ''],
+  ...$$('#money-summary .mc-cell').map((c) => [text($('dt', c)), text($('dd', c)), text($('.mc-note', c))]),
+];
 const period = (p) => $(`#money-summary [data-period="${p}"]`).click();
 
-// The strip, default currency TWD, this month: income 43,000 (Salary + Refund), cash due 1,699,
-// Avg 1,629 as in Insights. This year: as the yearly card. Before, on the monthly-equivalent basis
-// with undated items, it showed 49,000 / 1,629 for the month and 555,000 / 19,548 for the year.
-test('the monthly strip shows this month on the cash basis, as the Insights headline does', async () => {
+// The card, default currency TWD, this month: income 43,000 (Salary + Refund), cash due 1,699, as
+// in Insights (no Avg line on the card since 1.21.0). This year: as the yearly card. Before, on the
+// monthly-equivalent basis with undated items, it showed 49,000 / 1,629 for the month and
+// 555,000 / 19,548 for the year.
+test('the Money card shows this month on the cash basis, as the Insights headline does; no Avg line', async () => {
   period('monthly');
   eq(stripCells(), [
+    ['Cash due', T(1699), ''],
     ['Income', T(43000), ''],
-    ['Outgoings', T(1699), `Avg ${T(1629)}/mo`],
     ['Left over', T(41301), ''],
-  ], 'monthly strip');
+  ], 'monthly card');
   const thisMonth = new Date(Y, M, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  eq(text($('#money-summary .summary-when')), thisMonth, 'this month');
+  eq(text($('#money-summary .mc-when')), thisMonth, 'this month');
   eq(text($('#insights .headline-text')), `Outgoings ${T(1699)} of ${T(43000)} income (4%)`, 'same as the Insights headline');
-  eq(text($('#money-summary p.summary-note')), "TWD only. 3 items in other currencies aren't included.", 'currency note kept');
+  assert(!text($('#money-summary')).includes('Avg'), 'no Avg line');
+  eq(text($('#money-summary > p.mc-note')), "TWD only. 3 items in other currencies aren't included.", 'currency note kept');
 });
 
-test('the annual strip shows the year from its twelve cash months, with no Avg line', async () => {
+test('the Money card in Annual shows the year from its twelve cash months', async () => {
   period('annual');
   eq(stripCells(), [
+    ['Cash due', T(7548), ''],
     ['Income', T(495000), ''],
-    ['Outgoings', T(7548), ''],
     ['Left over', T(487452), ''],
-  ], 'annual strip, same as the yearly card');
-  eq(text($('#money-summary .summary-when')), String(Y), 'this year');
+  ], 'annual card, same as the yearly card');
+  eq(text($('#money-summary .mc-when')), String(Y), 'this year');
   eq(yearLines(), [['Income', T(495000)], ['Outgoings', T(7548)], ['Left over', T(487452)]], 'yearly card agrees');
   period('monthly');
-  eq(stripCells()[0][1], T(43000), 'back to monthly');
+  eq(stripCells()[1][1], T(43000), 'back to monthly');
 });
 
-test('the strip has one line for undated items that opens the first of them', async () => {
-  const line = $('#money-summary .summary-note-action');
+test('the Money card has one line for undated items that opens the first of them', async () => {
+  const line = $('#money-summary .mc-undated');
   eq(text(line), 'Excludes 3 undated items', 'one line, no repeat of the notices');
   line.click();
   await until(isOpen, 'edit sheet opens');
@@ -310,20 +315,20 @@ test('the strip has one line for undated items that opens the first of them', as
   await until(() => !isOpen(), 'sheet closes');
 });
 
-test('a short month on the strip shows the minus sign and says so in words', async () => {
+test('a short month on the Money card shows the minus sign and says so in words', async () => {
   const usd = (n) => money(n, 'USD');
   const select = $('#set-currency');
   select.value = 'USD';
   select.dispatchEvent(new Event('change', { bubbles: true }));
-  await until(() => text($('#money-summary .summary-value')) === usd(0), 'strip in USD');
+  await until(() => text($('#money-summary [data-roll="income"]')) === usd(0), 'card in USD');
   const [, , left] = stripCells();
   eq(left, ['Left over', usd(-10), 'More going out than coming in'], 'short month');
-  assert($('#money-summary .summary-short'), 'short style');
+  assert($('#money-summary .mc-short'), 'short style');
   assert(usd(-10).includes('-') || usd(-10).includes('−'), 'minus sign');
-  assert(!$('#money-summary .summary-note-action'), 'no undated USD items');
+  assert(!$('#money-summary .mc-undated'), 'no undated USD items');
   select.value = 'TWD';
   select.dispatchEvent(new Event('change', { bubbles: true }));
-  await until(() => text($('#money-summary .summary-value')) === T(43000), 'strip back in TWD');
+  await until(() => text($('#money-summary [data-roll="income"]')) === T(43000), 'card back in TWD');
   await until(() => text($('#insights .stat-year .stat-label')) === String(Y), 'Insights back on TWD');
 });
 
@@ -544,9 +549,16 @@ test('switching the form between expense and income swaps the date wording', asy
   await until(() => !isOpen(), 'sheet closes');
 });
 
-test('dated income on the Money tab says "Payment", never "Renews"', async () => {
-  const tag = text($('#subs-list [data-id="test-salary"] .tag'));
-  assert(/^Payment/.test(tag), `payment tag (${tag})`);
+test('income never says "Renews": the income card lists it by name and amount; its dates say "Payment"', async () => {
+  // Since 1.21.0 income is listed on its own card (name and amount), not among the groups.
+  assert(!$('#subs-list [data-id="test-salary"]'), 'not among the groups');
+  $('#income-toggle').click();
+  const row = $('#income-list [data-id="test-salary"]');
+  const salary = (await storage.getAll()).find((s) => s.id === 'test-salary');
+  assert(row && text(row).includes('Salary') && text(row).includes(money(salary.price, salary.currency)), `listed with its amount (${text(row)})`);
+  assert(!/Renews/.test(text($('#income-list'))), 'no "Renews" for income');
+  $('#income-toggle').click();
+  assert(/^Payment/.test(renewalText(nextRenewal(salary), true)), 'its date words say Payment');
   const plan = text($('#subs-list [data-id="test-phone"] .tag'));
   assert(/^Renews/.test(plan), `plans still say Renews (${plan})`);
 });
@@ -1207,9 +1219,10 @@ test('Pill: stays on the active tab when the bar changes size (rotation, insets)
 });
 
 /* ------------------------------------------------------------------ Wallet */
-// The Money tab's Wallet view (js/wallet.js). Cards in stack order for the seed: Income, Health
-// (only undated plans), Utilities (Phone 499 and Cloud 1,200 this month), Uncategorised (Domain,
-// six months away, plus the two USD plans).
+// The Money tab's Wallet view (js/wallet.js). Cards in stack order for the seed: Health (only
+// undated plans), Utilities (Phone 499 and Cloud 1,200 this month), Uncategorised (Domain, six
+// months away, plus the two USD plans). Income has its own card above the stack since 1.21.0
+// (tests/money-card.html tests it and its gauge).
 const wallet = () => $('#wallet')?.wallet;
 const wCards = () => $$('#wallet .w-card');
 const wCard = (name) => wCards().find((c) => text($('.w-name', c)) === name);
@@ -1247,23 +1260,28 @@ test('Wallet: a saved Grid choice is kept; Wallet | Grid | List is remembered pe
 });
 
 // Earlier tests edit the seed (prices, dates), so these compare with the items as they are now,
-// worked out independently with insights-calc's dueInMonth, and with the strip on screen.
+// worked out independently with insights-calc's dueInMonth, and with the Money card on screen.
 const money$ = (s) => Number(String(s).replace(/[^\d.-]/g, '')) || 0;
 const cardTotal = (c) => { const t = text($('.w-total', c)); return /\d/.test(t) && !t.startsWith('+') ? money$(t) : 0; };
-const walletStrip = () => Object.fromEntries($$('#money-summary .summary-cell').map((c) => [text($('.stat-label', c)), text($('.summary-value', c))]));
+// The Money card's figures, named as the yearly card names them (its Cash due is the Outgoings).
+const walletStrip = () => ({
+  Income: text($('#money-summary [data-roll="income"]')),
+  Outgoings: text($('#money-summary [data-roll="cash"]')),
+  'Left over': text($('#money-summary [data-roll="left"]')),
+});
 
-test('Wallet: card totals match the Money strip, month and year; other currencies shown apart, never added', async () => {
+test('Wallet: card totals match the Money card, month and year; other currencies shown apart, never added', async () => {
   const items = await storage.getAll();
-  eq(wCards().map((c) => text($('.w-name', c))), ['Income', 'Health', 'Utilities', 'Uncategorised'], 'Income, then the Money tab groups');
+  eq(wCards().map((c) => text($('.w-name', c))), ['Health', 'Utilities', 'Uncategorised'], 'the Money tab groups, no Income card');
+  assert(!$('#income-card').hidden, 'income has its own card');
   let usdShown = 0;
   for (const period of ['monthly', 'annual']) {
     $(`#money-summary [data-period="${period}"]`).click();
     await wSettled();
     const word = period === 'annual' ? 'this year' : 'this month';
     const due = (s) => (period === 'annual' ? [...Array(12).keys()].reduce((t, m) => t + dueInMonth(s, Y, m), 0) : dueInMonth(s, Y, M));
-    const expense = wCards().filter((c) => text($('.w-name', c)) !== 'Income');
-    eq(T(expense.reduce((t, c) => t + cardTotal(c), 0)), walletStrip().Outgoings, `${period}: the cards add up to the strip's Outgoings`);
-    eq(text($('.w-total', wCard('Income'))), walletStrip().Income, `${period}: the Income card is the strip's Income`);
+    const expense = wCards();
+    eq(T(expense.reduce((t, c) => t + cardTotal(c), 0)), walletStrip().Outgoings, `${period}: the cards add up to the Money card's Cash due`);
     for (const c of expense) {
       const name = text($('.w-name', c));
       const mine = items.filter((s) => !isIncome(s) && groupOf(s) === name);
@@ -1319,7 +1337,7 @@ test('Wallet: tap opens a card to its items; an item opens the edit sheet; Back,
   eq(overlays.ids(), [], 'nothing left on the stack');
 });
 
-test('Wallet: editing an item updates the stack and the strip; an open card stays open', async () => {
+test('Wallet: editing an item updates the stack and the Money card; an open card stays open', async () => {
   const w = wallet();
   w.close();
   const phone = (await storage.getAll()).find((s) => s.id === 'test-phone');
@@ -1332,7 +1350,7 @@ test('Wallet: editing an item updates the stack and the strip; an open card stay
   $('#sub-form').requestSubmit();
   await until(() => !isOpen() && cardTotal(wCard('Utilities')) === before + 100, 'the new total');
   eq(w.state().open, 'g:Utilities', 'still open, redrawn');
-  eq(money$(walletStrip().Outgoings), outBefore + 100, 'the strip agrees');
+  eq(money$(walletStrip().Outgoings), outBefore + 100, 'the Money card agrees');
   $('#wallet .w-item[data-id="test-phone"]').click();
   $('#sub-form [name="price"]').value = String(phone.price);
   $('#sub-form').requestSubmit();
@@ -1344,15 +1362,15 @@ test('Wallet: editing an item updates the stack and the strip; an open card stay
 
 test('Wallet: keyboard: Tab reaches each card, arrow keys move between them', async () => {
   const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
-  wBand('Income').focus();
+  wBand('Health').focus();
   key('ArrowDown');
-  eq(document.activeElement, wBand('Health'), 'down');
+  eq(document.activeElement, wBand('Utilities'), 'down');
   key('End');
   eq(document.activeElement, wBand('Uncategorised'), 'End');
   key('ArrowUp');
   eq(document.activeElement, wBand('Utilities'), 'up');
   key('Home');
-  eq(document.activeElement, wBand('Income'), 'Home');
+  eq(document.activeElement, wBand('Health'), 'Home');
   assert(wCards().every((c) => c.querySelector('.w-band').tabIndex === 0 && !c.inert), 'every band is a tab stop');
   eq(getComputedStyle(wCards().at(-1)).visibility, 'visible', 'off-screen cards stay focusable');
   document.activeElement.blur();
@@ -1365,7 +1383,7 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; p
     $('#set-theme').value = theme; $('#set-theme').dispatchEvent(new Event('change'));
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     eq([fill('Health'), fill('Utilities'), fill('Uncategorised')], ['--wallet-1', '--wallet-2', '--wallet-3'].map(cssToken), `${theme}: slots 1–3 in order`);
-    eq(fill('Income'), cssToken('--wallet-income'), `${theme}: Income is neutral`);
+    eq(parseColour(getComputedStyle($('#income-card')).backgroundColor), parseColour(cssToken('--wallet-income')), `${theme}: the income card is neutral`);
     for (const c of wCards()) {
       const ink = parseColour(getComputedStyle(c).color);
       for (const v of ['--card-top', '--card', '--card-bot']) {
@@ -1414,7 +1432,7 @@ test('Wallet: Reduce motion and effects: a plain list, no tilt or springs; a car
     eq(overlays.top(), 'wallet-card', 'Back still closes it');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     eq(w.state().open, null, 'closed at once');
-    eq(wCards().filter((c) => getComputedStyle(c).display !== 'none').length, 4, 'all cards again');
+    eq(wCards().filter((c) => getComputedStyle(c).display !== 'none').length, 3, 'all cards again');
     eq(w.state().frames, frames, 'not a single animation frame');
   } finally {
     $('#set-motion').checked = false; $('#set-motion').dispatchEvent(new Event('change'));
@@ -1516,12 +1534,12 @@ async function expectedOrders() {
   }
   const az = (a, b) => (a.name === 'Uncategorised') - (b.name === 'Uncategorised') || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   const list = [...groups.values()];
-  const inc = (await storage.getAll()).some(isIncome) ? ['Income'] : [];
   const only = (g) => g.n > 0 && g.twd === 0;
+  // Income is never a group (its own card since 1.21.0), in any order.
   return {
-    az: [...inc, ...list.slice().sort(az).map((g) => g.name)],
-    total: [...inc, ...list.slice().sort((a, b) => only(a) - only(b) || (only(a) ? b.n - a.n : b.total - a.total) || az(a, b)).map((g) => g.name)],
-    items: [...inc, ...list.slice().sort((a, b) => b.n - a.n || az(a, b)).map((g) => g.name)],
+    az: list.slice().sort(az).map((g) => g.name),
+    total: list.slice().sort((a, b) => only(a) - only(b) || (only(a) ? b.n - a.n : b.total - a.total) || az(a, b)).map((g) => g.name),
+    items: list.slice().sort((a, b) => b.n - a.n || az(a, b)).map((g) => g.name),
   };
 }
 
@@ -1605,7 +1623,7 @@ test('Sort: Wallet, Grid and List all follow it; an open card stays open and com
   await until(() => w.state().open === 'g:Utilities' && !w.state().animating, 'Utilities open');
   pickSort('total');
   eq(walletOrder(), want.total, 'Wallet: by total');
-  eq(wCards()[0].querySelector('.w-name').textContent.trim(), 'Income', 'Income stays first');
+  assert(!walletOrder().includes('Income') && !$('#income-card').hidden, 'no Income card in the stack: income keeps its own card');
   eq(w.state().open, 'g:Utilities', 'the open card stays open');
   eq(w.state().f, Math.min(want.total.indexOf('Utilities'), w.state().maxScroll), 'and is the front card, to close back into view');
   eq(overlays.top(), 'wallet-card', 'still on the overlay stack, so Back closes it');
@@ -1633,11 +1651,11 @@ test('Sort: Wallet, Grid and List all follow it; an open card stays open and com
 });
 
 /* ------------------------------------------------------------------ Rolling totals */
-// js/count-anim.js on the Money strip and the Wallet card totals.
+// js/count-anim.js on the Money card and the Wallet card totals.
 const roller = () => $('#money-summary').roller;
 const rolling = () => $$('.odo');
 const rollsDone = () => until(() => roller().stats().running === 0 && !rolling().length, 'the rolls finish', 3000);
-const stripTexts = () => $$('#money-summary .summary-value').map(text);
+const stripTexts = () => $$('#money-summary [data-roll]').map(text);
 const bandLabels = () => $$('#wallet .w-band').map((b) => b.getAttribute('aria-label'));
 const odoAnimations = () => document.getAnimations().filter((a) => a.effect?.target?.closest?.('.odo'));
 const reloadApp = () => $('#money-summary').reload();
@@ -1667,15 +1685,15 @@ test('Rolling totals: play when the Money tab comes to the front and when the ap
     let started = roller().stats().started;
     goTab('settings');
     goTab('subs');
-    assert(roller().stats().started >= started + 3, 'the strip rolls when the tab comes to the front');
-    assert($$('#money-summary .odo').length === 3, 'all three strip figures');
+    assert(roller().stats().started >= started + 3, 'the Money card rolls when the tab comes to the front');
+    assert($$('#money-summary .odo').length === 3, 'all three of its figures');
     eq(stripTexts(), texts, 'the text is the final value all the way through');
     assert(rolling().every((o) => o.querySelector('.odo-roll').getAttribute('aria-hidden') === 'true'), 'the rolling digits are hidden from screen readers');
     assert(rolling().every((o) => getComputedStyle(o.querySelector('.odo-txt')).color === 'rgba(0, 0, 0, 0)'), 'the real text is there, transparent');
     assert(!$('#money-summary [aria-live]') && !$$('#money-summary .odo [aria-live]').length, 'no live region');
     await rollsDone();
     eq(stripTexts(), texts, 'plain text again afterwards');
-    eq($$('#money-summary .summary-value').map((el) => el.children.length), [0, 0, 0], 'no leftover markup');
+    eq($$('#money-summary [data-roll]').map((el) => el.children.length), [0, 0, 0], 'no leftover markup');
 
     started = roller().stats().started;
     $('#money-summary [data-period="monthly"]').click(); // a redraw: same period, same numbers
@@ -1717,7 +1735,7 @@ test('Rolling totals: the Wallet labels are unchanged; only cards near the scree
     const still = bandLabels();
     setMotion(false);
     await wSettled();
-    eq(wCards().length, 17, '16 groups and Income');
+    eq(wCards().length, 16, '16 groups (income has its own card)');
     eq(bandLabels(), still, 'redrawn: the same labels');
     goTab('settings');
     goTab('subs');
@@ -1836,7 +1854,7 @@ async function insightsRolls() {
   onTop(true);
 }
 
-test('Rolling totals (Insights): the year chart readout stays static while it moves; the figures match the Money strip', async () => {
+test('Rolling totals (Insights): the year chart readout stays static while it moves; the figures match the Money card', async () => {
   onTop(true);
   try { await yearReadoutStatic(); } finally { onTop(false); }
 });
@@ -1861,12 +1879,12 @@ async function yearReadoutStatic() {
   for (let i = 0; i < 3; i++) key('ArrowLeft');
   await settle();
 
-  // This calendar year's card in Year view is the strip in Annual; this month's total is the strip's Outgoings.
+  // This calendar year's card in Year view is the Money card in Annual; this month's total is its Cash due.
   const year = Object.fromEntries($$('#insights .yc-year-stats .year-line').map((l) => [text($('dt', l)), text($('dd', l))]));
   goTab('subs');
   $('#money-summary [data-period="annual"]').click();
   await rollsDone();
-  eq(walletStrip(), year, 'Annual strip = yearly card');
+  eq(walletStrip(), year, 'Annual Money card = yearly card');
   $('#money-summary [data-period="monthly"]').click();
   await rollsDone();
   const outgoings = walletStrip().Outgoings;
@@ -1879,7 +1897,7 @@ async function yearReadoutStatic() {
   }
   eq(text($('#insights .month-label')), monthTitle(0), 'this month');
   await rollsDone();
-  eq(text(primary()), outgoings, 'this month\'s total = the strip\'s Outgoings');
+  eq(text(primary()), outgoings, 'this month\'s total = the Money card\'s Cash due');
 }
 
 test('Rolling totals (Insights): Reduce motion and effects: plain text, 0 animation frames', async () => {

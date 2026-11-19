@@ -49,19 +49,19 @@
   <main class="container" id="main">
     <!-- Money -->
     <section class="tab-panel" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs">
-      <section class="money-summary" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
-      <!-- Due soon: what comes due in the next days (js/due-soon.js); hidden when nothing is. -->
-      <section class="due-banner" id="due-banner" aria-label="Due soon" data-i18n-attr="aria-label:dueSoon.label" hidden>
-        <button type="button" class="due-toggle" id="due-toggle" aria-expanded="false" aria-haspopup="dialog" aria-controls="due-dialog">
-          <svg class="icon due-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-          <span class="due-text" id="due-text"></span>
-          <span class="due-sum" id="due-sum"></span>
-          <svg class="icon due-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <!-- The Money card (js/app.js renderMoneySummary): Cash due, Income and Left over for the period,
+           the Monthly | Annual toggle and the due-soon chip; a tap elsewhere on it opens Insights. -->
+      <section class="money-card" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
+      <!-- Income (js/app.js renderIncomeCard): pinned above the Wallet's stack, first in Grid and List.
+           Its gauge is the front card's share of the income; a tap lists the income items. -->
+      <section class="income-card" id="income-card" aria-label="Income" data-i18n-attr="aria-label:group.income" hidden>
+        <button type="button" class="ic-toggle" id="income-toggle" aria-expanded="false" aria-controls="income-list">
+          <span class="ic-head"><span class="ic-title" data-i18n="group.income">Income</span><svg class="ic-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="ic-track" id="income-track" aria-hidden="true"><span class="ic-seg" id="income-seg"></span></span>
+          <span class="ic-label" id="income-label"></span>
         </button>
-        <button type="button" class="icon-btn due-close" id="due-close" aria-label="Hide until tomorrow" title="Hide until tomorrow" data-i18n-attr="aria-label:dueSoon.dismiss; title:dueSoon.dismiss">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-        <p class="due-notes" id="due-notes" hidden><span id="due-extra"></span><button type="button" class="due-undated" id="due-undated" hidden></button></p>
+        <ul class="ic-list" id="income-list" hidden></ul>
+        <p class="sr-only" id="income-live" aria-live="polite"></p>
       </section>
       <div id="subs-list" class="money-groups"></div>
       <div class="empty-state" id="subs-empty" hidden>
@@ -123,8 +123,8 @@
         <div class="panel">
           <label class="setting-row">
             <span class="setting-label" data-i18n="settings.dueSoon.show">
-              Show due-soon banner
-              <span class="setting-hint" data-i18n="settings.dueSoon.show.hint">A line on the Money tab with what comes due soon. Closing it hides it until tomorrow.</span>
+              Show the due-soon chip
+              <span class="setting-hint" data-i18n="settings.dueSoon.show.hint">A chip on the Money card with how many items come due soon. Tap it for the list.</span>
             </span>
             <input type="checkbox" class="check" id="set-due">
           </label>
@@ -383,7 +383,7 @@
   </dialog>
 
   <!-- Sync: start a household, join one with the 12 recovery words, or manage it (js/sync-sheet.js) -->
-  <!-- Due soon: the banner's list. Tapping a row opens it in the edit sheet. -->
+  <!-- Due soon: the chip's list, with its totals at the top. Tapping a row opens it in the edit sheet. -->
   <dialog class="sheet" id="due-dialog" aria-labelledby="due-title">
     <div class="sheet-head">
       <h2 id="due-title" data-i18n="dueSoon.label">Due soon</h2>
@@ -392,6 +392,10 @@
       </button>
     </div>
     <div class="sheet-body due-body">
+      <div class="due-summary">
+        <p class="due-line"><span class="due-text" id="due-text"></span><span class="due-sum" id="due-sum"></span></p>
+        <p class="due-notes" id="due-notes" hidden><span id="due-extra"></span><button type="button" class="due-undated" id="due-undated" hidden></button></p>
+      </div>
       <p class="sync-text" id="due-range"></p>
       <ul class="subs-list due-list" id="due-list"></ul>
       <p class="footnote" data-i18n="dueSoon.hint">Tap an item to edit it.</p>

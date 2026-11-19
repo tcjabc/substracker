@@ -190,30 +190,41 @@ async function walk() {
   put('tabbar', grab($('.tabbar'), { skip: MODE === 'en' ? ['#tab-calendar'] : [] }));
   put('tab.calendar', grab($('#tab-calendar')));
   put('fab.add', grab($('#fab-stack')));
-  put('money.strip.monthly', grab($('#money-summary')));
-  // The due-soon banner (new in 1.18.0) and its sheet: recorded on their own keys.
-  put('money.banner', grab($('#due-banner')));
-  $('#due-toggle').click();
+  // 1.21.0: the Money card replaces the strip, the due-soon chip on it the banner (its totals moved
+  // into the sheet), and income has its own card above the stack. All on new keys; the strip's and
+  // the banner's are gone. The open-card announcement is on a new key too: the first card used to
+  // be Income.
+  put('money.card.monthly', grab($('#money-summary')));
+  put('money.chip', [$('#due-chip').getAttribute('aria-label')]);
+  $('#due-chip').click();
   await until(() => dialogShown('due-dialog'), 'due-soon sheet');
-  put('money.banner.sheet', grab($('#due-dialog')));
+  put('money.due.sheet', grab($('#due-dialog')));
   pressBack();
   await tick(20);
+  put('money.income', grab($('#income-card'), { skip: ['#income-list'] }));
+  $('#income-toggle').click();
+  await tick(20);
+  put('money.income.open', grab($('#income-card'), { skip: ['.logo'] }));
+  $('#income-toggle').click();
+  await tick(20);
   put('wallet.host', [$('#wallet').getAttribute('aria-label')]);
-  $$('#wallet .w-band').forEach((b, i) => put(`wallet.card.${i}`, grab(b.closest('.w-card') ?? b.parentElement, { skip: ['.w-logos'] })));
+  // The expense cards keep their keys from before 1.21.0 (Income was card 0 then).
+  $$('#wallet .w-band').forEach((b, i) => put(`wallet.card.${i + 1}`, grab(b.closest('.w-card') ?? b.parentElement, { skip: ['.w-logos'] })));
   const firstBand = $('#wallet .w-band');
   firstBand.click();
   await tick(120);
-  put('wallet.announce.open', [$('#wallet > p.sr-only')?.textContent]);
+  put('wallet.announce.open.group', [$('#wallet > p.sr-only')?.textContent]);
   pressBack();
   await tick(120);
-  put('wallet.announce.close', [$('#wallet > p.sr-only')?.textContent]);
+  put('wallet.announce.close.group', [$('#wallet > p.sr-only')?.textContent]);
 
   $('#money-summary [data-period="annual"]').click();
   await tick(20);
-  put('money.strip.annual', grab($('#money-summary')));
+  put('money.card.annual', grab($('#money-summary')));
   // (In the pseudo-locale, without the logo initials, which are the items' own first letters.)
-  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i}`, [b.getAttribute('aria-label'),
+  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i + 1}`, [b.getAttribute('aria-label'),
     MODE === 'pseudo' ? grab(b, { skip: ['.w-logos'] })[0] : norm(b.textContent)]));
+  put('money.income.annual', [norm($('#income-label').textContent)]);
   $('#money-summary [data-period="monthly"]').click();
 
   // The View button and its menu (1.20.0: the view and Sort in one menu; the Sort button's keys are gone).
@@ -232,17 +243,19 @@ async function walk() {
   $('#view-menu [data-sort="az"]').click();
   await tick(20);
 
-  // Grid and List.
+  // Grid and List (1.21.0: on new keys, without the Income section, and the gauge's words for all
+  // the outgoings).
   pickView('grid');
   await tick(20);
-  put('money.grid', grab($('#subs-list')));
+  put('money.grid.groups', grab($('#subs-list')));
+  put('money.income.grid', [norm($('#income-label').textContent)]);
   $('.group-dot').click();
   await tick(20);
   put('money.swatches', grab($('#swatch-pop')));
   pressBack();
   pickView('list');
   await tick(20);
-  put('money.list', grab($('#subs-list')));
+  put('money.list.groups', grab($('#subs-list')));
 
   // The calendar (new in 1.19.0), recorded on its own keys: this month with today's list, a day
   // with income, an empty day and the next month. Its own tab since 1.20.0, with one summary line:
@@ -453,7 +466,7 @@ if (MODE === 'en') {
   });
 
   test('Settings → Due soon in English: the three settings, with their defaults', async () => {
-    eq(dueSettingsEn, ['Due soon Show due-soon banner A line on the Money tab with what comes due soon. Closing it hides it until tomorrow. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
+    eq(dueSettingsEn, ['Due soon Show the due-soon chip A chip on the Money card with how many items come due soon. Tap it for the list. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
   });
 
   test("index.html's own English is the dictionary's, so the page reads the same before the script runs", async () => {

@@ -22,34 +22,35 @@
       "",
       "aria-label=Add expense or income"
     ],
-    "money.strip.monthly": [
-      "November 2026 Monthly Annual Income NT$40,000 Outgoings NT$32,389 Avg NT$32,014/mo Left over NT$7,611 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
+    "money.card.monthly": [
+      "November 2026 Monthly Annual Cash due 3 due NT$32,389 IncomeNT$40,000 Left overNT$7,611 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
       "aria-label=Summary",
-      "aria-label=Summary period"
+      "aria-label=Cash due this month NT$32,389. Open Insights",
+      "aria-label=Summary period",
+      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
-    "money.banner": [
-      "3 due in the next 7 days NT$889 +1 in USD1 item needs a date",
-      "aria-label=Due soon",
-      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD",
-      "aria-label=Hide until tomorrow",
-      "title=Hide until tomorrow"
+    "money.chip": [
+      "3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
-    "money.banner.sheet": [
-      "Due soon Today to 25 Nov 🎬 StreamingToday NT$390 P PhoneIn 2 days NT$499 T ToolIn 4 days US$10not in TWD totals Tap an item to edit it.",
+    "money.due.sheet": [
+      "Due soon 3 due in the next 7 daysNT$889 due +1 in USD1 item needs a date Today to 25 Nov 🎬 StreamingToday NT$390 P PhoneIn 2 days NT$499 T ToolIn 4 days US$10not in TWD totals Tap an item to edit it.",
       "aria-label=Close",
       "aria-label=Streaming, today, NT$390",
       "aria-label=Phone, in 2 days, NT$499",
       "aria-label=Tool, in 4 days, US$10"
     ],
+    "money.income": [
+      "Income Entertainment · 5% of income",
+      "aria-label=Income"
+    ],
+    "money.income.open": [
+      "Income Entertainment · 5% of income Bonus NT$12,000 Salary NT$40,000",
+      "aria-label=Income",
+      "aria-label=Edit Bonus",
+      "aria-label=Edit Salary"
+    ],
     "wallet.host": [
       "Groups. Arrow keys move between groups, Enter opens one, Escape closes it."
-    ],
-    "wallet.card.0": [
-      "IncomeNT$40,000 2 itemspaid this month SalaryNT$40,000BonusPayment 10 Jan 2027 Paid in NovemberNT$40,000 Paid in 2026NT$492,000 💼 Salary NT$40,000 /mo Monthly Payment 25 Nov B Bonus NT$12,000 /yr Yearly · not paid this month Payment 10 Jan 2027",
-      "aria-label=Income, 2 items, NT$40,000 paid this month",
-      "aria-label=Income items",
-      "aria-label=Edit Salary",
-      "aria-label=Edit Bonus"
     ],
     "wallet.card.1": [
       "EntertainmentNT$1,890 2 itemsdue this month ConcertNT$1,500StreamingNT$390 Due in NovemberNT$1,890 Due in 2026NT$6,180 C Concert NT$1,500 One-off 28 Nov 🎬 Streaming NT$390 /mo Monthly Renews today",
@@ -84,20 +85,18 @@
       "aria-label=Uncategorised items",
       "aria-label=Edit Stamps"
     ],
-    "wallet.announce.open": [
-      "Income opened. 2 items, NT$40,000 paid this month."
+    "wallet.announce.open.group": [
+      "Entertainment opened. 2 items, NT$1,890 due this month."
     ],
-    "wallet.announce.close": [
-      "Income closed."
+    "wallet.announce.close.group": [
+      "Entertainment closed."
     ],
-    "money.strip.annual": [
-      "2026 Monthly Annual Income NT$492,000 Outgoings NT$373,368 Left over NT$118,632 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
+    "money.card.annual": [
+      "2026 Monthly Annual Cash due 3 due NT$373,368 IncomeNT$492,000 Left overNT$118,632 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
       "aria-label=Summary",
-      "aria-label=Summary period"
-    ],
-    "wallet.annual.band.0": [
-      "Income, 2 items, NT$492,000 paid this year",
-      "Income💼BNT$492,000 2 itemspaid this year"
+      "aria-label=Cash due this year NT$373,368. Open Insights",
+      "aria-label=Summary period",
+      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
     "wallet.annual.band.1": [
       "Entertainment, 2 items, NT$6,180 this year",
@@ -119,6 +118,9 @@
       "Uncategorised, 1 item, nothing due this year",
       "UncategorisedSNothing due 1 itemthis year"
     ],
+    "money.income.annual": [
+      "Entertainment · 1% of income"
+    ],
     "view.button": [
       "View: Wallet. Sort: A to Z",
       "View"
@@ -133,10 +135,8 @@
     "view.sort.items": [
       "View: Wallet. Sort: Items, most first"
     ],
-    "money.grid": [
-      "Income 2 B Bonus NT$12,000/ yr Payment 10 Jan 2027 💼 Salary NT$40,000/ mo Payment 25 Nov Entertainment 2 C Concert NT$1,500 One-off28 Nov 🎬 Streaming NT$390/ mo Renews today Health 1 G Gym NT$900/ mo House 1 R Rent NT$30,000/ mo Renews 1 Dec Utilities 3 C Cloud NT$1,200/ yr Renews 15 Mar 2027 P Phone Unlimited NT$499/ mo Renews in 2 days T Tool US$10/ mo Renews in 4 days Uncategorised 1 S Stamps NT$60 One-off2 Feb 2027",
-      "aria-label=Edit Bonus",
-      "aria-label=Edit Salary",
+    "money.grid.groups": [
+      "Entertainment 2 C Concert NT$1,500 One-off28 Nov 🎬 Streaming NT$390/ mo Renews today Health 1 G Gym NT$900/ mo House 1 R Rent NT$30,000/ mo Renews 1 Dec Utilities 3 C Cloud NT$1,200/ yr Renews 15 Mar 2027 P Phone Unlimited NT$499/ mo Renews in 2 days T Tool US$10/ mo Renews in 4 days Uncategorised 1 S Stamps NT$60 One-off2 Feb 2027",
       "aria-label=Colour for Entertainment: Teal",
       "aria-label=Edit Concert",
       "aria-label=Edit Streaming",
@@ -150,6 +150,9 @@
       "aria-label=Edit Tool",
       "aria-label=Colour for Uncategorised: Lilac",
       "aria-label=Edit Stamps"
+    ],
+    "money.income.grid": [
+      "Outgoings · 81% of income"
     ],
     "money.swatches": [
       "Colour for Entertainment",
@@ -174,10 +177,8 @@
       "aria-label=Brick",
       "title=Brick"
     ],
-    "money.list": [
-      "Income 2 B Bonus Payment 10 Jan 2027 NT$12,000 yearly 💼 Salary Payment 25 Nov NT$40,000 monthly Entertainment 2 C Concert 28 Nov NT$1,500 One-off 🎬 Streaming Renews today NT$390 monthly Health 1 G Gym NT$900 monthly House 1 R Rent Renews 1 Dec NT$30,000 monthly Utilities 3 C Cloud Renews 15 Mar 2027 NT$1,200 yearly P Phone Unlimited · Renews in 2 days NT$499 monthly T Tool Renews in 4 days US$10 monthly Uncategorised 1 S Stamps 2 Feb 2027 NT$60 One-off",
-      "aria-label=Edit Bonus",
-      "aria-label=Edit Salary",
+    "money.list.groups": [
+      "Entertainment 2 C Concert 28 Nov NT$1,500 One-off 🎬 Streaming Renews today NT$390 monthly Health 1 G Gym NT$900 monthly House 1 R Rent Renews 1 Dec NT$30,000 monthly Utilities 3 C Cloud Renews 15 Mar 2027 NT$1,200 yearly P Phone Unlimited · Renews in 2 days NT$499 monthly T Tool Renews in 4 days US$10 monthly Uncategorised 1 S Stamps 2 Feb 2027 NT$60 One-off",
       "aria-label=Colour for Entertainment: Teal",
       "aria-label=Edit Concert",
       "aria-label=Edit Streaming",

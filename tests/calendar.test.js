@@ -145,12 +145,12 @@ test('the header fits: Calendar\'s title alone, Money\'s title and its View butt
   await goTab('calendar');
 });
 
-test('the Calendar page: the month heading, previous, next and Today, one summary line, the grid; no Money strip, card or banner', async () => {
-  for (const sel of ['#money-summary', '#due-banner', '#subs-list', '.wallet']) {
+test('the Calendar page: the month heading, previous, next and Today, one summary line, the grid; no Money card, chip or income card', async () => {
+  for (const sel of ['#money-summary', '#due-chip', '#income-card', '#subs-list', '.wallet']) {
     const el = $(sel);
     assert(!el || !el.getClientRects().length, `${sel} is not on this page`);
   }
-  eq(storage.getPref('dueSoon'), null, 'the banner is on (its default), shown on Money only');
+  eq(storage.getPref('dueSoon'), null, 'the due-soon chip is on (its default), shown on Money only');
   eq($$('#calendar .cal-head > *').map((e) => e.dataset.calStep ?? (e.matches('[data-cal-today]') ? 'today' : e.id)), ['-1', 'cal-month', '1', 'today'], 'previous, the month, next, Today');
   const sum = $('#calendar .cal-summary');
   eq([...sum.children].map((e) => e.className), ['cal-summary-label', 'cal-summary-value'], 'one summary line: its label and figure, nothing under it');
@@ -162,11 +162,11 @@ test('the Calendar page: the month heading, previous, next and Today, one summar
   assert(s.height < line * 1.6, `the summary is on one line (${Math.round(s.height)}px for a ${line}px line)`);
 });
 
-test('the month summary is the Money strip\'s Outgoings for this month, on the same basis', async () => {
+test('the month summary is the Money card\'s Cash due for this month, on the same basis', async () => {
   eq(text($('#calendar .cal-summary-label')), `Cash due in ${monthName(2026, 10)}`, 'labelled with the month');
-  const strip = $('#money-summary [data-roll="Outgoings"]');
+  const strip = $('#money-summary [data-roll="cash"]');
   await tick(1200); // let any roll finish
-  eq(text($('#calendar .cal-summary-value')), text(strip), 'the same figure as the strip');
+  eq(text($('#calendar .cal-summary-value')), text(strip), 'the same figure as the Money card');
   eq(text(strip), T(NOV_DUE), 'and the worked total');
   assert(!$('#calendar .cal-summary-sub'), 'no second line: income and other currencies are on their days');
   const items = (await storage.getAll()).filter((s) => s.currency === 'TWD');
@@ -302,7 +302,7 @@ test('a row opens the item in the edit sheet; the need-a-date line opens the und
   assert(!open(subDialog()), 'Back closed it');
   eq(api().state.selected, 20, 'the calendar kept its day');
   const undated = $('#calendar .cal-undated');
-  eq(text(undated), '1 item needs a date', 'the same quiet line as the banner');
+  eq(text(undated), '1 item needs a date', 'the same quiet line as the due-soon sheet');
   undated.click();
   await until(() => open(subDialog()), 'the edit sheet for the undated item');
   eq($('#sub-form').elements.name.value, 'Gym', 'the first undated item');

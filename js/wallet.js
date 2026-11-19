@@ -31,6 +31,9 @@ const css = (rgb, a) => (a == null ? `rgb(${rgb.join(' ')})` : `rgb(${rgb.join('
  *   loadLogos(el) start loading the deferred logos inside `el`
  *   total(el, g, near)  optional: after each draw, for every card's total element (`near`: on or
  *                 near the screen), so the app can roll the figure when it changes
+ *   onFront(g, { settled })  optional: the front card's group (the open card while one is open;
+ *                 null with no cards) whenever it or `settled` changes. `settled` is true once the
+ *                 stack has stopped (no drag, spring or opening), so the app can announce it once.
  * update(data) draws the cards; see app.js renderSubs for its shape.
  */
 export function createWallet(host, opts) {
@@ -52,38 +55,30 @@ export function createWallet(host, opts) {
   const reduced = () => !!opts.reduced?.();
 
   /* Cards ---------------------------------------------------------------------------------- */
-  // Wording by period ("this month" or "this year") and by group type (income is paid, the rest due).
+  // Wording by period ("this month" or "this year"). Every card is an expense group: income has its
+  // own card above the stack (app.js renderIncomeCard).
   const yearly = () => data?.period === 'annual';
   const items = (n) => t('common.items', { count: n });
   const periodWord = () => (yearly() ? t('wallet.period.year') : t('wallet.period.month'));
-  const dueWord = (g) => (g.income
-    ? (yearly() ? t('wallet.paid.year') : t('wallet.paid.month'))
-    : (yearly() ? t('wallet.due.year') : t('wallet.due.month')));
-  const nothingWord = (g) => (g.income
-    ? (yearly() ? t('wallet.nothingPaid.year') : t('wallet.nothingPaid.month'))
-    : (yearly() ? t('wallet.nothingDue.year') : t('wallet.nothingDue.month')));
-  const notWord = (g) => (g.income
-    ? (yearly() ? t('wallet.notPaid.year') : t('wallet.notPaid.month'))
-    : (yearly() ? t('wallet.notDue.year') : t('wallet.notDue.month')));
-  // In sentences read aloud: "NT$30,000 this month" (a group), "NT$40,000 paid this month" (income).
+  const dueWord = () => (yearly() ? t('wallet.due.year') : t('wallet.due.month'));
+  const nothingWord = () => (yearly() ? t('wallet.nothingDue.year') : t('wallet.nothingDue.month'));
+  const notWord = () => (yearly() ? t('wallet.notDue.year') : t('wallet.notDue.month'));
+  // In sentences read aloud: "NT$30,000 this month", "NT$30,000 due this month".
   const amountWord = (g, { due = false } = {}) => {
     const amount = money(g.total, data.currency);
-    if (g.income) return yearly() ? t('wallet.amount.paid.year', { amount }) : t('wallet.amount.paid.month', { amount });
     if (due) return yearly() ? t('wallet.amount.due.year', { amount }) : t('wallet.amount.due.month', { amount });
     return yearly() ? t('wallet.amount.year', { amount }) : t('wallet.amount.month', { amount });
   };
-  const nothingLower = (g) => (g.income
-    ? (yearly() ? t('wallet.band.nothingPaid.year') : t('wallet.band.nothingPaid.month'))
-    : (yearly() ? t('wallet.band.nothingDue.year') : t('wallet.band.nothingDue.month')));
+  const nothingLower = () => (yearly() ? t('wallet.band.nothingDue.year') : t('wallet.band.nothingDue.month'));
 
   function totalLine(g) {
     const others = othersText(g.others);
-    if (g.total > 0) return { total: money(g.total, data.currency), sub: [dueWord(g), others].filter(Boolean).join(' · ') };
-    if (others) return { total: others, sub: dueWord(g) };
-    return { total: g.income ? t('wallet.nothingPaid') : t('wallet.nothingDue'), sub: periodWord() };
+    if (g.total > 0) return { total: money(g.total, data.currency), sub: [dueWord(), others].filter(Boolean).join(' · ') };
+    if (others) return { total: others, sub: dueWord() };
+    return { total: t('wallet.nothingDue'), sub: periodWord() };
   }
   function bandLabel(g) {
-    const amount = g.total > 0 ? amountWord(g) : nothingLower(g);
+    const amount = g.total > 0 ? amountWord(g) : nothingLower();
     const others = g.others.map((o) => t('wallet.band.otherCurrency', { count: o.count, currency: o.currency })).join(t('common.listSep'));
     return others
       ? t('wallet.band.withOthers', { name: g.label, items: items(g.items.length), amount, others })
@@ -109,7 +104,7 @@ export function createWallet(host, opts) {
     let rows;
     if (!dueNow.length && !g.others.length) {
       const next = g.items.map((s) => ({ s, d: isOnce(s) ? parseDate(s.date) : nextRenewal(s) })).filter((x) => x.d).sort((a, b) => a.d - b.d)[0];
-      rows = `<div class="w-pv-row"><span>${esc(nothingWord(g))}</span><span></span></div>`
+      rows = `<div class="w-pv-row"><span>${esc(nothingWord())}</span><span></span></div>`
         + (next ? `<div class="w-pv-row"><span>${esc(t('wallet.next', { name: next.s.name }))}</span><span>${esc(shortDate(next.d))}</span></div>` : '');
     } else {
       rows = g.ranked.slice(0, 2).map((s) => {
@@ -125,7 +120,7 @@ export function createWallet(host, opts) {
     const monthName = new Date(y, m, 1).toLocaleDateString(formatLocale(), { month: 'long' });
     const rowsHTML = g.ranked.map((s) => {
       const c = g.cash(s);
-      const notes = [cycleWord(s), s.plan && !isIncome(s) ? s.plan : '', s.currency !== cur ? t('wallet.notInTotals', { currency: cur }) : '', c > 0 ? '' : notWord(g)].filter(Boolean);
+      const notes = [cycleWord(s), s.plan ? s.plan : '', s.currency !== cur ? t('wallet.notInTotals', { currency: cur }) : '', c > 0 ? '' : notWord()].filter(Boolean);
       return `<li><button type="button" class="w-item" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
         ${opts.logo(s, 'sm')}
         <span class="w-i-name">${esc(s.name)}</span>
@@ -142,8 +137,8 @@ export function createWallet(host, opts) {
       <div class="w-preview" aria-hidden="true"><div class="w-bar"><div class="w-bar-track">${shares}</div>${moreText}</div>${rows}</div>
       <div class="w-detail" inert>
         <div class="w-stats">
-          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidIn' : 'wallet.stat.dueIn', { when: monthName }))}</div><div class="w-stat-v">${esc(money(sum('monthly'), cur))}</div></div>
-          <div><div class="w-stat-k">${esc(t(g.income ? 'wallet.stat.paidInYear' : 'wallet.stat.dueInYear', { year: y }))}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
+          <div><div class="w-stat-k">${esc(t('wallet.stat.dueIn', { when: monthName }))}</div><div class="w-stat-v">${esc(money(sum('monthly'), cur))}</div></div>
+          <div><div class="w-stat-k">${esc(t('wallet.stat.dueInYear', { year: y }))}</div><div class="w-stat-v">${esc(money(sum('annual'), cur))}</div></div>
         </div>
         <ul class="w-items" aria-label="${esc(t('wallet.itemsLabel', { name: g.label }))}">${rowsHTML}</ul>
       </div>
@@ -248,10 +243,25 @@ export function createWallet(host, opts) {
     c.el.style.height = `${c.openH}px`;
   }
 
+  /* The front card ---------------------------------------------------------------------------- */
+  // The open card while one is open, else the card in the front slot (the first card in the plain
+  // list of Reduce motion and effects). `settled`: nothing moves, so the app can announce it once.
+  let lastFront = null;
+  const frontIndex = () => (S.e >= 0 ? S.e : clamp(Math.round(S.f), 0, Math.max(0, cards.length - 1)));
+  function reportFront() {
+    if (!opts.onFront) return;
+    const g = cards[frontIndex()]?.g ?? null;
+    const settled = (reduced() || (S.mode === 'idle' && !dragActive)) && S.p === S.pT && !S.pv;
+    const key = g?.key ?? null;
+    if (lastFront && lastFront.key === key && lastFront.settled === settled && lastFront.g === g) return;
+    lastFront = { key, settled, g };
+    opts.onFront(g, { settled });
+  }
+
   /* Render ---------------------------------------------------------------------------------- */
   const px = (v) => Math.round(v * dpr) / dpr;
   function render() {
-    if (reduced()) return;
+    if (reduced()) { reportFront(); return; }
     const e = S.e, pe = clamp(S.p, 0, 1);
     const de = e >= 0 ? e - S.f : 0;
     cards.forEach((c, i) => {
@@ -290,6 +300,7 @@ export function createWallet(host, opts) {
       }
     });
     renderLifts(e, pe);
+    reportFront();
   }
   // The big drop shadow on separate plates (transform and opacity only): under the front card,
   // crossfading to the next as it rises; the open card takes it all.
@@ -426,7 +437,7 @@ export function createWallet(host, opts) {
   function announce(msg) { live.textContent = ''; setTimeout(() => { live.textContent = msg; }, 30); }
   function openedText(c) {
     const g = c.g;
-    const amount = g.total > 0 ? amountWord(g, { due: true }) : nothingLower(g);
+    const amount = g.total > 0 ? amountWord(g, { due: true }) : nothingLower();
     return t('wallet.opened', { name: g.label, items: items(g.items.length), amount });
   }
   function markOpen(c, on) {
@@ -451,6 +462,7 @@ export function createWallet(host, opts) {
       c.rmScroll = window.scrollY;
       S.p = S.pT = 1;
       host.scrollIntoView?.({ block: 'start' });
+      reportFront();
       return;
     }
     sizeOpen(c);
@@ -478,6 +490,7 @@ export function createWallet(host, opts) {
       S.p = S.pT = 0;
       afterClose();
       if (c.rmScroll != null) window.scrollTo({ top: c.rmScroll });
+      reportFront();
       return;
     }
     c.el.classList.add('is-anim');
@@ -578,7 +591,11 @@ export function createWallet(host, opts) {
     },
     /** Close the open card at once (leaving the Wallet view). */
     close() { if (S.e >= 0) collapse({ instant: true, quiet: true }); },
+    /** The space above the stack changed (the income card opened or closed): measure again. */
+    resize() { if (data) { measure(); render(); } },
     isOpen: () => S.e >= 0,
+    /** The front card's group (see onFront), or null. */
+    front: () => cards[frontIndex()]?.g ?? null,
     destroy() {
       destroyed = true;
       if (raf) cancelAnimationFrame(raf);
@@ -589,7 +606,7 @@ export function createWallet(host, opts) {
     },
     /** For tests: the engine's state. */
     state: () => ({
-      f: S.f, mode: S.mode, open: S.e >= 0 ? cards[S.e]?.g.key ?? null : null, progress: S.p,
+      f: S.f, mode: S.mode, open: S.e >= 0 ? cards[S.e]?.g.key ?? null : null, progress: S.p, front: cards[frontIndex()]?.g.key ?? null,
       animating: !!raf, frames, maxScroll: maxF, height: H, count: cards.length,
       fits: cards.map((c) => ({ key: c.g.key, ink: hexOf(c.fit.ink), ratio: c.fit.ratio, ratio2: c.fit.ratio2 })),
     }),

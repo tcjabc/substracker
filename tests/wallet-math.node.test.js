@@ -1,7 +1,9 @@
 // Node tests for js/wallet-math.js: the Wallet's palette (it matches app.css, every slot keeps 4.5:1
 // in both themes with the depth on), the automatic colours (slot order, no equal neighbours, picked
-// colours untouched), the card totals on the Money strip's cash basis, and the stack's geometry and
-// fling maths. Run with `npm test`. Items are made up.
+// colours untouched), the card totals on the Money card's cash basis, Sort (no Income group), the
+// income card's gauge (its share maths and every segment colour against the track), and the
+// stack's geometry and fling maths. Run with `npm test`, and with TZ=America/New_York too. Items
+// are made up.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +12,7 @@ import {
   WALLET_LIGHT, WALLET_DARK, WALLET_KEYS, isWalletKey, assignAutoColours, fitCard, parseColour, contrast,
   shiftL, mix, walletGroups, othersText, periodCash, cardPose, maxScroll, rubberBand, releasePlan,
   sampleVelocity, GEOM, collapsedHeight, DEPTH, faceText, sortGroups, groupSortFrom, GROUP_SORTS,
+  incomeGauge, frontGauge, totalGauge, gaugeNeedsRing, GAUGE_CONTRAST,
 } from '../js/wallet-math.js';
 import { stripSummary } from '../js/insights-calc.js';
 import { viewFrom } from '../js/util.js';
@@ -40,6 +43,18 @@ test('the palette in js/wallet-math.js is the one in app.css, in every theme blo
   assert.deepEqual(blocks[2], WALLET_DARK);
   assert.equal(new Set(WALLET_LIGHT).size, 15, '15 different light colours');
   assert.equal(new Set(WALLET_DARK).size, 15, '15 different dark colours');
+});
+
+test('parseColour reads hex, rgb() and color(srgb …), which is how a browser gives a color-mix() back', () => {
+  assert.deepEqual(parseColour('#4f46e5'), [79, 70, 229]);
+  assert.deepEqual(parseColour('#fff'), [255, 255, 255]);
+  assert.deepEqual(parseColour('rgb(79, 70, 229)'), [79, 70, 229]);
+  assert.deepEqual(parseColour('rgba(79 70 229 / 0.5)'), [79, 70, 229]);
+  assert.deepEqual(parseColour('color(srgb 0.31 0.2745 0.898)'), [79, 70, 229]);
+  assert.deepEqual(parseColour('color(srgb 1 0 0.5 / 0.4)'), [255, 0, 128]);
+  assert.deepEqual(parseColour('color(srgb 1.2 -0.1 0)'), [255, 0, 0], 'clamped to sRGB');
+  assert.equal(parseColour('color(display-p3 1 0 0)'), null, 'other spaces are not guessed');
+  assert.equal(parseColour(''), null);
 });
 
 test('wallet keys: w1 … w15 only', () => {
@@ -177,21 +192,20 @@ const ITEMS = [
 ];
 
 for (const period of ['monthly', 'annual']) {
-  test(`${period}: the cards add up to the Money strip (outgoings and income), other currencies apart`, () => {
+  test(`${period}: the cards add up to the Money card's Cash due, other currencies apart; income is no card`, () => {
     const groups = walletGroups(ITEMS, { currency: 'TWD', period, year: Y, month: M });
-    const strip = stripSummary(ITEMS.filter((s) => s.currency === 'TWD'), period, Y, M);
-    const out = groups.filter((g) => !g.income).reduce((t, g) => t + g.total, 0);
-    const inc = groups.filter((g) => g.income).reduce((t, g) => t + g.total, 0);
-    assert.equal(out, strip.outgoings, 'outgoings');
-    assert.equal(inc, strip.income, 'income');
+    const card = stripSummary(ITEMS.filter((s) => s.currency === 'TWD'), period, Y, M);
+    assert.equal(groups.reduce((t, g) => t + g.total, 0), card.outgoings, 'outgoings');
+    assert.ok(groups.every((g) => g.items.every((s) => s.type !== 'income')), 'no income items in any card');
   });
 }
 
-test('cards: Income first, then the Money tab groups A–Z with Uncategorised last; items A–Z', () => {
+test('cards: the Money tab groups A–Z with Uncategorised last, no Income card; items A–Z', () => {
   const groups = walletGroups(ITEMS, { currency: 'TWD', period: 'monthly', year: Y, month: M });
-  assert.deepEqual(groups.map((g) => g.name), ['Income', 'AI', 'Education', 'Fitness', 'House', 'Insurance', 'Uncategorised']);
+  assert.deepEqual(groups.map((g) => g.name), ['AI', 'Education', 'Fitness', 'House', 'Insurance', 'Uncategorised']);
   assert.deepEqual(groups.find((g) => g.name === 'Insurance').items.map((s) => s.name), ['Car insurance', 'Travel insurance']);
-  assert.deepEqual(groups.map((g) => g.key).slice(0, 2), ['income', 'g:AI']);
+  assert.deepEqual(groups.map((g) => g.key).slice(0, 2), ['g:AI', 'g:Education']);
+  assert.deepEqual(walletGroups(ITEMS.filter((s) => s.type === 'income'), { currency: 'TWD', period: 'monthly', year: Y, month: M }), [], 'income only: no cards');
 });
 
 test('cards: month totals, nothing due, undated, and other currencies counted but not added', () => {
@@ -204,7 +218,7 @@ test('cards: month totals, nothing due, undated, and other currencies counted bu
   assert.equal(m.AI.total, 330);
   assert.deepEqual(m.AI.others, [{ currency: 'USD', count: 1 }]);
   assert.equal(othersText(m.AI.others), '+1 in USD');
-  assert.deepEqual(m.Income.others, [{ currency: 'USD', count: 1 }], 'the USD gig is paid this month');
+  assert.equal(m.Income, undefined, 'income is no card');
   assert.deepEqual(m.AI.ranked.map((s) => s.name), ['Notion AI', 'Claude Pro'], 'default currency first');
   const y = by(walletGroups(ITEMS, { currency: 'TWD', period: 'annual', year: Y, month: M }));
   assert.equal(y.House.total, 360000);
@@ -232,7 +246,7 @@ const sorted = (sort, period = 'monthly', items = SORT_ITEMS) =>
 test('sort: A–Z is the order the Money tab always had, and the default for any other saved value', () => {
   const today = walletGroups(SORT_ITEMS, { currency: 'TWD', period: 'monthly', year: Y, month: M }).map((g) => g.name);
   assert.deepEqual(sorted('az'), today, 'unchanged');
-  assert.deepEqual(today, ['Income', 'AI', 'Books', 'Cloud', 'Education', 'Fitness', 'Games', 'House', 'Insurance', 'Uncategorised']);
+  assert.deepEqual(today, ['AI', 'Books', 'Cloud', 'Education', 'Fitness', 'Games', 'House', 'Insurance', 'Uncategorised']);
   for (const pref of [null, undefined, '', 'nope', 'AZ', 'Total']) {
     assert.equal(groupSortFrom(pref), 'az', String(pref));
     assert.deepEqual(sorted(pref), today, `${pref}: today's order`);
@@ -245,37 +259,141 @@ test('sort: A–Z is the order the Money tab always had, and the default for any
 test('sort by total: this month high to low, ties A–Z, other-currency-only groups last by item count', () => {
   // House 30,000 · Insurance 12,800 · AI 330 · Books 100 = Uncategorised 100 (A–Z, Uncategorised
   // last) · Education 0 = Fitness 0 (nothing due, undated) · then Cloud (2 USD) and Games (1 JPY).
-  assert.deepEqual(sorted('total'), ['Income', 'House', 'Insurance', 'AI', 'Books', 'Uncategorised', 'Education', 'Fitness', 'Cloud', 'Games']);
+  assert.deepEqual(sorted('total'), ['House', 'Insurance', 'AI', 'Books', 'Uncategorised', 'Education', 'Fitness', 'Cloud', 'Games']);
 });
 
 test('sort by total: Annual uses the year, so the order follows the year totals', () => {
   // House 360,000 · Insurance 13,660 · AI 3,960 · Education 2,490 · Books 1,200 = Uncategorised 1,200
   // · Fitness 0 (undated) · Cloud · Games. Education moves up: its annual plan renews in January.
-  assert.deepEqual(sorted('total', 'annual'), ['Income', 'House', 'Insurance', 'AI', 'Education', 'Books', 'Uncategorised', 'Fitness', 'Cloud', 'Games']);
+  assert.deepEqual(sorted('total', 'annual'), ['House', 'Insurance', 'AI', 'Education', 'Books', 'Uncategorised', 'Fitness', 'Cloud', 'Games']);
   assert.notDeepEqual(sorted('total', 'annual'), sorted('total', 'monthly'), 'Monthly and Annual differ here');
 });
 
 test('sort by items: most items first, ties A–Z; every currency counts', () => {
   // AI 2 (one USD) · Cloud 2 · Insurance 2 · then the groups with 1, A–Z, Uncategorised last.
-  assert.deepEqual(sorted('items'), ['Income', 'AI', 'Cloud', 'Insurance', 'Books', 'Education', 'Fitness', 'Games', 'House', 'Uncategorised']);
+  assert.deepEqual(sorted('items'), ['AI', 'Cloud', 'Insurance', 'Books', 'Education', 'Fitness', 'Games', 'House', 'Uncategorised']);
 });
 
-test('sort: Income stays first; empty groups, no groups and the input left alone', () => {
+test('sort: no Income group in any order; empty groups, no groups and the input left alone', () => {
   const groups = [
-    { name: 'Zed', income: false, items: [{ currency: 'TWD' }], total: 5 },
-    { name: 'Empty', income: false, items: [], total: 0 },
-    { name: 'Income', income: true, items: [{ currency: 'TWD' }], total: 1 },
-    { name: 'Abc', income: false, items: [{ currency: 'USD' }], total: 0 },
-    { name: 'Nil', income: false, total: 0 },
+    { name: 'Zed', items: [{ currency: 'TWD' }], total: 5 },
+    { name: 'Empty', items: [], total: 0 },
+    { name: 'Abc', items: [{ currency: 'USD' }], total: 0 },
+    { name: 'Nil', total: 0 },
   ];
   const copy = JSON.stringify(groups);
-  assert.deepEqual(sortGroups(groups, 'total', 'TWD').map((g) => g.name), ['Income', 'Zed', 'Empty', 'Nil', 'Abc'], 'an empty group counts as 0, not as other-currency only');
-  assert.deepEqual(sortGroups(groups, 'items', 'TWD').map((g) => g.name), ['Income', 'Abc', 'Zed', 'Empty', 'Nil']);
-  assert.deepEqual(sortGroups(groups, 'az', 'TWD').map((g) => g.name), ['Income', 'Abc', 'Empty', 'Nil', 'Zed']);
+  assert.deepEqual(sortGroups(groups, 'total', 'TWD').map((g) => g.name), ['Zed', 'Empty', 'Nil', 'Abc'], 'an empty group counts as 0, not as other-currency only');
+  assert.deepEqual(sortGroups(groups, 'items', 'TWD').map((g) => g.name), ['Abc', 'Zed', 'Empty', 'Nil']);
+  assert.deepEqual(sortGroups(groups, 'az', 'TWD').map((g) => g.name), ['Abc', 'Empty', 'Nil', 'Zed']);
   assert.equal(JSON.stringify(groups), copy, 'not changed in place');
   assert.deepEqual(sortGroups([], 'total', 'TWD'), []);
-  assert.deepEqual(sorted('total', 'monthly', ITEMS.filter((s) => s.type === 'income')), ['Income'], 'income only');
-  assert.deepEqual(sorted('items', 'monthly', ITEMS.filter((s) => s.type !== 'income'))[0], 'AI', 'no income: groups only');
+  for (const mode of GROUP_SORTS) {
+    assert.deepEqual(sorted(mode, 'monthly', ITEMS.filter((s) => s.type === 'income')), [], `${mode}: income only, no groups`);
+    assert.ok(!sorted(mode).includes('Income'), `${mode}: Income is never a group`);
+  }
+  assert.deepEqual(sorted('items', 'monthly', ITEMS.filter((s) => s.type !== 'income'))[0], 'AI', 'no income: the same groups');
+});
+
+/* Income gauge ------------------------------------------------------------------------------- */
+// The front Wallet card's share of the period's income: both in TWD on the Money card's basis.
+const gaugeFor = (name, period = 'monthly', items = SORT_ITEMS) => {
+  const groups = walletGroups(items, { currency: 'TWD', period, year: Y, month: M });
+  const income = stripSummary(items.filter((s) => s.currency === 'TWD'), period, Y, M).income;
+  return { g: groups.find((x) => x.name === name) ?? null, groups, income };
+};
+
+test('gauge: the front card\'s cash due over the income, rounded for the label, exact for the width', () => {
+  // November: Salary 85,000 in TWD (the USD gig is never compared). House 30,000 is 35.29…%.
+  const { g, income } = gaugeFor('House');
+  assert.equal(income, 85000);
+  const k = frontGauge(g, income);
+  assert.equal(k.kind, 'share');
+  assert.equal(k.ratio, 30000 / 85000, 'the width is the exact share');
+  assert.equal(k.pct, 35);
+  assert.equal(k.tiny, false);
+  assert.equal(frontGauge(gaugeFor('Insurance').g, income).pct, 15, 'Insurance 12,800: 15.06% → 15');
+  // Annual: the year's cash due over the year's income (Salary × 12).
+  const y = gaugeFor('House', 'annual');
+  assert.equal(y.income, 85000 * 12);
+  assert.equal(frontGauge(y.g, y.income).ratio, 360000 / (85000 * 12));
+  assert.equal(frontGauge(y.g, y.income).pct, 35);
+});
+
+test('gauge: under 1% says <1%; 0 is 0%; over 100% fills the bar and keeps the true percentage', () => {
+  const income = 85000;
+  const tiny = frontGauge(gaugeFor('AI').g, income); // 330: 0.39%
+  assert.deepEqual([tiny.kind, tiny.tiny, tiny.pct], ['share', true, 0]);
+  assert.ok(tiny.ratio > 0 && tiny.ratio < 0.01, 'a sliver, still the exact share');
+  const zero = frontGauge(gaugeFor('Education').g, income); // nothing due this month, all in TWD
+  assert.deepEqual([zero.kind, zero.ratio, zero.pct, zero.tiny], ['share', 0, 0, false]);
+  const over = incomeGauge({ part: 40000, income: 30000 });
+  assert.deepEqual([over.kind, over.ratio, over.pct], ['share', 1, 133], 'full width, the true 133%');
+  assert.equal(incomeGauge({ part: 30000, income: 30000 }).ratio, 1, 'exactly the income');
+  assert.equal(incomeGauge({ part: 0.995, income: 100 }).tiny, true, '0.995% is under 1%');
+  assert.equal(incomeGauge({ part: 1, income: 100 }).tiny, false, '1% is not');
+});
+
+test('gauge: no income, no expense groups, and a group in other currencies only', () => {
+  const noIncome = ITEMS.filter((s) => s.type !== 'income');
+  const a = gaugeFor('House', 'monthly', noIncome);
+  assert.equal(a.income, 0);
+  assert.deepEqual(frontGauge(a.g, a.income), { kind: 'noIncome', ratio: 0, pct: 0, tiny: false }, 'no income at all');
+  // Income that isn't paid this month: an annual bonus in March only.
+  const bonusOnly = [...noIncome, { ...base, type: 'income', id: 'bonus', name: 'Bonus', price: 50000, cycle: 'annual', nextRenewal: day(Y, 2, 10) }];
+  const b = gaugeFor('House', 'monthly', bonusOnly);
+  assert.equal(frontGauge(b.g, b.income).kind, 'noIncome', 'none paid this month');
+  assert.equal(frontGauge(gaugeFor('House', 'annual', bonusOnly).g, 50000).kind, 'share', 'but the year has it');
+  assert.deepEqual(frontGauge(null, 85000), { kind: 'empty', ratio: 0, pct: 0, tiny: false }, 'no expense groups: an empty bar');
+  assert.equal(totalGauge([], 85000).kind, 'empty');
+  assert.equal(frontGauge(null, 0).kind, 'noIncome', 'no income wins over no groups');
+  const cloud = gaugeFor('Cloud'); // two USD items, due this month
+  assert.deepEqual(frontGauge(cloud.g, cloud.income), { kind: 'foreign', ratio: 0, pct: 0, tiny: false }, 'other currencies are never compared');
+  assert.equal(frontGauge(gaugeFor('AI').g, 85000).kind, 'share', 'a group with a TWD amount too is compared on that');
+});
+
+test('gauge, Grid and List: all the outgoings over the income, the same as the Money card', () => {
+  for (const period of ['monthly', 'annual']) {
+    const { groups, income } = gaugeFor('House', period);
+    const card = stripSummary(SORT_ITEMS.filter((s) => s.currency === 'TWD'), period, Y, M);
+    const k = totalGauge(groups, income);
+    assert.equal(k.ratio, card.outgoings / card.income, `${period}: Cash due ÷ Income`);
+    assert.equal(k.pct, Math.round((card.outgoings / card.income) * 100));
+  }
+  assert.equal(totalGauge([{ total: 900 }], 600).ratio, 1, 'over the income: full');
+  assert.equal(totalGauge([{ total: 900 }], 600).pct, 150);
+});
+
+test('gauge colours: every automatic and picked colour, and the accent, at least 3:1 on the track, or ringed', () => {
+  // The track, the ring and the segment colours from app.css, in the light block and each dark block
+  // (each block lists the accent, then the ten picked colours, then the fifteen automatic ones and
+  // the gauge's track and ring).
+  const starts = [...css.matchAll(/--wallet-1:/g)].map((m) => m.index);
+  assert.equal(starts.length, 3, 'light, dark media query, dark data-theme');
+  const after = (name, from) => parseColour(new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(css.slice(from))[1]);
+  const before = (name, at) => after(name, css.lastIndexOf(`--${name}:`, at));
+  const ringed = starts.map((at, b) => {
+    const theme = ['light', 'dark (media query)', 'dark (data-theme)'][b];
+    const track = after('gauge-track', at);
+    const ring = after('gauge-ring', at);
+    assert.ok(contrast(ring, track) >= GAUGE_CONTRAST, `${theme}: the ring itself is at least 3:1 on the track`);
+    const fills = [
+      ...Array.from({ length: 15 }, (_, i) => [`wallet-${i + 1}`, after(`wallet-${i + 1}`, at)]),
+      ...Array.from({ length: 10 }, (_, i) => [`group-${i + 1}`, before(`group-${i + 1}`, at)]),
+      ['accent (Grid and List)', before('accent', at)],
+    ];
+    assert.equal(fills.length, 26);
+    const out = [];
+    for (const [name, fill] of fills) {
+      const ratio = contrast(fill, track);
+      // Below 3:1 the app draws the ring (js/app.js uses this same gaugeNeedsRing).
+      assert.equal(gaugeNeedsRing(fill, track), ratio < GAUGE_CONTRAST, `${theme} ${name}: ring exactly when under 3:1`);
+      if (ratio < GAUGE_CONTRAST) out.push(name);
+    }
+    return out;
+  });
+  assert.deepEqual(ringed[1], ringed[2], 'both dark blocks ring the same colours');
+  assert.ok(ringed[0].length > 0 && ringed[1].length > 0, 'some colours need the ring in each theme (so both cases are checked)');
+  assert.ok(ringed[0].length < 26 && ringed[1].length < 26, 'and some stand out on their own');
 });
 
 test('sort: the groups keep their items and totals; only the order changes', () => {

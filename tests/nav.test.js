@@ -34,7 +34,7 @@ const base = {
   type: 'expense', domain: '', emoji: '', plan: '', currency: 'TWD', date: '', category: '', notes: '',
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 };
-// "Today" is Wednesday 18 November 2026: Streaming today and Phone on the 20th (the due-soon banner
+// "Today" is Wednesday 18 November 2026: Streaming today and Phone on the 20th (the due-soon chip
 // has them), Salary on the 25th, Rent on the 1st.
 const SEED = [
   { ...base, type: 'income', id: 'n-salary', name: 'Salary', price: 40000, cycle: 'monthly', nextRenewal: '2026-11-25' },
@@ -222,18 +222,20 @@ test('(d) the Expense | Income switch: shown when adding, Expense first, fields 
   await until(() => !isOpen(), 'saved as income');
   const s = (await storage.getAll()).find((x) => x.name === 'Market stall');
   eq([s?.type, s?.price, s?.nextRenewal, s?.domain, s?.category], ['income', 1234, '2026-11-25', '', ''], 'saved as income, without the expense fields');
-  // Editing: no switch, the item keeps its type.
+  // Editing: no switch, the item keeps its type. Income is listed on its own card (since 1.21.0).
   for (const [id, title] of [['n-phone', 'Edit expense'], ['n-salary', 'Edit income']]) {
     await goTab('subs');
     $('#view-btn').click();
     $('#view-menu [data-view="list"]').click();
     await tick(40);
-    $(`#subs-list .sub-row[data-id="${id}"]`).click();
+    if (id === 'n-salary') { $('#income-toggle').click(); await tick(40); }
+    $(`:is(#subs-list, #income-list) .sub-row[data-id="${id}"]`).click();
     await until(isOpen, `the edit sheet for ${id}`);
     eq(text($('#sub-dialog-title')), title, `${id}: the edit sheet`);
     assert(!shown($('#field-kind')), `${id}: no Expense | Income switch`);
     pressBack();
     await until(() => !isOpen(), 'closed');
+    if (id === 'n-salary') { $('#income-toggle').click(); await tick(40); }
   }
   // Adding again after an edit: the switch is back, on Expense.
   $('#fab').click();
@@ -355,13 +357,15 @@ test('four tabs at this width: roles and roving tabindex, labels that fit, the p
   await goTab('subs');
 });
 
-test('the due-soon banner is on Money only', async () => {
+test('the Money card, its due-soon chip and the income card are on Money only', async () => {
   await goTab('subs');
-  assert(shown($('#due-banner')), 'shown on Money');
-  eq(text($('#due-text')), '3 due in the next 7 days', 'as before: Streaming, Phone and the Haircut added on the 22nd');
+  assert(shown($('#due-chip')) && $('#money-summary').contains($('#due-chip')), 'the chip, on the Money card');
+  eq(text($('#due-chip')), '3 due', 'as before: Streaming, Phone and the Haircut added on the 22nd');
+  assert(shown($('#income-card')), 'the income card');
+  assert(!$('#due-banner'), 'no banner any more');
   await goTab('calendar');
-  assert(!shown($('#due-banner')), 'not on Calendar');
-  assert(!$('#panel-calendar #due-banner') && !$('#panel-calendar #money-summary'), 'and not in its page');
+  assert(!shown($('#due-chip')) && !shown($('#money-summary')) && !shown($('#income-card')), 'not on Calendar');
+  assert(!$('#panel-calendar #due-chip') && !$('#panel-calendar #money-summary') && !$('#panel-calendar #income-card'), 'and not in its page');
   await goTab('subs');
 });
 

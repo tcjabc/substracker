@@ -1,12 +1,12 @@
-// Node tests for js/due-soon.js, the due-soon banner's calculation: the window's edges, month and
+// Node tests for js/due-soon.js, the due-soon chip's calculation: the window's edges, month and
 // year rollover, the leap day, annual and one-off items, income on and off, undated items, other
-// currencies, the order, local calendar days across a DST change, and the dismiss-for-today key.
+// currencies, the order, local calendar days across a DST change, and the settings.
 // Run with `npm test`. This file runs in a time zone with DST (each test file is its own process).
 process.env.TZ = 'America/New_York';
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dueSoon, daysBetween, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed, WINDOWS } from '../js/due-soon.js';
+import { dueSoon, daysBetween, windowFrom, chipOnFrom, includeIncomeFrom, WINDOWS } from '../js/due-soon.js';
 
 const base = { type: 'expense', currency: 'TWD', category: '', plan: '', date: '', nextRenewal: '' };
 const item = (id, o) => ({ ...base, id, name: id, price: 100, cycle: 'monthly', ...o });
@@ -162,27 +162,22 @@ test('local calendar days across the DST change: "Tomorrow" stays tomorrow', () 
   assert.deepEqual(names(dueSoon([item('edge', { nextRenewal: '2026-11-08' })], at(2026, 11, 1, 23, 59))), ['edge'], 'day 7 is still in');
 });
 
-test('the settings: window 3, 7 or 14 (7 by default); banner on and income off by default', () => {
+test('the settings: window 3, 7 or 14 (7 by default); the chip on and income off by default', () => {
   assert.deepEqual(WINDOWS, [3, 7, 14]);
   assert.equal(windowFrom('14'), 14);
   assert.equal(windowFrom('3'), 3);
   assert.equal(windowFrom(7), 7);
   for (const bad of [null, undefined, '', '5', 'x', '0']) assert.equal(windowFrom(bad), 7, String(bad));
-  assert.equal(bannerOnFrom(null), true);
-  assert.equal(bannerOnFrom('on'), true);
-  assert.equal(bannerOnFrom('off'), false);
+  assert.equal(chipOnFrom(null), true);
+  assert.equal(chipOnFrom('on'), true);
+  assert.equal(chipOnFrom('off'), false);
   assert.equal(includeIncomeFrom(null), false);
   assert.equal(includeIncomeFrom('on'), true);
   assert.equal(includeIncomeFrom('off'), false);
 });
 
-test('dismiss for today: the local date, so it comes back the next day', () => {
-  assert.equal(dismissKey(at(2026, 11, 18, 0, 0)), '2026-11-18');
-  assert.equal(dismissKey(at(2026, 11, 18, 23, 59)), '2026-11-18');
-  assert.equal(isDismissed('2026-11-18', at(2026, 11, 18, 23, 59)), true);
-  assert.equal(isDismissed('2026-11-18', at(2026, 11, 19, 0, 1)), false, 'back the next day');
-  assert.equal(isDismissed('2026-11-17', at(2026, 11, 18)), false);
-  assert.equal(isDismissed(null, at(2026, 11, 18)), false);
-  assert.equal(isDismissed('', at(2026, 11, 18)), false);
-  assert.equal(dismissKey(at(2026, 11, 1, 23, 30)), '2026-11-01', 'on the 25-hour day too');
+test('no dismiss for the day any more: the chip has no close button, so there is no dismiss key', async () => {
+  const mod = await import('../js/due-soon.js');
+  assert.equal(mod.dismissKey, undefined);
+  assert.equal(mod.isDismissed, undefined);
 });

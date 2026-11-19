@@ -17,6 +17,11 @@
   --accent-hover: #4338ca;
   --accent-soft: #ebeafd;
   --accent-contrast: #ffffff;
+  /* On an accent fill (the Money card): secondary text, a control's fill and its edge, mixed from
+     the accent and its contrast colour, so they follow the theme. Muted text keeps 4.5:1. */
+  --on-accent-muted: color-mix(in srgb, var(--accent-contrast) 86%, var(--accent));
+  --on-accent-soft: color-mix(in srgb, var(--accent-contrast) 12%, var(--accent));
+  --on-accent-line: color-mix(in srgb, var(--accent-contrast) 40%, var(--accent));
   --danger: #d92d3a;
   --danger-soft: #fde8ea;
   --warn: #b45309;
@@ -45,6 +50,12 @@
   --wallet-6: #1d2e65; --wallet-7: #f58028; --wallet-8: #7a38bf; --wallet-9: #70c7ed; --wallet-10: #09672e;
   --wallet-11: #9cd242; --wallet-12: #b30a7b; --wallet-13: #f5acc2; --wallet-14: #7f4d30; --wallet-15: #f6d236;
   --wallet-income: #ffffff; /* the Income card: neutral, never a group colour */
+  /* The income card's gauge: a dark neutral track in both themes, and the thin ring round a
+     segment whose colour is under 3:1 against it (tests/wallet-math.node.test.js checks every
+     automatic and picked colour, and the accent, against the track). */
+  --gauge-track: #23242c;
+  --gauge-ring: #ffffff;
+  --gauge-ring-width: 1.5px;
   /* Wallet depth: sheen peak, raised top lip, hairline edge, the short shadow onto the card behind,
      and the front/open card's drop shadow (spread −(blur − y), so nothing reaches above its top). */
   --wallet-sheen: 0.07;
@@ -99,6 +110,9 @@
   --weight-bold: 700;
   --leading: 1.45;
   --leading-tight: 1.2;
+  /* A big figure on its own line (the Money card's Cash due): room for the tallest UI font's ascent
+     and descent (the Chinese system fonts), so a rolling figure's digits are never cut. */
+  --leading-figure: 1.35;
   /* Letter-spacing for the small all-caps labels (group titles, the Wallet's stat labels). */
   --tracking-caps: 0.04em;
   /* A tick, used as a mask (so it takes any colour): the chosen item in a menu. */
@@ -232,7 +246,7 @@
     --wallet-1: #017073; --wallet-2: #7fc7ab; --wallet-3: #b92524; --wallet-4: #2153b5; --wallet-5: #b296d3;
     --wallet-6: #2c407f; --wallet-7: #d66e1c; --wallet-8: #773db6; --wallet-9: #5eadcf; --wallet-10: #186632;
     --wallet-11: #86b734; --wallet-12: #ac1d77; --wallet-13: #d694a8; --wallet-14: #6e4127; --wallet-15: #d7b626;
-    --wallet-income: #2a2b33;
+    --wallet-income: #2a2b33; --gauge-track: #0b0c10; --gauge-ring: #ececf1;
     --wallet-sheen: 0.05;
     --wallet-lip: rgb(255 255 255 / 0.15);
     --wallet-hairline: inset 0 0 0 1px rgb(255 255 255 / 0.06);
@@ -286,7 +300,7 @@
   --wallet-1: #017073; --wallet-2: #7fc7ab; --wallet-3: #b92524; --wallet-4: #2153b5; --wallet-5: #b296d3;
   --wallet-6: #2c407f; --wallet-7: #d66e1c; --wallet-8: #773db6; --wallet-9: #5eadcf; --wallet-10: #186632;
   --wallet-11: #86b734; --wallet-12: #ac1d77; --wallet-13: #d694a8; --wallet-14: #6e4127; --wallet-15: #d7b626;
-  --wallet-income: #2a2b33;
+  --wallet-income: #2a2b33; --gauge-track: #0b0c10; --gauge-ring: #ececf1;
   --wallet-sheen: 0.05;
   --wallet-lip: rgb(255 255 255 / 0.15);
   --wallet-hairline: inset 0 0 0 1px rgb(255 255 255 / 0.06);
@@ -525,22 +539,97 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .logo-xs.logo-emoji { font-size: calc(var(--logo-xs) * 0.6); }
 
 /* ==========================================================================
-   Money: summary strip, groups, grid + list
+   Money: the Money card, the income card, groups, grid + list
    ========================================================================== */
-.money-summary {
-  padding: var(--space-4); margin-bottom: var(--space-6);
-  background: var(--surface); border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+/* The Money card: the Insights card's look (the accent fill and its contrast ink, shared with
+   .stat-primary below), with the period, Cash due as the big figure, and Income and Left over.
+   A button the card's full size sits underneath (.mc-open): the text lets taps through to it, so a
+   tap anywhere opens Insights, while the toggle, the chip and the undated line sit above it as
+   controls of their own. Secondary text and the controls' fills use the --on-accent-* tokens,
+   which keep 4.5:1 on the accent in both themes. */
+.money-card {
+  position: relative; isolation: isolate;
+  padding: var(--space-4); margin-bottom: var(--space-3);
+  border: var(--border-width) solid; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
 }
-.summary-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.summary-when { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
-/* Phones: one row per figure, so long annual totals never wrap mid-number. */
-.summary-cells { display: grid; gap: var(--space-2); }
-.summary-cell { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: var(--space-3); min-width: 0; }
-.summary-cell .stat-sub { grid-column: 1 / -1; }
-.summary-cell:last-child { padding-top: var(--space-2); border-top: var(--border-width) solid var(--border); }
-.summary-value { font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); text-align: right; }
-.summary-cell:last-child .summary-value { font-size: var(--text-lg); }
+.money-card > :not(.mc-open) { position: relative; z-index: 1; pointer-events: none; }
+.money-card :is(.mc-period, .mc-chip, .mc-undated) { pointer-events: auto; }
+.money-card :focus-visible { outline-color: var(--accent-contrast); }
+.mc-open {
+  position: absolute; inset: 0; z-index: 0; width: 100%; margin: 0; padding: 0;
+  border: 0; border-radius: inherit; background: transparent; cursor: pointer;
+}
+.mc-open:focus-visible { outline: 3px solid var(--accent-contrast); outline-offset: -5px; }
+/* Where the toggle's words are long (another language), it goes onto its own line under the period
+   rather than squeeze it; likewise the chip under a long "Cash due". */
+.mc-head, .mc-due { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-width: 0; }
+.mc-when, .mc-label { min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--on-accent-muted); }
+.mc-due { min-height: var(--control-sm); margin-top: var(--space-2); }
+.mc-period { flex: none; background: var(--on-accent-soft); box-shadow: inset 0 0 0 var(--border-width) var(--on-accent-line); }
+.mc-period .seg-btn { color: var(--accent-contrast); }
+.mc-period .seg-btn[aria-pressed="true"] { background: var(--accent-contrast); color: var(--accent); box-shadow: none; }
+/* The due-soon chip: "3 due" with the calendar icon; it opens the Due soon sheet. */
+.mc-chip {
+  flex: none; display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: var(--control-sm); padding: 0 var(--space-3) 0 var(--space-2);
+  border: var(--border-width) solid var(--on-accent-line); border-radius: var(--radius-full);
+  background: var(--on-accent-soft); color: var(--accent-contrast);
+  font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.mc-chip .icon { width: var(--icon-sm); height: var(--icon-sm); }
+/* The big figure never wraps or gets cut: the narrowest phone fits an annual total in it. */
+.mc-value {
+  font-size: var(--text-2xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em; line-height: var(--leading-figure); white-space: nowrap;
+}
+.mc-cells {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3);
+  margin: var(--space-3) 0 0; padding-top: var(--space-3); border-top: var(--border-width) solid var(--on-accent-line);
+}
+.mc-cell { min-width: 0; }
+.mc-cell dt { font-size: var(--text-sm); color: var(--on-accent-muted); }
+.mc-cell dd { margin: 0; font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--leading-tight); white-space: nowrap; }
+/* Short (Left over under 0): the minus sign and the words say so; the warning colour has no 4.5:1 on the accent. */
+.money-card .mc-note { margin-top: var(--space-1); font-size: var(--text-xs); font-weight: var(--weight-regular); color: var(--on-accent-muted); white-space: normal; }
+.money-card > .mc-note { margin-top: var(--space-2); }
+/* "Excludes N undated items": a note you can tap to open the first such item. */
+.mc-undated {
+  display: block; min-height: var(--control-sm); padding: 0; margin: var(--space-1) 0 calc(-1 * var(--space-2));
+  border: 0; background: transparent; color: var(--accent-contrast); text-align: left; cursor: pointer;
+  font: inherit; font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+:lang(zh) .mc-note { word-break: keep-all; overflow-wrap: break-word; }
+
+/* The income card: the Wallet's neutral income card, compact, above the stack (pinned there; first
+   in Grid and List). Its title, a gauge (the front card's share of the income, in its group colour
+   on a dark neutral track; a colour under 3:1 against the track gets a thin ring) and the gauge's
+   words. A tap lists the income items. */
+.income-card {
+  margin-bottom: var(--space-6); overflow: hidden;
+  background: var(--wallet-income); color: var(--text); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--shadow-sm);
+}
+.ic-toggle {
+  appearance: none; display: grid; gap: var(--space-2); width: 100%; margin: 0;
+  padding: var(--space-3) var(--space-4); border: 0; border-radius: inherit;
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.ic-toggle:focus-visible { outline-offset: -3px; }
+.ic-head { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.ic-title { font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+.ic-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur) var(--ease); }
+.income-card.is-open .ic-chev { transform: rotate(180deg); }
+.ic-track { display: block; height: var(--bar-h); border-radius: var(--radius-full); background: var(--gauge-track); overflow: hidden; }
+.ic-seg { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--gauge-fill, var(--accent)); }
+.ic-seg-ring { box-shadow: inset 0 0 0 var(--gauge-ring-width) var(--gauge-ring); }
+.ic-label { font-size: var(--text-sm); color: var(--text-muted); line-height: var(--leading-tight); }
+.ic-list { list-style: none; margin: 0; padding: 0; border-top: var(--border-width) solid var(--border); }
+.ic-list li:last-child .sub-row { border-bottom: 0; }
+.ic-row .sub-text { min-width: 0; }
+.ic-row .sub-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-add { justify-content: center; color: var(--accent); font-weight: var(--weight-semibold); }
+
 /* Rolling totals (js/count-anim.js): the real text stays, transparent, so the box keeps its size and
    is what screen readers read; the digits roll over it (generated content, aria-hidden), each one a
    column one figure wide, with tabular figures. Only while a roll plays; then it's plain text again. */
@@ -554,69 +643,32 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .odo-c::before { content: attr(data-z); visibility: hidden; }
 .odo-s { position: absolute; top: 0; left: 0; right: 0; text-align: center; }
 .odo-s::before { content: attr(data-s); display: block; white-space: pre; }
-.summary-income .summary-value { color: var(--positive); }
-.summary-short .summary-value, .summary-short .stat-sub { color: var(--warn); opacity: 1; }
 .summary-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-3); }
-/* The strip's "Excludes N undated items" line: a note you can tap to open the first such item. */
+/* "Excludes N undated items" (Insights, Calendar): a note you can tap to open the first such item. */
 .summary-note-action {
   display: block; min-height: var(--control-sm); padding: 0; margin-bottom: calc(-1 * var(--space-2));
   border: 0; background: transparent; text-align: left; cursor: pointer;
   font: inherit; font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--warn);
   text-decoration: underline; text-underline-offset: 2px;
 }
-/* Due soon (js/due-soon.js): a slim card under the strip, one line that opens the list in a sheet,
-   and a close button that hides it until tomorrow. The same surface as the strip; no shadow of its
-   own beyond the strip's. Not drawn at all when nothing is due, so it leaves no gap. The strip
-   above sits closer while it's there. */
-.money-summary:has(+ .due-banner:not([hidden])) { margin-bottom: var(--space-2); }
-.due-banner {
-  display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-1);
-  margin-bottom: var(--space-6); padding: var(--space-1);
-  background: var(--surface); border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
-}
-.due-toggle {
-  flex: 1 1 0; min-width: 0; min-height: var(--tap);
-  display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-3);
-  border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text); text-align: left;
-  font-size: var(--text-sm); font-weight: var(--weight-semibold);
-}
-.due-toggle:hover { background: var(--surface-hover); }
-.due-icon { flex: none; width: var(--icon-sm); height: var(--icon-sm); color: var(--accent); }
-/* One line where it fits; on the narrowest phones the sentence wraps to a second line rather than
-   lose its end ("3 due in the ne…"), and only past two lines is it cut. The total never wraps. */
-.due-text {
-  flex: 1 1 auto; min-width: 0; padding-block: var(--space-1); line-height: var(--leading-tight);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
+/* Due soon (js/due-soon.js): the sheet the Money card's chip opens. At the top, what the banner
+   used to say: how many and the default currency's total, then, quiet, income coming in, "+1 in
+   USD" and "2 items need a date" (which opens the first of them); then the rows. */
+.due-summary { display: grid; gap: var(--space-1); margin-bottom: var(--space-2); }
+.due-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--space-3); font-weight: var(--weight-semibold); }
+.due-text { min-width: 0; line-height: var(--leading-tight); }
 .due-sum { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.due-chev { flex: none; width: var(--icon-sm); height: var(--icon-sm); color: var(--text-muted); }
-.due-close { flex: none; }
-/* The quiet second line: income coming in, "+1 in USD", and "2 items need a date", which opens the
-   first of them. */
-.due-notes {
-  flex: 1 0 100%; display: flex; align-items: center; min-width: 0; min-height: var(--control-sm);
-  margin: calc(-1 * var(--space-1)) 0 0; padding: 0 var(--space-3);
-  font-size: var(--text-xs); color: var(--text-muted);
-}
-.due-notes > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-notes { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; min-height: var(--control-sm); font-size: var(--text-xs); color: var(--text-muted); }
 .due-notes.has-both > span::after { content: " · "; white-space: pre; }
 .due-undated {
-  flex: 0 1 auto; min-width: 0; min-height: var(--control-sm); padding: 0;
+  min-width: 0; min-height: var(--control-sm); padding: 0;
   border: 0; background: transparent; text-align: left; cursor: pointer;
   font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .due-list { list-style: none; margin: 0; padding: 0; }
 .due-list li:last-child .sub-row { border-bottom: 0; }
 .due-row .sub-text { min-width: 0; }
 .due-today .sub-plan { color: var(--warn); font-weight: var(--weight-semibold); }
-@media (min-width: 640px) {
-  .summary-cells { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
-  .summary-cell { display: block; }
-  .summary-cell:last-child { padding-top: 0; border-top: 0; padding-left: var(--space-4); border-left: var(--border-width) solid var(--border); }
-  .summary-value, .summary-cell:last-child .summary-value { font-size: var(--text-xl); text-align: left; margin-top: var(--space-1); overflow-wrap: anywhere; }
-}
 
 .money-group { margin-bottom: var(--space-6); }
 .group-head { display: flex; align-items: center; gap: var(--space-1); }
@@ -805,7 +857,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   touch-action: none; user-select: none; -webkit-user-select: none;
   /* Clip at the page gutter, not at the cards, so their shadows fade out instead of being cut. */
   margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter);
-  /* The pile above the front card uses the summary strip's bottom margin, with a little clearance. */
+  /* The pile above the front card uses the income card's bottom margin, with a little clearance. */
   margin-top: calc(var(--space-1) - var(--space-6));
 }
 .wallet.has-open { touch-action: pan-y; }
@@ -926,7 +978,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
   min-width: 0;
 }
-.stat-primary { grid-column: 1 / -1; background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+/* The accent card: Insights' month figure and the Money card share this look. */
+.stat-primary, .money-card { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.stat-primary { grid-column: 1 / -1; }
 .stat-label { font-size: var(--text-sm); font-weight: var(--weight-medium); opacity: 0.8; }
 .stat-value { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: var(--leading-tight); margin-top: var(--space-1); overflow-wrap: anywhere; }
 .stat-primary .stat-value { font-size: var(--text-2xl); }
