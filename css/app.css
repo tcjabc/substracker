@@ -161,6 +161,12 @@
   --dot-hit: 24px;      /* its tap target */
   --swatch-size: 32px;  /* swatches in the colour popover */
   --donut-size: 13.5rem;
+  /* Insights: the chart fills the first screen (.ins-hero-fill) within these bounds. */
+  --chart-min: 13rem;    /* the least room the chart keeps on a short screen */
+  --donut-max: 20rem;    /* the flat donut at its largest */
+  --ring-max: 30rem;     /* the Ring's stage at its widest */
+  --year-chart-max: 32rem;
+  --year-chart-ratio: 0.766; /* the year chart's width per unit of height (its 360 × 470 SVG) */
   --donut-stroke: 28px; /* SVG user units: ring thickness in the 200 × 200 viewBox */
   --donut-stroke-active: 34px;
   --tabbar-h: 60px;
@@ -362,6 +368,9 @@ body {
      breathing room, so the last card or day can always scroll fully clear of the button. */
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4) + var(--fab-stack) + var(--space-4));
 }
+/* Insights has no floating + (js/app.js FAB_TABS): its own room under the last card, clear of the
+   tab bar, that doesn't follow the button's (--fab-stack). */
+body.insights-view { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-6)); }
 h1, h2, h3, p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -995,45 +1004,57 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 /* ==========================================================================
    Insights
    ========================================================================== */
-.month-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.month-label { font-size: var(--text-md); font-weight: var(--weight-semibold); }
-.headline {
-  display: grid; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-4);
-  background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
+/* The chart first: the month arrows, the share-of-income line and the chart fill the first screen
+   between the header and the tab bar (.ins-hero-fill), the chart taking the room that's left
+   (.ins-fit, a size container the Ring, donut and year chart fit into). The legend, the yearly card
+   and the rest start under the fold. --header-now is the header's measured height (js/app.js). */
+.ins-hero { display: flex; flex-direction: column; margin-bottom: var(--space-4); }
+.ins-hero-fill {
+  min-height: calc(100vh - var(--header-now, calc(var(--header-h) + var(--safe-top))) - var(--tabbar-h) - var(--safe-bottom) - var(--border-width) - var(--space-4));
+  min-height: calc(100svh - var(--header-now, calc(var(--header-h) + var(--safe-top))) - var(--tabbar-h) - var(--safe-bottom) - var(--border-width) - var(--space-4));
 }
-.headline-text { font-size: var(--text-md); }
-.headline-text strong { font-variant-numeric: tabular-nums; }
-.headline-text .pct { color: var(--text-muted); }
-.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); margin-bottom: var(--space-6); }
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.month-label { font-size: var(--text-md); font-weight: var(--weight-semibold); text-align: center; }
+/* One line under the month: its outgoings as a share of its income, or why there's no share. */
+.ins-pct { margin: 0 0 var(--space-3); text-align: center; font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ins-hero .chips { justify-content: center; margin-bottom: var(--space-3); }
+.ins-chart-head { margin-bottom: var(--space-2); }
+.ins-chart-head .section-title { font-size: var(--text-base); }
+.ins-chart { flex: 1 0 auto; display: flex; flex-direction: column; }
+.ins-hero:not(.ins-hero-fill) .ins-chart { flex: none; }
+.ins-fit { flex: 1 0 var(--chart-min); container-type: size; display: grid; place-items: center; padding: var(--space-3); }
+.ins-fit .donut { width: min(100cqw, 100cqh, var(--donut-max)); }
+.ins-fit .donut-total { font-size: var(--text-xl); }
+/* Tall enough that the ring (framed by js/donut-3d.js to fit both ways) fills the width. */
+.ins-fit .ring-stage { width: min(100cqw, var(--ring-max)); height: min(100cqh, min(100cqw, var(--ring-max)) * 1.05); aspect-ratio: auto; }
+.donut-empty.ins-chart { justify-content: center; }
+/* The month total: in the donut's or the Ring's centre, at the top of the List. */
+.ins-total { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); overflow-wrap: anywhere; }
+.ins-list-head { display: grid; justify-items: center; padding: var(--space-4); border-bottom: var(--border-width) solid var(--border); text-align: center; }
+.ins-list-head .ins-total { font-size: var(--text-xl); }
+/* The legend in its own panel under the chart, its last line the month's plan counts. */
+.ins-legend { margin-bottom: var(--space-4); }
+.ins-legend .legend { border-top: 0; }
+.legend-foot { padding: var(--space-3) var(--space-4); border-top: var(--border-width) solid var(--border); font-size: var(--text-xs); color: var(--text-muted); }
+.stats { display: grid; grid-template-columns: 1fr; gap: var(--space-3); margin-bottom: var(--space-6); }
 .stat {
   padding: var(--space-4); background: var(--surface);
   border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
   min-width: 0;
 }
-/* The accent card: Insights' month figure and the Money card share this look. */
-.stat-primary, .money-card { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
-.stat-primary { grid-column: 1 / -1; }
-.stat-label { font-size: var(--text-sm); font-weight: var(--weight-medium); opacity: 0.8; }
-.stat-value { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: var(--leading-tight); margin-top: var(--space-1); overflow-wrap: anywhere; }
-.stat-primary .stat-value { font-size: var(--text-2xl); }
-.stat-sub { font-size: var(--text-xs); opacity: 0.75; margin-top: var(--space-1); }
-/* Yearly card: Income / Outgoings / Left over rows. On a phone (two cards side by side) each row
-   is the label over its amount; from 640px the amount sits on the right of its label. */
+/* The accent card (the Money card's look). */
+.money-card { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.stat-label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); }
+.stat-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1); }
+/* Yearly card: Income / Outgoings / Left over rows, each amount on the right of its label. */
 .year-lines { display: grid; gap: var(--space-1); margin: var(--space-2) 0 0; }
-.year-line { display: grid; font-size: var(--text-sm); }
-@media (min-width: 640px) {
-  .year-line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-2); }
-}
-.year-line dt { opacity: 0.8; }
+.year-line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-2); font-size: var(--text-sm); }
+.year-line dt { color: var(--text-muted); }
 .year-line dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 .year-line-total { padding-top: var(--space-1); border-top: var(--border-width) solid var(--border); }
 .year-line-total dd { font-weight: var(--weight-bold); }
 /* Short: the minus sign and the note under it say so too, not only the colour. */
-.year-short dd, .stat-sub.year-short-note { color: var(--warn); opacity: 1; }
-@media (min-width: 640px) {
-  .stats { grid-template-columns: 2fr 1.4fr 1fr; }
-  .stat-primary { grid-column: auto; }
-}
+.year-short dd, .stat-sub.year-short-note { color: var(--warn); }
 
 .section-title { font-size: var(--text-md); font-weight: var(--weight-semibold); margin: 0 0 var(--space-3); }
 .section { margin-bottom: var(--space-6); }
@@ -1107,6 +1128,15 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ring-caption {
   position: absolute; left: 0; right: 0; bottom: 4%; display: grid; justify-items: center; gap: 2px;
   text-align: center; pointer-events: none; line-height: var(--leading-tight);
+}
+/* The month total in the ring's hole: js/donut-3d.js sets where (--ring-cx, --ring-cy) and how wide
+   it is; until the ring is drawn (or if it can't be) these defaults stand. */
+.ring-total {
+  position: absolute; left: var(--ring-cx, 50%); top: var(--ring-cy, 34%); transform: translate(-50%, -50%);
+  padding: 1px var(--space-2); border-radius: var(--radius-full); white-space: nowrap; pointer-events: none;
+  /* A soft backing of the card colour, so the figure reads over the slices where it meets them. */
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  font-size: clamp(var(--text-sm), calc(var(--ring-hole-w, 8rem) * 0.15), var(--text-lg));
 }
 .ring-name { font-size: var(--text-sm); color: var(--text-muted); }
 .ring-amount { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -1461,10 +1491,14 @@ dialog::backdrop { background: var(--scrim); }
 /* ==========================================================================
    Insights: Month | Year, and the year chart (js/year-chart.js)
    ========================================================================== */
-.insights-mode { display: flex; margin-bottom: var(--space-4); }
 .yc-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+/* The chart fits the room left in the first screen: as wide as that height allows at its own
+   proportions (.yc-fit is a size container). */
+.yc-fit { flex: 1 0 var(--chart-min); container-type: size; display: grid; justify-items: center; align-content: start; }
+.yc-fit #year-chart { width: min(100cqw, var(--year-chart-max), (100cqh - var(--space-4)) * var(--year-chart-ratio)); }
 .yc-stage {
-  position: relative; max-width: 32rem; margin: 0 auto var(--space-3);
+  position: relative; max-width: var(--year-chart-max); margin: 0 auto;
+  container-type: inline-size;
   padding: var(--space-1) var(--space-1) 2px;
   background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
 }
@@ -1542,11 +1576,10 @@ dialog::backdrop { background: var(--scrim); }
 .yc-row-name { fill: var(--text); font-size: 12.5px; font-weight: 500; }
 .yc-row-amount { fill: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .yc-row-sub { fill: var(--text-muted); font-size: 10px; }
-.yc-undated { width: 100%; max-width: 32rem; margin: 0 auto var(--space-3); }
-/* The Year view ends with extra room the height of the FAB stack (on top of the page's own bottom
-   padding), so the chart card's dock (legend, Jump to now) can always scroll well clear of the
-   floating + and − buttons, however little follows the chart. */
-.yc-year-stats { max-width: 32rem; margin: 0 auto calc(var(--space-6) + var(--fab-stack)); grid-template-columns: 1fr; }
+.yc-undated { width: 100%; max-width: var(--year-chart-max); margin: 0 auto var(--space-3); }
+/* The yearly card under the chart. Its room below is the page's own (body.insights-view), never the
+   floating +'s: Insights has none. */
+.yc-year-stats { max-width: var(--year-chart-max); margin: 0 auto var(--space-4); }
 
 /* "Reduce motion and effects" (Settings). js/app.js sets the class from the setting, which follows the
    system's prefers-reduced-motion until it is changed, so either way this one rule applies. */

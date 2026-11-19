@@ -39,14 +39,17 @@ export const shareText = (v, total) => {
 
 export function emptyDonutHTML(cur, monthName) {
   return `
-      <div class="panel donut-empty">
+      <div class="panel ins-chart donut-empty">
         <div class="donut-empty-ring" aria-hidden="true"></div>
         <p class="donut-empty-title">${esc(t('donut.empty.title', { currency: cur, month: monthName }))}</p>
         <p class="donut-empty-text">${esc(t('donut.empty.text'))}</p>
       </div>`;
 }
 
-/** The legend rows: name, item count or pooled names, amount and share. Each row is a button. */
+/**
+ * The legend rows: name, item count or pooled names, amount and share. Each row is a button.
+ * Insights shows it in its own panel under the chart (js/app.js renderInsights).
+ */
 export function legendHTML(slices, total, cur) {
   return `
       <div class="legend">
@@ -63,9 +66,10 @@ export function legendHTML(slices, total, cur) {
 }
 
 /**
- * The flat donut with its legend. `note` (optional, plain text) is shown above it, used when it
- * stands in for the Ring view. `keys`: true makes the chart focusable, with arrow keys moving the
- * highlight (as the Ring view does).
+ * The flat donut in its panel, the month total in its centre; the legend is legendHTML's, apart.
+ * `note` (optional, plain text) is shown above it, used when it stands in for the Ring view.
+ * `keys`: true makes the chart focusable, with arrow keys moving the highlight (as the Ring view
+ * does). The donut is sized to the room the panel has (.ins-fit, a size container in app.css).
  */
 export function donutHTML(slices, total, cur, monthName, { note = '', keys = false } = {}) {
   if (!slices.length) return emptyDonutHTML(cur, monthName);
@@ -83,19 +87,18 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
   }).join('');
 
   return `
-    <div class="panel">
+    <div class="panel ins-chart">
       ${note ? `<p class="ring-note">${esc(note)}</p>` : ''}
-      <div class="donut-wrap">
+      <div class="ins-fit">
         <div class="donut"${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
           <svg viewBox="0 0 200 200" role="img" aria-label="${esc(t('donut.label', { month: monthName }))}">${arcs}</svg>
           <div class="donut-center">
-            <span class="donut-total" data-roll="donut-total" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>
+            <span class="donut-total ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>
             <span class="donut-label">${esc(monthName)}</span>
           </div>
         </div>
-        ${keys ? `<p class="sr-only" id="donut-keys-help">${esc(t('donut.keysHelp'))}</p>` : ''}
       </div>
-      ${legendHTML(slices, total, cur)}
+      ${keys ? `<p class="sr-only" id="donut-keys-help">${esc(t('donut.keysHelp'))}</p>` : ''}
     </div>`;
 }
 

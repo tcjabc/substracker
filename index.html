@@ -43,6 +43,13 @@
           </button>
         </div>
       </div>
+      <!-- Insights: Month | Year beside the title (js/app.js renderInsights keeps it in step). -->
+      <div class="header-actions" id="insights-actions" hidden>
+        <div class="segmented" role="group" aria-label="Insights view" data-i18n-attr="aria-label:insights.mode.label">
+          <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="true" data-i18n="insights.mode.month">Month</button>
+          <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="false" data-i18n="insights.mode.year">Year</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -81,9 +88,9 @@
          js/app.js mounts it here the first time the tab is shown. -->
     <section class="tab-panel" id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" hidden></section>
 
-    <!-- Insights -->
+    <!-- Insights (js/app.js renderInsights): the chart first, filling the first screen, with the
+         month arrows and the currency chips above it; the legend and the yearly card below. -->
     <section class="tab-panel" id="panel-insights" role="tabpanel" aria-labelledby="tab-insights" hidden>
-      <div class="chips" id="currency-chips" role="group" aria-label="Currency" data-i18n-attr="aria-label:insights.currency.label"></div>
       <div id="insights"></div>
     </section>
 
