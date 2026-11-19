@@ -517,7 +517,9 @@ test('new income needs a payment date when monthly or annual, and its date when 
   eq(errorFor('nextRenewal'), 'Pick a payment date.', 'annual message');
   dialog().querySelector('input[name="cycle"][value="once"]').click();
   assert($('#field-renewal').hidden && !$('#field-date').hidden, 'one-off shows its Date field');
-  eq(text($('#field-date .field-label')), 'Date', 'one-off label, as for expenses');
+  // The label is "Date", with the word "required" beside it (1.21.1).
+  eq(text($('#field-date .field-label > span:first-child')), 'Date', 'one-off label, as for expenses');
+  eq(text($('#field-date .field-label')), 'Date required', 'marked required in words');
   eq(errorFor('nextRenewal'), '', 'payment error cleared');
   setValue('date', '');
   save();

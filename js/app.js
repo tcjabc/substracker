@@ -1689,6 +1689,10 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
     f.kind.value = state.formType;
     $('#field-kind').hidden = !!sub;
     $('#btn-delete').hidden = !sub;
+    // More details: folded when adding; open when the edited item has a value in one of the fields it
+    // shows (income: only Notes). Open or closed isn't saved.
+    const shownMore = state.formType === 'income' ? ['notes'] : MORE_FIELDS;
+    setMoreDetails(!!sub && shownMore.some((k) => String(sub[k] ?? '').trim() !== ''));
     syncFormMode();
     updateFormLogo();
     openDialog(dialog);
@@ -1724,11 +1728,27 @@ function syncFormMode() {
   $('#label-cycle').textContent = t(income ? 'form.cycle.income' : 'form.cycle.expense');
 }
 
+/** The fields under More details. */
+const MORE_FIELDS = ['domain', 'emoji', 'plan', 'category', 'notes'];
+function setMoreDetails(open) {
+  $('#more-toggle').setAttribute('aria-expanded', String(open));
+  $('#more-details').hidden = !open;
+}
+
+/**
+ * The header tile: the item's logo, emoji or initial. Income has no logo or emoji fields in the
+ * form, so a new income item's tile doesn't use what was typed there as an expense; an edited one
+ * shows what it holds. Before there's anything to show, the "?" tile takes the type's tint.
+ */
 function updateFormLogo() {
   const f = form.elements;
-  $('#form-logo').innerHTML = logoHTML({
-    name: f.name.value || '?', domain: cleanDomain(f.domain.value), emoji: firstEmoji(f.emoji.value),
-  }, 'md');
+  const income = state.formType === 'income';
+  const hide = income && !state.editingId;
+  const shown = { name: f.name.value.trim(), domain: hide ? '' : cleanDomain(f.domain.value), emoji: hide ? '' : firstEmoji(f.emoji.value) };
+  const host = $('#form-logo');
+  host.innerHTML = logoHTML({ ...shown, name: shown.name || '?' }, 'md');
+  if (!shown.name && !shown.domain && !shown.emoji) host.dataset.placeholder = state.formType;
+  else delete host.dataset.placeholder;
 }
 
 let logoTimer;
@@ -1774,6 +1794,7 @@ function bindForm() {
     syncFormMode();
     suggestFromName();
   }));
+  $('#more-toggle').addEventListener('click', () => setMoreDetails($('#more-toggle').getAttribute('aria-expanded') !== 'true'));
   dialog.addEventListener('close', () => document.body.classList.remove('sheet-open'));
 
   $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => closeDialog(dialog)));
@@ -1853,20 +1874,23 @@ function readForm() {
 
   const existing = state.subs.find((s) => s.id === state.editingId);
   const now = new Date().toISOString();
+  // The form hides domain, emoji, plan and category for income. A new income item gets none of them
+  // (whatever was typed while it was an expense stays out); an edited one keeps what it holds, so
+  // saving never clears a field the form didn't show (mergeFormEdit then sees it unchanged).
+  const hidden = (k, v) => (income ? (formBase?.[k] ?? '') : v);
   return {
     id: existing?.id ?? uid(),
     type: income ? 'income' : 'expense',
     name,
-    // Income streams don't use domain, plan or category.
-    domain: income ? '' : cleanDomain(f.domain.value),
-    emoji: firstEmoji(f.emoji.value),
-    plan: income ? '' : f.plan.value.trim(),
+    domain: hidden('domain', cleanDomain(f.domain.value)),
+    emoji: hidden('emoji', firstEmoji(f.emoji.value)),
+    plan: hidden('plan', f.plan.value.trim()),
     price: Math.round(price * 100) / 100,
     currency: f.currency.value || state.settings.defaultCurrency,
     cycle,
     nextRenewal: cycle === 'once' ? '' : f.nextRenewal.value || '',
     date: cycle === 'once' ? f.date.value : '',
-    category: income ? '' : f.category.value.trim(),
+    category: hidden('category', f.category.value.trim()),
     notes: f.notes.value.trim(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

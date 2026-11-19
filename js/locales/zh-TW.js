@@ -66,6 +66,7 @@ export default {
   'form.emoji.placeholder': '例如：🍜',
   'form.kind.expense': '支出',
   'form.kind.income': '收入',
+  'form.more': '更多資料',
   'form.name': '名稱',
   'form.name.placeholder.expense': '例如：Netflix',
   'form.notes': '備註',
@@ -75,6 +76,7 @@ export default {
   'form.plan.placeholder': '例如：高級',
   'form.price.expense': '價格',
   'form.renewal.expense': '下次續訂日',
+  'form.required': '必填',
   'form.title.newExpense': '新增支出',
   'form.type': '類型',
 

@@ -69,6 +69,7 @@ export default {
   'form.emoji.placeholder': 'e.g. 🍜',
   'form.kind.expense': 'Expense',
   'form.kind.income': 'Income',
+  'form.more': 'More details',
   'form.name': 'Name',
   'form.name.placeholder.expense': 'e.g. Netflix',
   'form.notes': 'Notes',
@@ -78,6 +79,7 @@ export default {
   'form.plan.placeholder': 'e.g. Premium',
   'form.price.expense': 'Price',
   'form.renewal.expense': 'Next renewal',
+  'form.required': 'required',
   'form.title.newExpense': 'New expense',
   'form.type': 'Type',
 

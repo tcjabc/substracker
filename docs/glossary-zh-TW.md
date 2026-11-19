@@ -138,6 +138,8 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | website domain | 網站網域 | |
 | logo | 標誌 | ⚠ Many Taiwanese apps just write Logo |
 | optional | 選填 | |
+| required | 必填 | 1.21.1; beside the date in the add sheet (the counterpart of 選填) |
+| More details (the add sheet's folded fields) | 更多資料 | ⚠ 1.21.1; alternatives 更多欄位, 其他資訊 |
 
 ## Colour names
 

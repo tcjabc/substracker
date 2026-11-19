@@ -308,7 +308,8 @@
         <!-- Adding only: an item being edited keeps its type. -->
         <fieldset class="field" id="field-kind">
           <legend class="sr-only" data-i18n="form.type">Type</legend>
-          <div class="segmented segmented-wide">
+          <!-- The chosen type is tinted (green for income, red for expenses); the words carry it. -->
+          <div class="segmented segmented-wide seg-type">
             <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span data-i18n="form.kind.expense">Expense</span></label>
             <label class="seg-option"><input type="radio" name="kind" value="income"><span data-i18n="form.kind.income">Income</span></label>
           </div>
@@ -317,21 +318,6 @@
           <span class="field-label" data-i18n="form.name">Name</span>
           <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix" data-i18n-attr="placeholder:form.name.placeholder.expense">
           <span class="field-error" data-error-for="name"></span>
-        </label>
-        <div class="field-row">
-          <label class="field field-grow" data-expense-only>
-            <span class="field-label" data-i18n="form.domain">Website domain <span class="optional" data-i18n="form.domain.hint">for logo</span></span>
-            <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com" data-i18n-attr="placeholder:form.domain.placeholder">
-          </label>
-          <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
-          <label class="field">
-            <span class="field-label" data-i18n="form.emoji">Emoji <span class="optional" data-i18n="form.optional">optional</span></span>
-            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜" data-i18n-attr="placeholder:form.emoji.placeholder">
-          </label>
-        </div>
-        <label class="field" data-expense-only>
-          <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
-          <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
         </label>
         <div class="field-row">
           <label class="field field-grow">
@@ -354,24 +340,48 @@
         </fieldset>
         <div class="field-row" id="field-row-dates">
           <label class="field field-grow" id="field-renewal">
-            <span class="field-label" id="label-renewal" data-i18n="form.renewal.expense">Next renewal</span>
-            <input class="input" name="nextRenewal" type="date">
+            <span class="field-label"><span id="label-renewal" data-i18n="form.renewal.expense">Next renewal</span> <span class="required" data-i18n="form.required">required</span></span>
+            <input class="input" name="nextRenewal" type="date" aria-required="true">
             <span class="field-error" data-error-for="nextRenewal"></span>
           </label>
           <label class="field field-grow" id="field-date" hidden>
-            <span class="field-label" data-i18n="form.date">Date</span>
-            <input class="input" name="date" type="date">
+            <span class="field-label"><span data-i18n="form.date">Date</span> <span class="required" data-i18n="form.required">required</span></span>
+            <input class="input" name="date" type="date" aria-required="true">
             <span class="field-error" data-error-for="date"></span>
           </label>
-          <label class="field field-grow" data-expense-only>
+        </div>
+        <!-- The optional fields, folded away: open by default when an edited item has any of them.
+             Inline (not an overlay), so Android Back still closes the sheet in one press. -->
+        <button type="button" class="disclosure" id="more-toggle" aria-expanded="false" aria-controls="more-details">
+          <span data-i18n="form.more">More details</span>
+          <svg class="disclosure-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="more-details" id="more-details" hidden>
+          <!-- Expenses only (income has no logo, emoji, plan or category in the form). -->
+          <div class="field-row" data-expense-only>
+            <label class="field field-grow">
+              <span class="field-label" data-i18n="form.domain">Website domain <span class="optional" data-i18n="form.domain.hint">for logo</span></span>
+              <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com" data-i18n-attr="placeholder:form.domain.placeholder">
+            </label>
+            <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
+            <label class="field">
+              <span class="field-label" data-i18n="form.emoji">Emoji <span class="optional" data-i18n="form.optional">optional</span></span>
+              <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜" data-i18n-attr="placeholder:form.emoji.placeholder">
+            </label>
+          </div>
+          <label class="field" data-expense-only>
+            <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
+            <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
+          </label>
+          <label class="field" data-expense-only>
             <span class="field-label" data-i18n="form.category">Category <span class="optional" data-i18n="form.optional">optional</span></span>
             <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music" data-i18n-attr="placeholder:form.category.placeholder">
           </label>
+          <label class="field">
+            <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
+            <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
+          </label>
         </div>
-        <label class="field">
-          <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
-          <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
-        </label>
       </div>
       <div class="sheet-foot">
         <button type="button" class="btn btn-danger-text" id="btn-delete" hidden data-i18n="form.delete">Delete</button>

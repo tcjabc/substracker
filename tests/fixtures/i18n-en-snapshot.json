@@ -302,13 +302,13 @@
       "aria-label=31 December 2026, nothing due"
     ],
     "form.new.expense": [
-      "? New expense Type Expense Income Name Website domain for logo Emoji optional Plan optional Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal Date Category optional Notes optional Delete Cancel Save",
+      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. Netflix",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=Shared with family, billed to card ending 1234…"
     ],
@@ -319,13 +319,13 @@
       ""
     ],
     "form.new.income": [
-      "? New income Type Expense Income Name Enter a name. Website domain for logo Emoji optional Plan optional Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment Date Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
@@ -336,13 +336,13 @@
       ""
     ],
     "form.new.income.once": [
-      "? New income Type Expense Income Name Enter a name. Website domain for logo Emoji optional Plan optional Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment Date Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
