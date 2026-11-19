@@ -132,7 +132,7 @@ export function createWallet(host, opts) {
     return `
       <button type="button" class="w-band" aria-expanded="false" aria-label="${esc(bandLabel(g))}">
         <span class="w-name"><span>${esc(g.label)}</span>${CHEVRON}</span>${chip}<span class="w-total">${esc(line.total)}</span>
-        <span class="w-meta">${esc(items(g.items.length))}</span><span class="w-sub">${esc(line.sub)}</span>
+        <span class="w-foot"><span class="w-meta">${esc(items(g.items.length))}</span><span class="w-sub">${esc(line.sub)}</span></span>
       </button>
       <div class="w-preview" aria-hidden="true"><div class="w-bar"><div class="w-bar-track">${shares}</div>${moreText}</div>${rows}</div>
       <div class="w-detail" inert>
@@ -222,8 +222,29 @@ export function createWallet(host, opts) {
   }
 
   /* Geometry ------------------------------------------------------------------------------ */
+  /**
+   * A long name beside a wide total gets two lines (app.css .w-name), broken between words. Where
+   * that isn't enough (a word wider than the room, or more than two lines: a narrow phone, a wide
+   * currency prefix, three logos), that card drops its logo chip so the name has the room; the logos
+   * still show in the open card. Other cards keep theirs.
+   */
+  const nameNeedsRoom = (name) => {
+    if (name.scrollHeight > name.clientHeight + 1) return true;
+    name.style.overflowWrap = 'normal';
+    const wide = name.scrollWidth > name.clientWidth + 1;
+    name.style.overflowWrap = '';
+    return wide;
+  };
+  function fitNames() {
+    for (const c of cards) {
+      const name = c.band.querySelector('.w-name > span');
+      c.band.classList.remove('w-tight');
+      if (name && name.clientWidth && nameNeedsRoom(name)) c.band.classList.add('w-tight');
+    }
+  }
   function measure() {
     dpr = window.devicePixelRatio || 1;
+    fitNames();
     if (reduced()) { host.style.height = ''; return; }
     const vp = opts.viewport?.() ?? { height: 480, inset: 0 };
     H = Math.round(vp.height);

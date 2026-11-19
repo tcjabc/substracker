@@ -896,7 +896,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .w-card.w-last:not(.is-open) { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-cast), var(--wallet-drop); }
 .w-band {
   appearance: none; border: 0; background: transparent; color: inherit; width: 100%; height: var(--wallet-band);
-  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name logos total" "meta sub sub";
+  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name logos total" "foot foot foot";
   align-content: center; column-gap: var(--space-2); padding: 0 var(--space-4); text-align: left;
   border-radius: var(--radius-lg); cursor: pointer;
 }
@@ -908,12 +908,17 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
   overflow: hidden; overflow-wrap: anywhere; white-space: normal;
 }
+/* Even two lines would cut the name: this card leaves out its logo chip (js/wallet.js fitNames). */
+.w-band.w-tight .w-logos { display: none; }
 .w-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: transform var(--dur) var(--ease); }
 .is-open .w-chev { transform: rotate(180deg); }
 .w-total { grid-area: total; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.w-meta, .w-sub { font-size: var(--text-sm); color: var(--ink-2); line-height: var(--leading-tight); white-space: nowrap; margin-top: 2px; }
-.w-meta { grid-area: meta; }
-.w-sub { grid-area: sub; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+/* The second row (items, and what's due) is one line across the card, so its width never squeezes the
+   name's column above it. The due words give way (an ellipsis) before the item count does. */
+.w-foot { grid-area: foot; display: flex; justify-content: space-between; gap: var(--space-2); min-width: 0; margin-top: 2px; }
+.w-meta, .w-sub { font-size: var(--text-sm); color: var(--ink-2); line-height: var(--leading-tight); white-space: nowrap; }
+.w-meta { flex: none; }
+.w-sub { min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; }
 /* Up to three logos and "+N": the chip has an outline only, so it never changes the text contrast. */
 .w-logos {
   grid-area: logos; align-self: center; display: inline-flex; align-items: center; gap: var(--space-1);
