@@ -133,12 +133,10 @@
   --wallet-lip-room: 24px; /* card height below that, under the next card (GEOM.lip) */
   --logo-md: 44px;
   --fab: 64px;
-  --fab-sm: 48px;
   --fab-gap: var(--space-3);
-  /* The room kept above the tab bar for the floating +. There's one button since 1.20.0, but the room
-     is still the old + / − pair's, so no page moves (Insights' year card ends on it); the Wallet
-     measures the button itself. */
-  --fab-stack: calc(var(--fab) + var(--fab-gap) + var(--fab-sm));
+  /* The room kept above the tab bar for the floating +: the one button (since 1.21.0; until then it
+     was still the old + / − pair's, about 60px more). The Wallet measures the button itself. */
+  --fab-stack: var(--fab);
   --dot: 12px;          /* group colour dot */
   --dot-hit: 24px;      /* its tap target */
   --swatch-size: 32px;  /* swatches in the colour popover */
