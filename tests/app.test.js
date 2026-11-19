@@ -832,8 +832,10 @@ test('no bar covers the axis labels; the dock can scroll clear of the floating b
   scrollTo(0, document.documentElement.scrollHeight);
   await tick(50);
   const now = $('#year-chart .yc-now').getBoundingClientRect();
-  const fab = $('#fab-stack').getBoundingClientRect();
-  assert(!overlap(now, fab) && now.bottom < fab.top, `Jump to now is above the floating buttons (${Math.round(now.bottom)} < ${Math.round(fab.top)})`);
+  // Insights has no + since 1.20.0; the button still ends clear of the tab bar.
+  assert($('#fab-stack').hidden, 'no floating + on Insights');
+  const bar = $('.tabbar').getBoundingClientRect();
+  assert(now.bottom < bar.top, `Jump to now is above the tab bar (${Math.round(now.bottom)} < ${Math.round(bar.top)})`);
   scrollTo(0, 0);
   mode('month');
 });
@@ -882,7 +884,7 @@ test('Back: on the edit sheet, the Delete confirmation closes as Cancel first, t
 });
 
 test('Back: rapid double Back during the sheet\'s opening animation closes it once, then goes on', async () => {
-  goTab('insights');
+  goTab('calendar'); // the + is on Money and Calendar only
   $('#fab').click();
   const got = [pressBack(), pressBack()];
   eq(got, ['closed', 'root'], 'one press per level: the sheet, then the Money tab');
@@ -1123,14 +1125,18 @@ test('Pill: decoration only; the tabs keep their roles, keyboard and focus', asy
   eq(pillEl().getAttribute('aria-hidden'), 'true', 'hidden from screen readers');
   eq(getComputedStyle(pillEl()).pointerEvents, 'none', 'takes no taps');
   eq(pillEl().tabIndex, -1, 'not focusable');
-  eq($$('.tabbar [role="tab"]').map((t) => t.dataset.tab), ['subs', 'insights', 'settings'], 'the same three tabs');
+  eq($$('.tabbar [role="tab"]').map((t) => t.dataset.tab), ['subs', 'calendar', 'insights', 'settings'], 'four tabs (Calendar since 1.20.0; tests/nav.html moves the pill to it)');
   goTab('subs');
   await until(() => pillOn('subs'), 'the pill on Money', 2000);
   tabEl('subs').focus();
   $('.tabbar').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-  eq([appTab(), document.activeElement?.id], ['insights', 'tab-insights'], 'arrow keys still move the selection and focus');
-  eq($$('.tab').map((t) => [t.getAttribute('aria-selected'), t.tabIndex]), [['false', -1], ['true', 0], ['false', -1]], 'roving tabindex');
-  await until(() => pillOn('insights'), 'the pill follows the keyboard', 2000);
+  eq([appTab(), document.activeElement?.id], ['calendar', 'tab-calendar'], 'arrow keys still move the selection and focus');
+  eq($$('.tab').map((t) => [t.getAttribute('aria-selected'), t.tabIndex]), [['false', -1], ['true', 0], ['false', -1], ['false', -1]], 'roving tabindex');
+  await until(() => pillOn('calendar'), 'the pill follows the keyboard', 2000);
+  $('.tabbar').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  $('.tabbar').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  eq([appTab(), document.activeElement?.id], ['settings', 'tab-settings'], 'and wrap round the four');
+  await until(() => pillOn('settings'), 'the pill too', 2000);
 });
 
 test('Pill: a tap slides it over with a stretch, and it settles exactly on the new tab', async () => {
@@ -1208,22 +1214,32 @@ const wallet = () => $('#wallet')?.wallet;
 const wCards = () => $$('#wallet .w-card');
 const wCard = (name) => wCards().find((c) => text($('.w-name', c)) === name);
 const wBand = (name) => wCard(name)?.querySelector('.w-band');
-const viewBtn = (v) => $(`.seg-btn[data-view="${v}"]`);
+/** Pick a Money view from the header's View menu, the way a person does (js/app.js bindViewMenu). */
+function pickView(v) {
+  $('#view-btn').click();
+  assert(!$('#view-menu').hidden, 'the View menu opens');
+  $(`#view-menu [data-view="${v}"]`).click();
+}
 const wSettled = () => until(() => wallet() && !wallet().state().animating, 'the wallet settles', 4000);
 const cssToken = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim().toLowerCase();
 
 test('Wallet: a saved Grid choice is kept; Wallet | Grid | List is remembered per device, never exported', async () => {
   goTab('subs');
-  eq(viewBtn('grid').getAttribute('aria-pressed'), 'true', 'this device chose Grid before (the runner saved it): kept');
-  eq($$('.seg-btn[data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list', 'calendar'], 'four views (Calendar since 1.19.0; tests/calendar.html tests it)');
-  viewBtn('wallet').click();
+  eq($('#view-btn').dataset.view, 'grid', 'this device chose Grid before (the runner saved it): kept');
+  eq($('#view-btn').getAttribute('aria-label'), 'View: Cards. Sort: A to Z', 'the View button names it');
+  eq($$('#view-menu [data-view]').map((b) => [b.dataset.view, b.getAttribute('aria-checked')]), [['wallet', 'false'], ['grid', 'true'], ['list', 'false']],
+    'three views (Calendar is a tab since 1.20.0; tests/calendar.html and tests/nav.html test it)');
+  pickView('wallet');
   assert($('#subs-list #wallet'), 'the wallet is shown');
   eq(localStorage.getItem('substracker.view'), 'wallet', 'remembered on this device');
-  eq(viewBtn('wallet').getAttribute('aria-pressed'), 'true', 'pressed');
-  viewBtn('list').click();
+  eq(viewItem('wallet').getAttribute('aria-checked'), 'true', 'checked in the menu');
+  eq($('#view-btn').dataset.view, 'wallet', 'and the button\'s icon is the Wallet\'s');
+  const icons = $$('#view-btn > .icon').filter((i) => i.getClientRects().length).map((i) => i.dataset.icon);
+  eq(icons, ['wallet'], 'one icon shown: the view in use');
+  pickView('list');
   assert(!$('#subs-list #wallet') && $('#subs-list .sub-row'), 'the list instead');
   eq(localStorage.getItem('substracker.view'), 'list', 'List remembered');
-  viewBtn('wallet').click();
+  pickView('wallet');
   await wSettled();
   const backup = JSON.stringify(await storage.exportAll());
   assert(!backup.includes('"view"') && !backup.includes('wallet'), 'not in a backup');
@@ -1361,11 +1377,11 @@ test('Wallet: palette colours in stack order; text keeps 4.5:1 in both themes; p
   }
   $('#set-theme').value = 'system'; $('#set-theme').dispatchEvent(new Event('change'));
   // Pick a colour for Health (from the grid's colour dot): it stays exactly as picked in the wallet.
-  viewBtn('grid').click();
+  pickView('grid');
   $('#subs-list .group-dot[data-group="Health"]').click();
   $('#swatch-grid [data-swatch="g6"]').click();
   await until(async () => (await storage.getSettings()).groupColors.Health === 'g6', 'saved as a pick');
-  viewBtn('wallet').click();
+  pickView('wallet');
   await wSettled();
   eq(fill('Health'), cssToken('--group-6'), 'the picked swatch');
   eq(fill('Utilities'), cssToken('--wallet-2'), 'the others keep theirs');
@@ -1471,9 +1487,13 @@ test('Year chart: the key hides behind Show key (remembered per device); focus m
 // Health (Gym, Yoga: undated, nothing due), Utilities (Phone, Cloud: due this month) and
 // Uncategorised (Domain, six months away, plus two USD plans). One extra group, Aardvark, with a
 // small TWD amount due this month, makes Total differ from A to Z.
-const sortBtn = () => $('#sort-btn');
-const sortMenu = () => $('#sort-menu');
-const sortItem = (k) => $(`#sort-menu [data-sort="${k}"]`);
+// Sort is the second group of the header's View menu (since 1.20.0; the Sort button before).
+const sortBtn = () => $('#view-btn');
+const sortMenu = () => $('#view-menu');
+const sortItem = (k) => $(`#view-menu [data-sort="${k}"]`);
+const viewItem = (v) => $(`#view-menu [data-view="${v}"]`);
+/** The accent colour as computed (rgb), to compare with the View button's. */
+const accentColour = () => getComputedStyle($('#tab-subs[aria-selected="true"]') ?? document.body).color;
 const walletOrder = () => wCards().map((c) => text($('.w-name', c)));
 const sectionOrder = () => $$('#subs-list .money-group .section-title > span').map((el) => el.firstChild.textContent.trim());
 const AARDVARK = { ...base, id: 'test-sort-aardvark', name: 'Ant food', price: 50, cycle: 'monthly', nextRenewal: day(Y, M, 3), category: 'Aardvark' };
@@ -1505,30 +1525,42 @@ async function expectedOrders() {
   };
 }
 
-test('Sort: A to Z by default (today\'s order); the menu is labelled, keyboard operable and on the overlay stack', async () => {
+test('Sort: A to Z by default (today\'s order); the View menu is labelled, keyboard operable and on the overlay stack', async () => {
   goTab('subs');
-  viewBtn('wallet').click();
+  pickView('wallet');
   await wSettled();
   eq(localStorage.getItem('substracker.groupSort'), null, 'never chosen on this device');
-  eq(sortBtn().getAttribute('aria-label'), 'Sort groups: A to Z', 'the button says the order in use');
+  eq(sortBtn().getAttribute('aria-label'), 'View: Wallet. Sort: A to Z', 'the button says the view and the order in use');
+  assert(getComputedStyle(sortBtn()).color !== accentColour(), 'A to Z: not the accent colour');
   eq(sortBtn().getAttribute('aria-haspopup'), 'menu', 'opens a menu');
   eq(sortBtn().getAttribute('aria-expanded'), 'false', 'closed');
   eq(walletOrder(), (await expectedOrders()).az, 'the order the Money tab always had');
   sortBtn().click();
   assert(!sortMenu().hidden, 'opens');
   eq(sortBtn().getAttribute('aria-expanded'), 'true', 'expanded');
-  eq(sortMenu().getAttribute('role'), 'menu', 'a menu');
-  eq($$('#sort-menu [data-sort]').map((b) => [b.getAttribute('role'), b.dataset.sort, b.getAttribute('aria-checked')]),
-    [['menuitemradio', 'az', 'true'], ['menuitemradio', 'total', 'false'], ['menuitemradio', 'items', 'false']], 'three radio items, A to Z checked');
-  eq(document.activeElement, sortItem('az'), 'focus on the checked item');
-  eq(overlays.top(), 'sort-menu', 'on the overlay stack');
+  eq([sortMenu().getAttribute('role'), sortMenu().getAttribute('aria-label')], ['menu', 'View and sort'], 'a menu, labelled');
+  eq($$('#view-menu [role="group"]').map((g) => text($(`#${g.getAttribute('aria-labelledby')}`))), ['View', 'Sort groups'], 'two labelled groups: View, then Sort groups');
+  eq($$('#view-menu .menu-item').map((b) => [b.getAttribute('role'), b.dataset.view ?? b.dataset.sort, b.getAttribute('aria-checked')]),
+    [['menuitemradio', 'wallet', 'true'], ['menuitemradio', 'grid', 'false'], ['menuitemradio', 'list', 'false'],
+      ['menuitemradio', 'az', 'true'], ['menuitemradio', 'total', 'false'], ['menuitemradio', 'items', 'false']], 'six radio items, Wallet and A to Z checked');
+  eq(document.activeElement, viewItem('wallet'), 'focus on the view in use');
+  eq(overlays.top(), 'view-menu', 'on the overlay stack');
   const key = (k) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+  key('ArrowDown');
+  eq(document.activeElement, viewItem('grid'), 'ArrowDown');
+  key('ArrowDown');
+  key('ArrowDown');
+  eq(document.activeElement, sortItem('az'), 'on from the views into Sort');
   key('ArrowDown');
   eq(document.activeElement, sortItem('total'), 'ArrowDown');
   key('End');
   eq(document.activeElement, sortItem('items'), 'End');
   key('ArrowDown');
-  eq(document.activeElement, sortItem('az'), 'wraps round');
+  eq(document.activeElement, viewItem('wallet'), 'wraps round');
+  key('ArrowUp');
+  eq(document.activeElement, sortItem('items'), 'and back');
+  key('Home');
+  eq(document.activeElement, viewItem('wallet'), 'Home');
   key('Escape');
   assert(sortMenu().hidden, 'Escape closes it');
   eq(document.activeElement, sortBtn(), 'focus back on the button');
@@ -1544,8 +1576,9 @@ test('Sort: per device, never in a backup, the settings or the sync outbox', asy
   const opsBefore = await storage.pendingCount();
   pickSort('items');
   eq(localStorage.getItem('substracker.groupSort'), 'items', 'remembered on this device');
-  eq(sortBtn().getAttribute('aria-label'), 'Sort groups: Items, most first', 'the button says so');
+  eq(sortBtn().getAttribute('aria-label'), 'View: Wallet. Sort: Items, most first', 'the button says so');
   eq(sortBtn().dataset.sort, 'items', 'and shows it');
+  eq(getComputedStyle(sortBtn()).color, accentColour(), 'in the accent colour: the order isn\'t A to Z');
   assert(sortMenu().hidden, 'the menu closes');
   eq(document.activeElement, sortBtn(), 'focus back on the button');
   const backup = JSON.stringify(await storage.exportAll());
@@ -1562,7 +1595,7 @@ test('Sort: Wallet, Grid and List all follow it; an open card stays open and com
   await storage.save(AARDVARK);
   await reloadApp();
   goTab('subs');
-  viewBtn('wallet').click();
+  pickView('wallet');
   await wSettled();
   const want = await expectedOrders();
   assert(JSON.stringify(want.total) !== JSON.stringify(want.az) && JSON.stringify(want.items) !== JSON.stringify(want.az), 'the three orders differ here');
@@ -1583,17 +1616,17 @@ test('Sort: Wallet, Grid and List all follow it; an open card stays open and com
   await wSettled();
   pickSort('total');
   eq(w.state().f, 0, 'with no card open the stack goes back to the top');
-  viewBtn('grid').click();
+  pickView('grid');
   eq(sectionOrder(), want.total, 'Grid: by total');
-  viewBtn('list').click();
+  pickView('list');
   eq(sectionOrder(), want.total, 'List: by total');
   pickSort('items');
   eq(sectionOrder(), want.items, 'List: by items');
-  viewBtn('grid').click();
+  pickView('grid');
   eq(sectionOrder(), want.items, 'Grid: by items');
   pickSort('az');
   eq(sectionOrder(), want.az, 'Grid: A to Z');
-  viewBtn('wallet').click();
+  pickView('wallet');
   await wSettled();
   await storage.remove(AARDVARK.id);
   await reloadApp();
@@ -1627,7 +1660,7 @@ test('Rolling totals: play when the Money tab comes to the front and when the ap
   setMotion(false);
   {
     goTab('subs');
-    viewBtn('wallet').click();
+    pickView('wallet');
     await wSettled();
     await rollsDone();
     const texts = stripTexts();
@@ -1680,7 +1713,7 @@ test('Rolling totals: the Wallet labels are unchanged; only cards near the scree
     // The labels as they are with no roll (Reduce motion), then during a roll: the same.
     setMotion(true);
     goTab('subs');
-    viewBtn('wallet').click();
+    pickView('wallet');
     const still = bandLabels();
     setMotion(false);
     await wSettled();
@@ -1711,7 +1744,7 @@ test('Rolling totals: Reduce motion and effects: the number just changes, 0 anim
   setMotion(true);
   try {
     goTab('subs');
-    viewBtn('wallet').click();
+    pickView('wallet');
     await rollsDone();
     const started = roller().stats().started;
     goTab('settings');

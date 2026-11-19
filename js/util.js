@@ -296,5 +296,8 @@ export const catViewFrom = (pref) => (pref === 'donut' || pref === 'list' ? pref
 /** The Insights year chart's stacking from the saved preference: a saved By type is kept, else By category. */
 export const yearStackFrom = (pref) => (pref === 'type' ? 'type' : 'category');
 
-/** The Money tab view from the saved preference: a saved Grid or List is kept, else the Wallet. */
-export const viewFrom = (pref) => (pref === 'grid' || pref === 'list' || pref === 'calendar' ? pref : 'wallet');
+/**
+ * The Money tab view from the saved preference: a saved Grid or List is kept, else the Wallet. A
+ * saved Calendar (1.19.0, when it was a view here) is the Wallet: the calendar has its own tab now.
+ */
+export const viewFrom = (pref) => (pref === 'grid' || pref === 'list' ? pref : 'wallet');

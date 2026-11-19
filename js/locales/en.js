@@ -24,26 +24,25 @@ export default {
   'common.save': 'Save',
 
   // Tabs and page titles
+  'tab.calendar': 'Calendar',
   'tab.insights': 'Insights',
   'tab.money': 'Money',
   'tab.sections': 'Sections',
   'tab.settings': 'Settings',
 
   // Money tab
+  'money.add': 'Add expense or income',
   'money.addExpense': 'Add expense',
   'money.addIncome': 'Add income',
   'money.empty.text': "Add your income and the things you pay for. It's stored on this device, with optional end-to-end encrypted sync between your devices.", // legal check
   'money.empty.title': 'Nothing here yet',
   'money.summary.label': 'Summary',
+  'money.view.button': 'View: {view}. Sort: {order}',
   'money.view.grid': 'Cards',
-  'money.view.grid.title': 'Card view',
   'money.view.label': 'View',
   'money.view.list': 'List',
-  'money.view.list.title': 'List view',
+  'money.view.menu': 'View and sort',
   'money.view.wallet': 'Wallet',
-  'money.view.wallet.title': 'Wallet view',
-  'money.view.calendar': 'Calendar',
-  'money.view.calendar.title': 'Calendar view',
 
   // Sort groups (Money tab)
   'sort.az': 'A to Z',
@@ -320,8 +319,7 @@ export default {
   'colour.w14': 'Brown',
   'colour.w15': 'Yellow',
 
-  // Sort groups
-  'sort.button': 'Sort groups: {order}',
+  // Sort groups (the View button's label names the order)
   'sort.name.az': 'A to Z',
   'sort.name.total': 'Total, high to low',
   'sort.name.items': 'Items, most first',

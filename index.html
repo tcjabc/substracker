@@ -32,28 +32,14 @@
   <header class="app-header">
     <div class="container header-inner">
       <h1 class="page-title" id="page-title" data-i18n="tab.money">Money</h1>
+      <!-- Money: one View button, for the view (Wallet, Grid, List) and Sort. Its icon is the view in
+           use; it turns the accent colour when the order isn't A to Z. js/app.js bindViewMenu. -->
       <div class="header-actions" id="subs-actions">
         <div class="segmented">
-          <button type="button" class="seg-btn sort-btn" id="sort-btn" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="sort-menu" aria-label="Sort groups: A to Z" title="Sort groups" data-i18n-attr="title:sort.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h5"/></svg>
-          </button>
-        </div>
-        <div class="segmented" role="group" aria-label="View" data-i18n-attr="aria-label:money.view.label">
-          <button type="button" class="seg-btn" data-view="wallet" aria-pressed="true" title="Wallet view" data-i18n-attr="title:money.view.wallet.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
-            <span class="sr-only" data-i18n="money.view.wallet">Wallet</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="grid" aria-pressed="false" title="Card view" data-i18n-attr="title:money.view.grid.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-            <span class="sr-only" data-i18n="money.view.grid">Cards</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="list" aria-pressed="false" title="List view" data-i18n-attr="title:money.view.list.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
-            <span class="sr-only" data-i18n="money.view.list">List</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="calendar" aria-pressed="false" title="Calendar view" data-i18n-attr="title:money.view.calendar.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
-            <span class="sr-only" data-i18n="money.view.calendar">Calendar</span>
+          <button type="button" class="seg-btn view-btn" id="view-btn" data-view="wallet" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu" aria-label="View: Wallet. Sort: A to Z" title="View" data-i18n-attr="title:money.view.label">
+            <svg class="icon" data-icon="wallet" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
+            <svg class="icon" data-icon="grid" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+            <svg class="icon" data-icon="list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
           </button>
         </div>
       </div>
@@ -90,6 +76,10 @@
         </div>
       </div>
     </section>
+
+    <!-- Calendar (js/calendar.js): the month, its cash due, the grid and the selected day's list.
+         js/app.js mounts it here the first time the tab is shown. -->
+    <section class="tab-panel" id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" hidden></section>
 
     <!-- Insights -->
     <section class="tab-panel" id="panel-insights" role="tabpanel" aria-labelledby="tab-insights" hidden>
@@ -277,13 +267,11 @@
     </section>
   </main>
 
-  <!-- Expense sits at the bottom, nearest the thumb: it's the most-used action. -->
+  <!-- One + on Money and Calendar: the add sheet, Expense first, with an Expense | Income switch.
+       On Calendar it fills in the selected day. Hidden on Insights and Settings. -->
   <div class="fab-stack" id="fab-stack">
-    <button type="button" class="fab fab-sm fab-income" data-action="add-income" aria-label="Add income" data-i18n-attr="aria-label:money.addIncome">
+    <button type="button" class="fab" id="fab" aria-label="Add expense or income" data-i18n-attr="aria-label:money.add">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-    </button>
-    <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense" data-i18n-attr="aria-label:money.addExpense">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
     </button>
   </div>
 
@@ -291,6 +279,10 @@
     <button type="button" class="tab" role="tab" id="tab-subs" data-tab="subs" aria-controls="panel-subs" aria-selected="true">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>
       <span data-i18n="tab.money">Money</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tab-calendar" data-tab="calendar" aria-controls="panel-calendar" aria-selected="false" tabindex="-1">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
+      <span data-i18n="tab.calendar">Calendar</span>
     </button>
     <button type="button" class="tab" role="tab" id="tab-insights" data-tab="insights" aria-controls="panel-insights" aria-selected="false" tabindex="-1">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
@@ -313,7 +305,8 @@
         </button>
       </div>
       <div class="sheet-body">
-        <fieldset class="field">
+        <!-- Adding only: an item being edited keeps its type. -->
+        <fieldset class="field" id="field-kind">
           <legend class="sr-only" data-i18n="form.type">Type</legend>
           <div class="segmented segmented-wide">
             <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span data-i18n="form.kind.expense">Expense</span></label>
@@ -685,12 +678,21 @@
     <div class="swatch-grid" id="swatch-grid"></div>
   </div>
 
-  <!-- Money tab: Sort groups (per device). Items: role menuitemradio; js/app.js bindSortMenu. -->
-  <div class="pop menu-pop" id="sort-menu" role="menu" aria-labelledby="sort-menu-title" hidden>
-    <p class="pop-title" id="sort-menu-title" data-i18n="sort.title">Sort groups</p>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1" data-i18n="sort.az">A to Z</button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1" data-i18n="sort.total">Total <span class="menu-hint" data-i18n="sort.total.hint">high to low</span></button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1" data-i18n="sort.items">Items <span class="menu-hint" data-i18n="sort.items.hint">most first</span></button>
+  <!-- Money tab: View and Sort groups (both per device), from the header's View button. Two groups
+       of radio items in one menu; js/app.js bindViewMenu. -->
+  <div class="pop menu-pop" id="view-menu" role="menu" aria-label="View and sort" data-i18n-attr="aria-label:money.view.menu" hidden>
+    <div class="menu-group" role="group" aria-labelledby="view-menu-view">
+      <p class="pop-title" id="view-menu-view" data-i18n="money.view.label">View</p>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="wallet" aria-checked="true" tabindex="-1" data-i18n="money.view.wallet">Wallet</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="grid" aria-checked="false" tabindex="-1" data-i18n="money.view.grid">Cards</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="list" aria-checked="false" tabindex="-1" data-i18n="money.view.list">List</button>
+    </div>
+    <div class="menu-group" role="group" aria-labelledby="view-menu-sort">
+      <p class="pop-title" id="view-menu-sort" data-i18n="sort.title">Sort groups</p>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1" data-i18n="sort.az">A to Z</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1" data-i18n="sort.total">Total <span class="menu-hint" data-i18n="sort.total.hint">high to low</span></button>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1" data-i18n="sort.items">Items <span class="menu-hint" data-i18n="sort.items.hint">most first</span></button>
+    </div>
   </div>
 
   <datalist id="service-names"></datalist>

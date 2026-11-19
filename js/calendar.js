@@ -1,4 +1,4 @@
-// The Money tab's calendar view: a month grid of due dates with dots in the group colours, the
+// The Calendar tab: a month grid of due dates with dots in the group colours, the
 // selected day's items listed under it, and month navigation by buttons, swipe and keyboard. What
 // falls on which day, and every figure, comes from js/calendar-math.js (Insights' cash basis); this
 // file only draws it. The shown month and the selected day aren't saved anywhere.
@@ -130,7 +130,8 @@ export function createCalendar(host, opts) {
       return `<div role="gridcell" class="cal-cell" aria-selected="${sel}"><button type="button" class="cal-day${d.count ? ' has-items' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}" data-day="${cell.day}" tabindex="${cell.day === tabDay ? 0 : -1}"${isToday ? ' aria-current="date"' : ''} aria-label="${esc(dayLabel(d))}"><span class="cal-num" aria-hidden="true">${esc(num(cell.day))}</span><span class="cal-dots" aria-hidden="true">${dotHTML}</span></button></div>`;
     }).join('')}</div>`).join('');
 
-    const extra = [occ.income > 0 ? t('calendar.income', { amount: money(occ.income, c) }) : '', othersText(occ.others)].filter(Boolean);
+    // One line under the heading: the month's cash due in the default currency. Income and other
+    // currencies are on the days themselves (their labels and lists), never in this figure.
     host.innerHTML = `
       <div class="cal-head">
         <button type="button" class="icon-btn cal-step" data-cal-step="-1" aria-label="${esc(t('calendar.prev'))}" title="${esc(t('calendar.prev'))}">${CHEV_L}</button>
@@ -141,7 +142,6 @@ export function createCalendar(host, opts) {
       <div class="cal-summary">
         <span class="cal-summary-label">${esc(t('calendar.summary', { month: monthName() }))}</span>
         <span class="cal-summary-value" data-value="${occ.total}">${esc(money(occ.total, c))}</span>
-        ${extra.length ? `<span class="cal-summary-sub">${esc(extra.join(' · '))}</span>` : ''}
       </div>
       <div class="cal-grid" role="grid" aria-labelledby="cal-month" aria-describedby="cal-keys">
         <div role="rowgroup" class="cal-heads"><div role="row" class="cal-row">${heads}</div></div>

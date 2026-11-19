@@ -62,7 +62,13 @@ const dueDialog = () => $('#due-dialog');
 const open = (d) => d.open || d.hasAttribute('open');
 const subDialog = () => $('#sub-dialog');
 const rows = () => $$('#due-list .due-row');
-const view = async (v) => { $(`.seg-btn[data-view="${v}"]`).click(); await tick(60); };
+/** Show a Money view through the header's View menu (js/app.js bindViewMenu). */
+const view = async (v) => {
+  $('#tab-subs').click();
+  $('#view-btn').click();
+  $(`#view-menu [data-view="${v}"]`).click();
+  await tick(60);
+};
 // Draw the Money tab again the way the app does when it comes back to the front.
 const comeBack = async () => { document.dispatchEvent(new Event('visibilitychange')); await tick(60); };
 const closeSheets = async () => {
@@ -113,8 +119,10 @@ test('the sheet: by date, then name, with relative days; full row labels; Back c
   assert(rows().every((r) => r.tagName === 'BUTTON'), 'rows are buttons');
   assert(rows()[0].classList.contains('due-today'), 'today stands out');
   eq(pressBack(), 'closed', 'Back');
-  await tick(30);
   assert(!open(dueDialog()), 'Back closed the sheet');
+  // aria-expanded follows the dialog's close event, which is queued: wait for it rather than a
+  // fixed 30ms (a busy frame could run that timer first), then check.
+  await until(() => $('#due-toggle').getAttribute('aria-expanded') === 'false', 'the close event', 1000).catch(() => {});
   eq($('#due-toggle').getAttribute('aria-expanded'), 'false', 'collapsed again');
 });
 
@@ -170,7 +178,7 @@ test('nothing is written: a rolled-forward date stays as stored, and no sync op 
   eq(old.nextRenewal, '2025-06-21', 'the stored date is untouched');
 });
 
-/** The last Wallet card, scrolled to the end of the stack, sits clear of the + / - buttons. */
+/** The last Wallet card, scrolled to the end of the stack, sits clear of the + button (one since 1.20.0). */
 async function lastCardClear(label) {
   await view('wallet');
   const bands = $$('#wallet .w-band');
@@ -184,7 +192,12 @@ async function lastCardClear(label) {
   const bar = $('.tabbar').getBoundingClientRect();
   const face = [bands.at(-1), ...$$('.w-pv-row', last)].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
   const bottom = Math.max(...face.map((r) => r.bottom));
-  assert(bottom <= fab.top + 1, `${label}: the last card's face ends at ${Math.round(bottom)}, above the buttons at ${Math.round(fab.top)}`);
+  assert(bottom <= fab.top + 1, `${label}: the last card's face ends at ${Math.round(bottom)}, above the button at ${Math.round(fab.top)}`);
+  // The stack's room at its end is measured from the one button (js/app.js walletViewport), not
+  // the old + / - pair: its scroll end is what this button's height gives.
+  const { maxScroll } = await import('../js/wallet-math.js');
+  const st = $('#wallet').wallet.state();
+  eq(st.maxScroll, maxScroll(st.count, st.height, Math.max(0, bar.top - fab.top)), `${label}: the stack's end is measured from the one button`);
   assert(bottom <= bar.top + 1, `${label}: and above the tab bar (${Math.round(bar.top)})`);
   assert(document.documentElement.scrollWidth <= innerWidth + 1, `${label}: no sideways scroll`);
   const top = $('#wallet').getBoundingClientRect().top + scrollY;
@@ -195,7 +208,7 @@ async function lastCardClear(label) {
   return top;
 }
 
-test('Wallet: the last card clears the + / - buttons with the banner shown, turned off and dismissed', async () => {
+test('Wallet: the last card clears the + button with the banner shown, turned off and dismissed', async () => {
   const withBanner = await lastCardClear('banner shown');
   storage.setPref('dueSoon', 'off');
   await comeBack();

@@ -176,16 +176,20 @@ function overflowAt(key) {
   return out;
 }
 const dialogShown = (id) => { const d = $(`#${id}`); return d.open || d.hasAttribute('open'); };
+/** A Money view from the header's View menu (js/app.js bindViewMenu). */
+const pickView = (v) => { $('#view-btn').click(); $(`#view-menu [data-view="${v}"]`).click(); };
 
 async function walk() {
   // The header, tabs and Money tab (Wallet).
   $('#tab-subs').click();
   await until(() => $('#wallet .w-band'), 'wallet drawn');
   put('doc', [document.title, `lang=${document.documentElement.lang}`]);
-  // The Calendar view's toggle button is new in 1.19.0: English records it on its own key.
-  put('header', grab($('.app-header'), { skip: MODE === 'en' ? ['.seg-btn[data-view="calendar"]'] : [] }));
-  put('tabbar', grab($('.tabbar')));
-  put('fab', grab($('#fab-stack')));
+  // 1.20.0: Money's header is the title and one View button, and there's one + (both on new keys);
+  // the Calendar tab is new, so English records the tab bar without it and the tab on its own key.
+  put('header.money', grab($('.app-header')));
+  put('tabbar', grab($('.tabbar'), { skip: MODE === 'en' ? ['#tab-calendar'] : [] }));
+  put('tab.calendar', grab($('#tab-calendar')));
+  put('fab.add', grab($('#fab-stack')));
   put('money.strip.monthly', grab($('#money-summary')));
   // The due-soon banner (new in 1.18.0) and its sheet: recorded on their own keys.
   put('money.banner', grab($('#due-banner')));
@@ -212,40 +216,41 @@ async function walk() {
     MODE === 'pseudo' ? grab(b, { skip: ['.w-logos'] })[0] : norm(b.textContent)]));
   $('#money-summary [data-period="monthly"]').click();
 
-  // Sort.
-  put('sort.button', [$('#sort-btn').getAttribute('aria-label'), $('#sort-btn').title]);
-  $('#sort-btn').click();
+  // The View button and its menu (1.20.0: the view and Sort in one menu; the Sort button's keys are gone).
+  put('view.button', [$('#view-btn').getAttribute('aria-label'), $('#view-btn').title]);
+  $('#view-btn').click();
   await tick(20);
-  put('sort.menu', grab($('#sort-menu')));
-  $('#sort-menu [data-sort="total"]').click();
+  put('view.menu', grab($('#view-menu')));
+  $('#view-menu [data-sort="total"]').click();
   await tick(20);
-  put('sort.total', [$('#sort-btn').getAttribute('aria-label')]);
-  $('#sort-btn').click();
-  $('#sort-menu [data-sort="items"]').click();
+  put('view.sort.total', [$('#view-btn').getAttribute('aria-label')]);
+  $('#view-btn').click();
+  $('#view-menu [data-sort="items"]').click();
   await tick(20);
-  put('sort.items', [$('#sort-btn').getAttribute('aria-label')]);
-  $('#sort-btn').click();
-  $('#sort-menu [data-sort="az"]').click();
+  put('view.sort.items', [$('#view-btn').getAttribute('aria-label')]);
+  $('#view-btn').click();
+  $('#view-menu [data-sort="az"]').click();
   await tick(20);
 
   // Grid and List.
-  $('.seg-btn[data-view="grid"]').click();
+  pickView('grid');
   await tick(20);
   put('money.grid', grab($('#subs-list')));
   $('.group-dot').click();
   await tick(20);
   put('money.swatches', grab($('#swatch-pop')));
   pressBack();
-  $('.seg-btn[data-view="list"]').click();
+  pickView('list');
   await tick(20);
   put('money.list', grab($('#subs-list')));
 
-  // The calendar view (new in 1.19.0), recorded on its own keys: its toggle button, this month
-  // with today's list, a day with income, the next month, and an empty day.
-  put('money.calendar.toggle', grab($('.seg-btn[data-view="calendar"]')));
-  $('.seg-btn[data-view="calendar"]').click();
+  // The calendar (new in 1.19.0), recorded on its own keys: this month with today's list, a day
+  // with income, an empty day and the next month. Its own tab since 1.20.0, with one summary line:
+  // the month and the next month are on new keys.
+  $('#tab-calendar').click();
   await until(() => $('#calendar .cal-grid'), 'calendar drawn');
-  put('money.calendar', grab($('#calendar')));
+  put('doc.calendar', [document.title, $('#page-title').textContent]);
+  put('calendar.month', grab($('#calendar')));
   $('#calendar .cal-day[data-day="25"]').click();
   await tick(20);
   put('money.calendar.day', grab($('#calendar .cal-list')));
@@ -254,9 +259,9 @@ async function walk() {
   put('money.calendar.empty', grab($('#calendar .cal-list')));
   $('#calendar [data-cal-step="1"]').click();
   await tick(20);
-  put('money.calendar.next', grab($('#calendar')));
+  put('calendar.next', grab($('#calendar')));
   $('#calendar [data-cal-today]').click();
-  $('.seg-btn[data-view="list"]').click();
+  $('#tab-subs').click();
   await tick(20);
 
   // The add / edit sheet.
@@ -287,7 +292,7 @@ async function walk() {
   await tick(20);
   $('#sub-dialog [data-close]').click();
   await tick(20);
-  $('.seg-btn[data-view="wallet"]').click();
+  pickView('wallet');
   await tick(20);
 
   // Insights, month: the flat donut standing in for the Ring (Reduce motion is on), Donut, List.

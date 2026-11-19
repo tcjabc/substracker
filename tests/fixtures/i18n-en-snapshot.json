@@ -6,23 +6,21 @@
       "Peek Budget",
       "lang=en"
     ],
-    "header": [
-      "Money Wallet Cards List",
-      "aria-label=Sort groups: A to Z",
-      "title=Sort groups",
-      "aria-label=View",
-      "title=Wallet view",
-      "title=Card view",
-      "title=List view"
+    "header.money": [
+      "Money",
+      "aria-label=View: Wallet. Sort: A to Z",
+      "title=View"
     ],
     "tabbar": [
       "Money Insights Settings",
       "aria-label=Sections"
     ],
-    "fab": [
+    "tab.calendar": [
+      "Calendar"
+    ],
+    "fab.add": [
       "",
-      "aria-label=Add income",
-      "aria-label=Add expense"
+      "aria-label=Add expense or income"
     ],
     "money.strip.monthly": [
       "November 2026 Monthly Annual Income NT$40,000 Outgoings NT$32,389 Avg NT$32,014/mo Left over NT$7,611 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
@@ -121,18 +119,19 @@
       "Uncategorised, 1 item, nothing due this year",
       "UncategorisedSNothing due 1 itemthis year"
     ],
-    "sort.button": [
-      "Sort groups: A to Z",
-      "Sort groups"
+    "view.button": [
+      "View: Wallet. Sort: A to Z",
+      "View"
     ],
-    "sort.menu": [
-      "Sort groups A to Z Total high to low Items most first"
+    "view.menu": [
+      "View Wallet Cards List Sort groups A to Z Total high to low Items most first",
+      "aria-label=View and sort"
     ],
-    "sort.total": [
-      "Sort groups: Total, high to low"
+    "view.sort.total": [
+      "View: Wallet. Sort: Total, high to low"
     ],
-    "sort.items": [
-      "Sort groups: Items, most first"
+    "view.sort.items": [
+      "View: Wallet. Sort: Items, most first"
     ],
     "money.grid": [
       "Income 2 B Bonus NT$12,000/ yr Payment 10 Jan 2027 💼 Salary NT$40,000/ mo Payment 25 Nov Entertainment 2 C Concert NT$1,500 One-off28 Nov 🎬 Streaming NT$390/ mo Renews today Health 1 G Gym NT$900/ mo House 1 R Rent NT$30,000/ mo Renews 1 Dec Utilities 3 C Cloud NT$1,200/ yr Renews 15 Mar 2027 P Phone Unlimited NT$499/ mo Renews in 2 days T Tool US$10/ mo Renews in 4 days Uncategorised 1 S Stamps NT$60 One-off2 Feb 2027",
@@ -193,12 +192,12 @@
       "aria-label=Colour for Uncategorised: Lilac",
       "aria-label=Edit Stamps"
     ],
-    "money.calendar.toggle": [
-      "Calendar",
-      "title=Calendar view"
+    "doc.calendar": [
+      "Calendar · Peek Budget",
+      "Calendar"
     ],
-    "money.calendar": [
-      "November 2026 Today Cash due in November 2026 NT$32,389 NT$40,000 income · +1 in USD MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
+    "calendar.month": [
+      "November 2026 Today Cash due in November 2026 NT$32,389 MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",
@@ -254,8 +253,8 @@
       "Thursday 19 November Nothing due on this day",
       "aria-label=Due on 19 November 2026"
     ],
-    "money.calendar.next": [
-      "December 2026 Today Cash due in December 2026 NT$30,889 NT$40,000 income · +1 in USD MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
+    "calendar.next": [
+      "December 2026 Today Cash due in December 2026 NT$30,889 MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",

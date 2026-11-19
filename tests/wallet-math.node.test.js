@@ -318,6 +318,7 @@ test('scroll range: everything fits, one card, and the last face clear of the fl
   assert.equal(viewFrom('list'), 'list');
   assert.equal(viewFrom('wallet'), 'wallet');
   assert.equal(viewFrom('nonsense'), 'wallet');
+  assert.equal(viewFrom('calendar'), 'wallet', 'a saved Calendar view (1.19.0): the Wallet, now that Calendar is a tab');
 });
 
 test('rubber band past the ends, never more than two cards', () => {

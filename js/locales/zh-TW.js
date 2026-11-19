@@ -21,26 +21,25 @@ export default {
   'common.save': '儲存',
 
   // Tabs and page titles
+  'tab.calendar': '月曆',
   'tab.insights': '分析',
   'tab.money': '收支',
   'tab.sections': '分頁',
   'tab.settings': '設定',
 
   // Money tab
+  'money.add': '新增支出或收入',
   'money.addExpense': '新增支出',
   'money.addIncome': '新增收入',
   'money.empty.text': '新增你的收入和需要支付的項目。資料儲存在這台裝置上，也可以選擇在你的裝置之間進行端對端加密同步。', // legal check
   'money.empty.title': '這裡還沒有任何項目',
   'money.summary.label': '摘要',
+  'money.view.button': '檢視方式：{view}。排序：{order}',
   'money.view.grid': '卡片',
-  'money.view.grid.title': '卡片檢視',
   'money.view.label': '檢視方式',
   'money.view.list': '清單',
-  'money.view.list.title': '清單檢視',
+  'money.view.menu': '檢視與排序',
   'money.view.wallet': '錢包',
-  'money.view.wallet.title': '錢包檢視',
-  'money.view.calendar': '月曆',
-  'money.view.calendar.title': '月曆檢視',
 
   // Sort groups (Money tab)
   'sort.az': '名稱',
@@ -312,8 +311,7 @@ export default {
   'colour.w14': '棕色',
   'colour.w15': '黃色',
 
-  // Sort groups
-  'sort.button': '群組排序：{order}',
+  // Sort groups (the View button's label names the order)
   'sort.name.az': '依名稱',
   'sort.name.total': '依總額，由高到低',
   'sort.name.items': '依項目數，由多到少',

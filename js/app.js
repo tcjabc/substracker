@@ -31,7 +31,7 @@ import {
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.20.0';
 
 // Group colour swatches someone can pick: keys map to --group-1 … --group-10 in app.css. A picked
 // colour syncs as { name, swatch } with one of these keys.
@@ -57,14 +57,14 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
-  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List | Calendar, per device
+  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List, per device (a saved Calendar is Wallet now)
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups whose colour someone chose (left alone by the automatic colours)
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
   donutActive: null, // highlighted donut slice key (the Ring's front slice), or null
-  tab: ['subs', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
+  tab: ['subs', 'calendar', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
   period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // Money summary strip
   insightsCurrency: null,
   insightsMonth: startOfMonth(new Date()),
@@ -190,7 +190,6 @@ async function init() {
   applyI18n();
   initLogoHandling();
   bindTabs();
-  bindViewToggle();
   bindForm();
   bindSettings();
   initImportAiSheet({
@@ -203,7 +202,7 @@ async function init() {
   bindEditTaps();
   bindDueBanner();
   bindGroupColors();
-  bindSortMenu();
+  bindViewMenu();
   // For tests, like the wallet's host.wallet: the rolling totals, and reading the data again.
   $('#money-summary').roller = roller;
   $('#money-summary').reload = () => reloadData();
@@ -211,6 +210,9 @@ async function init() {
   bindBackButton();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
   $$('[data-action="add-income"]').forEach((b) => b.addEventListener('click', () => openForm(null, 'income')));
+  // The one +: an expense to start with (the sheet switches to income), on the Calendar tab on the
+  // selected day.
+  $('#fab').addEventListener('click', () => openForm(null, 'expense', { date: state.tab === 'calendar' ? calendarDay() : '' }));
   $('#money-summary').addEventListener('click', (e) => {
     const b = e.target.closest('[data-period]');
     if (!b) return;
@@ -316,7 +318,9 @@ async function reloadData({ remote = false } = {}) {
    Tabs
    -------------------------------------------------------------------------- */
 // The first tab keeps its internal id `subs` so a saved tab choice still restores.
-const TAB_TITLES = { subs: 'tab.money', insights: 'tab.insights', settings: 'tab.settings' };
+const TAB_TITLES = { subs: 'tab.money', calendar: 'tab.calendar', insights: 'tab.insights', settings: 'tab.settings' };
+/** The tabs with the + button: the ones that list items. */
+const FAB_TABS = new Set(['subs', 'calendar']);
 
 // The pill behind the active tab (js/tab-pill.js): it slides with every tab change, Back included.
 let tabPill = null;
@@ -346,30 +350,22 @@ function setTab(tab, { focus = true } = {}) {
   tabPill?.moveTo($(`.tab[data-tab="${tab}"]`));
   $('#panel-subs').hidden = tab !== 'subs';
   document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
+  $('#panel-calendar').hidden = tab !== 'calendar';
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
-  $('#fab-stack').hidden = tab === 'settings';
+  $('#fab-stack').hidden = !FAB_TABS.has(tab);
   $('#page-title').textContent = t(TAB_TITLES[tab]);
   document.title = tab === 'subs' ? t('app.name') : t('app.title', { tab: t(TAB_TITLES[tab]), app: t('app.name') });
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') { if (was !== 'insights') roller.replay(); renderInsights(); }
+  // Coming to the Calendar tab plays the month's figure again, like the Money strip.
+  if (tab === 'calendar') { if (was !== 'calendar') roller.replay(); renderCalendar(); }
   // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
   // The banner too: the day may have changed while another tab was showing.
   if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); renderDueBanner(); }
   // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
   if (walletShown()) wallet?.relayout();
-}
-
-function bindViewToggle() {
-  $$('.seg-btn[data-view]').forEach((b) =>
-    b.addEventListener('click', () => {
-      state.view = viewFrom(b.dataset.view);
-      storage.setPref('view', state.view);
-      if (state.view === 'wallet') window.scrollTo({ top: 0 });
-      renderSubs();
-    })
-  );
 }
 
 /* --------------------------------------------------------------------------
@@ -378,6 +374,7 @@ function bindViewToggle() {
 function render() {
   ensureGroupColors();
   renderSubs();
+  if (state.tab === 'calendar') renderCalendar();
   if (state.tab === 'insights') renderInsights();
   fillCategoryList();
 }
@@ -484,47 +481,53 @@ function bindGroupColors() {
   window.addEventListener('resize', () => close(false));
 }
 
-/* Sort groups --------------------------------------------------------------- */
+/* View and Sort groups ------------------------------------------------------- */
 const SORT_NAMES = { az: 'sort.name.az', total: 'sort.name.total', items: 'sort.name.items' };
+const VIEW_NAMES = { wallet: 'money.view.wallet', grid: 'money.view.grid', list: 'money.view.list' };
 
-/** The Sort button shows the order in use (its label, and its colour when it isn't A–Z). */
-function renderSortButton() {
-  const btn = $('#sort-btn');
-  // Sort orders groups; the calendar has none, so there the button stays in place, disabled.
-  btn.disabled = state.view === 'calendar';
+/**
+ * The View button shows what's in use: its icon is the view, its label names the view and the
+ * order, and it turns the accent colour when the order isn't A–Z.
+ */
+function renderViewButton() {
+  const btn = $('#view-btn');
+  btn.dataset.view = state.view;
   btn.dataset.sort = state.groupSort;
-  btn.setAttribute('aria-label', t('sort.button', { order: t(SORT_NAMES[state.groupSort]) }));
-  $$('#sort-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
+  btn.setAttribute('aria-label', t('money.view.button', { view: t(VIEW_NAMES[state.view]), order: t(SORT_NAMES[state.groupSort]) }));
+  $$('#view-menu [data-view]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.view === state.view)));
+  $$('#view-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
 }
 
-// The Sort menu: opened from the header's Sort button on the Money tab. A menu of three radio items
-// (arrow keys, Home, End, Enter or Space; Escape, Tab or Back close it). On the overlay stack, so
-// Android Back closes it. The choice is this device's own (localStorage); never synced or exported.
-function bindSortMenu() {
-  const btn = $('#sort-btn');
-  const menu = $('#sort-menu');
+// The View menu: opened from the header's View button on the Money tab. One menu, two groups of
+// radio items, View (Wallet, Grid, List) then Sort groups (arrow keys, Home, End, Enter or Space;
+// Escape, Tab or Back close it). On the overlay stack, so Android Back closes it, and focus goes
+// back to the button. Both choices are this device's own (localStorage); never synced or exported.
+function bindViewMenu() {
+  const btn = $('#view-btn');
+  const menu = $('#view-menu');
   const items = () => $$('.menu-item', menu);
 
   const close = (refocus) => {
-    overlays.remove('sort-menu');
+    overlays.remove('view-menu');
     if (menu.hidden) return;
     menu.hidden = true;
     btn.setAttribute('aria-expanded', 'false');
     if (refocus) btn.focus();
   };
   const open = () => {
-    renderSortButton();
+    renderViewButton();
     menu.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
-    overlays.open('sort-menu', { close: () => close(true), isOpen: () => !menu.hidden, isShown: () => state.tab === 'subs' });
+    overlays.open('view-menu', { close: () => close(true), isOpen: () => !menu.hidden, isShown: () => state.tab === 'subs' });
     // Under the button, right edges lined up, inside the side gutter.
     const r = btn.getBoundingClientRect();
     const gutter = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     menu.style.top = `${r.bottom + gutter / 4}px`;
     menu.style.left = `${Math.max(gutter, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - gutter))}px`;
+    // Focus on the view in use (the first checked item).
     (items().find((b) => b.getAttribute('aria-checked') === 'true') ?? items()[0]).focus();
   };
-  const choose = (sort) => {
+  const chooseSort = (sort) => {
     close(true);
     const next = groupSortFrom(sort);
     if (next === state.groupSort) return;
@@ -532,11 +535,21 @@ function bindSortMenu() {
     storage.setPref('groupSort', next);
     renderSubs({ reorder: true });
   };
+  const chooseView = (view) => {
+    close(true);
+    const next = viewFrom(view);
+    if (next === state.view) return;
+    state.view = next;
+    storage.setPref('view', next);
+    if (next === 'wallet') window.scrollTo({ top: 0 });
+    renderSubs();
+  };
 
   btn.addEventListener('click', () => { if (menu.hidden) open(); else close(true); });
   menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-sort]');
-    if (b) choose(b.dataset.sort);
+    const b = e.target.closest('.menu-item');
+    if (b?.dataset.sort) chooseSort(b.dataset.sort);
+    else if (b?.dataset.view) chooseView(b.dataset.view);
   });
   menu.addEventListener('keydown', (e) => {
     const list = items();
@@ -559,7 +572,7 @@ function bindSortMenu() {
     if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) close(false);
   });
   window.addEventListener('resize', () => close(false));
-  renderSortButton();
+  renderViewButton();
 }
 
 function renewalTag(sub) {
@@ -680,7 +693,7 @@ function bindDueBanner() {
   $('#due-close').addEventListener('click', () => {
     storage.setPref('dueSoonDismissed', dismissKey());
     renderSubs(); // the Wallet measures its space again, without the banner
-    $('.seg-btn[data-view][aria-pressed="true"]')?.focus();
+    $('#view-btn').focus();
   });
 }
 
@@ -744,9 +757,19 @@ function renderWallet(list, { reorder = false } = {}) {
   wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth() }, { reorder });
 }
 
-/* Calendar view (js/calendar.js, js/calendar-math.js) ------------------------------------------- */
+/* Calendar tab (js/calendar.js, js/calendar-math.js) -------------------------------------------- */
 let calendar = null;
 let calendarHost = null;
+
+/** Whether the Calendar tab is what's on screen (its month figure may roll). */
+const calendarOnScreen = () => state.tab === 'calendar' && document.visibilityState === 'visible';
+/** The calendar's selected day as YYYY-MM-DD (for the + button), or '' when no day is selected. */
+function calendarDay() {
+  const s = calendar?.state;
+  if (!s?.selected) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${s.year}-${pad(s.month + 1)}-${pad(s.selected)}`;
+}
 
 /** Settings → Calendar → Week starts on: 'auto' (the default), 'mon' or 'sun'. Per device. */
 const weekStartPref = () => weekStartFrom(storage.getPref('weekStart'));
@@ -754,10 +777,12 @@ const weekStartPref = () => weekStartFrom(storage.getPref('weekStart'));
 const weekLocale = () => formatLocale() ?? new Intl.DateTimeFormat().resolvedOptions().locale;
 const weekStart = () => resolveWeekStart(weekStartPref(), weekLocale());
 
-function renderCalendar(list) {
+function renderCalendar() {
   if (!calendarHost) {
     calendarHost = document.createElement('div');
     calendarHost.id = 'calendar';
+    // In the page before the first draw: the dots' rings are measured against the real styles.
+    $('#panel-calendar').append(calendarHost);
     calendar = createCalendar(calendarHost, {
       items: () => state.subs,
       currency: () => state.settings.defaultCurrency,
@@ -767,11 +792,11 @@ function renderCalendar(list) {
       logo: (s) => logoHTML(s, 'sm'),
       onEdit: (s) => openForm(s),
       // Only the month's figure rolls (from the old month's to the new one's); the days are text.
-      rollSummary: (el, value, cur) => roller.show(value > 0 ? el : null, 'calendar:due', value, cur, { visible: moneyOnScreen() }),
+      rollSummary: (el, value, cur) => roller.show(value > 0 ? el : null, 'calendar:due', value, cur, { visible: calendarOnScreen() }),
     });
     calendarHost.calendar = calendar; // for tests, like the wallet's host.wallet
+    return; // createCalendar has drawn it
   }
-  if (calendarHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(calendarHost); }
   calendar.update();
 }
 
@@ -789,7 +814,7 @@ function bindWeekStart() {
   select.value = weekStartPref();
   select.addEventListener('change', () => {
     storage.setPref('weekStart', weekStartFrom(select.value));
-    if (state.view === 'calendar') renderSubs();
+    calendar?.update();
   });
 }
 
@@ -809,8 +834,7 @@ function renderSubs({ reorder = false } = {}) {
   const list = $('#subs-list');
   const all = state.subs;
 
-  $$('.seg-btn[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === state.view));
-  renderSortButton();
+  renderViewButton();
   $('#subs-empty').hidden = all.length > 0;
   list.hidden = all.length === 0;
   $('#money-summary').hidden = all.length === 0;
@@ -822,10 +846,6 @@ function renderSubs({ reorder = false } = {}) {
     return;
   }
   wallet?.close();
-  if (state.view === 'calendar') {
-    if (all.length) renderCalendar(list); else list.textContent = '';
-    return;
-  }
 
   // Income first (an implicit section, no categories), then expenses grouped by category, in the
   // order Sort asks for (items A–Z within each group).
@@ -892,6 +912,7 @@ const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState ===
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !state.subs.length) return;
   if (state.tab === 'subs') { roller.replay(); renderSubs(); }
+  if (state.tab === 'calendar') { roller.replay(); renderCalendar(); }
   // Insights rolls its figures where they are, without drawing the tab again (the Ring stays put).
   if (state.tab === 'insights') { roller.replay(); rollInsights(); }
 });
@@ -1448,7 +1469,13 @@ function fillCategoryList() {
   $('#category-names').innerHTML = all.map((c) => `<option value="${esc(c)}">`).join('');
 }
 
-function openForm(sub = null, type = 'expense') {
+/**
+ * Open the add sheet (no `sub`; `type` is where its Expense | Income switch starts) or the edit
+ * sheet for `sub`, which keeps its type: the switch is only there when adding. `date`
+ * (YYYY-MM-DD, from the Calendar tab's selected day) fills in a new item's date; the date rules
+ * are the usual ones.
+ */
+function openForm(sub = null, type = 'expense', { date = '' } = {}) {
   try {
     state.editingId = sub?.id ?? null;
     formBase = sub ? { ...sub } : null;
@@ -1469,11 +1496,16 @@ function openForm(sub = null, type = 'expense') {
       f.date.value = sub.date || '';
       f.category.value = sub.category || '';
       f.notes.value = sub.notes || '';
+    } else if (isDay(date)) {
+      // Both date fields, so the day stays whichever cycle is picked.
+      f.nextRenewal.value = date;
+      f.date.value = date;
     }
     auto.domain = !f.domain.value;
     auto.category = !f.category.value;
 
     f.kind.value = state.formType;
+    $('#field-kind').hidden = !!sub;
     $('#btn-delete').hidden = !sub;
     syncFormMode();
     updateFormLogo();
@@ -1552,8 +1584,8 @@ function bindForm() {
   f.date.addEventListener('input', () => clearErrors('date'));
   f.nextRenewal.addEventListener('input', () => clearErrors('nextRenewal'));
   $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
-  // Expense | Income toggle: swaps the type-specific fields and keeps everything typed so far.
-  // Saving an existing item with the other type selected converts it (readForm uses formType).
+  // Expense | Income switch (adding only): swaps the type-specific fields and keeps everything
+  // typed so far. readForm uses formType.
   $$('input[name="kind"]', form).forEach((r) => r.addEventListener('change', () => {
     state.formType = f.kind.value === 'income' ? 'income' : 'expense';
     clearErrors('nextRenewal'); // its message names a renewal or a payment
