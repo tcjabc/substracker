@@ -28,7 +28,13 @@
   --warn-soft: #fef3e2;
   --positive: #1a7f4b;
   --positive-soft: #e3f4ea;
-  --positive-border: #bfe3cd;
+  /* Money in and money out as text: the add sheet's Expense | Income switch (and later the Calendar).
+     The green leans teal and the red warm, so they stay apart in red-green colour blindness; words
+     always carry the meaning. Each keeps 4.5:1 on its own tint below, in both themes. */
+  --positive-text: #137239;
+  --negative-text: #b91c1c;
+  --positive-tint: color-mix(in srgb, var(--positive-text) 15%, var(--surface));
+  --negative-tint: color-mix(in srgb, var(--negative-text) 15%, var(--surface));
 
   /* Group colours (Money group dots, Insights donut). A muted family at similar lightness:
      not the income green or the indigo accent. Order = auto-assign order, most distinct first. */
@@ -231,7 +237,8 @@
     --warn-soft: #3a2a12;
     --positive: #4cc38a;
     --positive-soft: #173627;
-    --positive-border: #245a3e;
+    --positive-text: #4ade80;
+    --negative-text: #f87171;
     --group-1: #d4a54a;
     --group-2: #7aa3d4;
     --group-3: #e0845f;
@@ -285,7 +292,8 @@
   --warn-soft: #3a2a12;
   --positive: #4cc38a;
   --positive-soft: #173627;
-  --positive-border: #245a3e;
+  --positive-text: #4ade80;
+  --negative-text: #f87171;
   --group-1: #d4a54a;
   --group-2: #7aa3d4;
   --group-3: #e0845f;
