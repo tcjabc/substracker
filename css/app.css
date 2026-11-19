@@ -1383,6 +1383,8 @@ dialog::backdrop { background: var(--scrim); }
   border-bottom: var(--border-width) solid var(--border);
 }
 .sheet-head h2 { flex: 1; font-size: var(--text-md); font-weight: var(--weight-semibold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The edit sheet takes focus itself on opening (no ring on the container; its controls keep theirs). */
+.sheet:focus { outline: none; }
 /* The add sheet's "?" tile, before there's a name, logo or emoji, takes the type's tint. */
 #form-logo[data-placeholder="expense"] .logo { background: var(--negative-tint); color: var(--negative-text); }
 #form-logo[data-placeholder="income"] .logo { background: var(--positive-tint); color: var(--positive-text); }

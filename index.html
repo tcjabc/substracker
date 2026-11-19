@@ -295,7 +295,8 @@
   </nav>
 
   <!-- Add / edit form -->
-  <dialog class="sheet" id="sub-dialog" aria-labelledby="sub-dialog-title">
+  <!-- tabindex: the edit sheet takes focus itself on opening (js/app.js openForm), not its close button. -->
+  <dialog class="sheet" id="sub-dialog" aria-labelledby="sub-dialog-title" tabindex="-1">
     <form id="sub-form" method="dialog" novalidate>
       <div class="sheet-head">
         <span id="form-logo"></span>

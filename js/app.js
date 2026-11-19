@@ -1696,7 +1696,9 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
     syncFormMode();
     updateFormLogo();
     openDialog(dialog);
-    if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
+    // showModal() focuses the first focusable control, the close button, so it would open with a
+    // focus ring there. Adding starts at Name; editing at the sheet itself (it has tabindex="-1").
+    if (sub) dialog.focus({ preventScroll: true }); else f.name.focus({ preventScroll: true });
   } catch (err) {
     console.error(err);
     reportError(t('form.error.open'), err);
