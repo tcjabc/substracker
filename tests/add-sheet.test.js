@@ -405,9 +405,10 @@ test('Reduce motion, every card closed: the gauge shows all the outgoings in the
     await until(() => wallet()?.front(), 'a front card again');
     const { income } = await gaugeExpected();
     const g = wallet().front();
-    eq(text($('#income-label')).startsWith(g.label), true, `motion: the front card (${g.label}) again`);
     const k = frontGauge(g, income);
-    assert(k.kind !== 'share' || text($('#income-label')).includes(String(k.pct)) || k.tiny, 'with its share');
+    const words = k.kind === 'foreign' ? t('income.gauge.foreign', { group: g.label })
+      : k.tiny ? t('income.gauge.shareTiny', { group: g.label }) : t('income.gauge.share', { group: g.label, pct: k.pct });
+    eq(text($('#income-label')), words, `motion: the front card (${g.label}) and its share again`);
   }
 });
 
@@ -433,7 +434,28 @@ test(`long group names at ${innerWidth}px in ${LANG}: the whole total, the name 
         if (label.length <= 6) assert(name.clientHeight <= line + 1, `${code} ${label}: a short name stays on one line`);
         eq(Math.round(band.getBoundingClientRect().height), GEOM.band, `${code} ${label}: the band keeps its height`);
         assert($('.w-meta', band).getBoundingClientRect().bottom <= band.getBoundingClientRect().bottom + 0.5, `${code} ${label}: the item count still fits under it`);
+        // The logo chip goes only where the name needs the room: with the chip back, two lines would cut
+        // it, or a word wouldn't fit on a line.
+        const chip = $('.w-logos', band);
+        const needs = () => {
+          if (name.scrollHeight > name.clientHeight + 1) return true;
+          name.style.overflowWrap = 'normal';
+          const wide = name.scrollWidth > name.clientWidth + 1;
+          name.style.overflowWrap = '';
+          return wide;
+        };
+        if (band.classList.contains('w-tight')) {
+          assert(!shown(chip), `${code} ${label}: no room, so no logo chip`);
+          band.classList.remove('w-tight');
+          const needed = needs();
+          band.classList.add('w-tight');
+          assert(needed, `${code} ${label}: the chip went only because the name needed the room`);
+        } else {
+          assert(shown(chip), `${code} ${label}: the logo chip stays`);
+          assert(!needs(), `${code} ${label}: and the name fits beside it, whole words`);
+        }
       }
+      if (innerWidth >= 393 && LANG === 'en') eq($$('#wallet .w-band.w-tight').length, 0, `${code}: at ${innerWidth}px in English every card keeps its logos`);
       if (code === 'USD') {
         const ent = $$('#wallet .w-band').find((b) => $('.w-name > span', b).textContent === 'Entertainment');
         assert(ent && /26[.,]98/.test(text($('.w-total', ent))), `Entertainment shows its US$26.98 (${ent && text($('.w-total', ent))})`);
