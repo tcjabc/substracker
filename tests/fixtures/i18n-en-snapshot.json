@@ -40,11 +40,11 @@
       "aria-label=Tool, in 4 days, US$10"
     ],
     "money.income": [
-      "Income Entertainment · 5% of income",
+      "Income Outgoings · 81% of income",
       "aria-label=Income"
     ],
     "money.income.open": [
-      "Income Entertainment · 5% of income Bonus NT$12,000 Salary NT$40,000",
+      "Income Outgoings · 81% of income Bonus NT$12,000 Salary NT$40,000",
       "aria-label=Income",
       "aria-label=Edit Bonus",
       "aria-label=Edit Salary"
@@ -119,7 +119,7 @@
       "UncategorisedSNothing due 1 itemthis year"
     ],
     "money.income.annual": [
-      "Entertainment · 1% of income"
+      "Outgoings · 76% of income"
     ],
     "view.button": [
       "View: Wallet. Sort: A to Z",

@@ -332,16 +332,23 @@ test('the gauge follows the front card: the share, under 1%, 0%, over 100% and a
   const { groups, sum } = await expected('monthly');
   eq(groups.map((g) => g.name), ['Cloud', 'Entertainment', 'Health', 'House', 'Snacks', 'Travel', 'Utilities'], 'the cards, A to Z');
   await settle();
-  // Reduced, the stack is a plain list: the first card is the front one until a card is opened.
-  const reach = reduced() ? 0 : wallet().state().maxScroll;
-  const kinds = [];
-  for (let i = 0; i <= reach; i++) {
-    if (!reduced()) await front(i);
-    eq(wallet().state().front, groups[i].key, `card ${i} is at the front`);
-    kinds.push((await checkGauge(groups[i], sum.income, groups[i].name)).kind);
+  if (reduced()) {
+    // Reduced, the stack is a plain list with no front slot: with every card closed there's no
+    // front card, and the gauge shows all the outgoings, as in Grid and List (1.21.1).
+    eq(wallet().state().front, null, 'no front card while every card is closed');
+    const k = totalGauge(groups, sum.income);
+    eq(text($('#income-label')), gaugeWords(k, null), 'the gauge: all the outgoings');
+    eq(seg().style.getPropertyValue('--gauge-fill'), 'var(--accent)', 'in the accent colour');
+  } else {
+    const kinds = [];
+    for (let i = 0; i <= wallet().state().maxScroll; i++) {
+      await front(i);
+      eq(wallet().state().front, groups[i].key, `card ${i} is at the front`);
+      kinds.push((await checkGauge(groups[i], sum.income, groups[i].name)).kind);
+    }
+    await front(0);
+    eq(kinds[0], 'foreign', 'Cloud: other currencies only, no segment');
   }
-  if (!reduced()) await front(0);
-  eq(kinds[0], 'foreign', 'Cloud: other currencies only, no segment');
   // The open card is the front card, wherever it sits: every card, opened in turn.
   const seen = {};
   for (let i = 0; i < groups.length; i++) {

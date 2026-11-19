@@ -777,12 +777,14 @@ function moneySummary() {
 /** What the gauge shows now: { gauge, colour (a CSS colour), label }. */
 function gaugeNow() {
   const income = moneySummary().income;
-  if (state.view === 'wallet') {
-    // The open card, else the card in the front slot (js/wallet.js front()).
-    const g = wallet && walletHost?.isConnected ? wallet.front() : moneyGroups()[0] ?? null;
+  // The Wallet: the open card, else the card in the front slot (js/wallet.js front()). With no front
+  // card (Reduce motion and effects with every card closed, or no cards) it's the totals, as in Grid
+  // and List.
+  const g = state.view !== 'wallet' ? null
+    : wallet && walletHost?.isConnected ? wallet.front() : reduceEffects() ? null : moneyGroups()[0] ?? null;
+  if (g) {
     const k = frontGauge(g, income);
-    const colour = g ? swatchVar(groupSwatch(g.name)) : 'var(--accent)';
-    return { gauge: k, colour, label: gaugeLabel(k, g ? g.label : '') };
+    return { gauge: k, colour: swatchVar(groupSwatch(g.name)), label: gaugeLabel(k, g.label) };
   }
   const k = totalGauge(moneyGroups(), income);
   return { gauge: k, colour: 'var(--accent)', label: gaugeLabel(k, null) };

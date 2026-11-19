@@ -244,10 +244,11 @@ export function createWallet(host, opts) {
   }
 
   /* The front card ---------------------------------------------------------------------------- */
-  // The open card while one is open, else the card in the front slot (the first card in the plain
-  // list of Reduce motion and effects). `settled`: nothing moves, so the app can announce it once.
+  // The open card while one is open, else the card in the front slot. Reduce motion and effects has
+  // no front slot (a plain list): with no card open there's no front card (-1, so null), and the app
+  // shows the totals instead. `settled`: nothing moves, so the app can announce it once.
   let lastFront = null;
-  const frontIndex = () => (S.e >= 0 ? S.e : clamp(Math.round(S.f), 0, Math.max(0, cards.length - 1)));
+  const frontIndex = () => (S.e >= 0 ? S.e : reduced() ? -1 : clamp(Math.round(S.f), 0, Math.max(0, cards.length - 1)));
   function reportFront() {
     if (!opts.onFront) return;
     const g = cards[frontIndex()]?.g ?? null;
@@ -565,6 +566,8 @@ export function createWallet(host, opts) {
       if (raf) { cancelAnimationFrame(raf); raf = 0; lastT = 0; }
       if (S.mode !== 'idle') { S.f = clamp(Math.round(S.target), 0, Math.max(0, next.groups.length - 1)); S.mode = 'idle'; S.v = 0; }
       data = next;
+      // New cards: tell the app the front card again, even when it's the same one (or none).
+      lastFront = null;
       host.classList.toggle('is-reduced', reduced());
       host.classList.remove('has-open');
       build();
