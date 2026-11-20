@@ -1,9 +1,12 @@
 // In-browser tests for the notes of "Import with AI" (1.22.2: js/import-ai-sheet.js, js/import-ai.js,
 // css/app.css), run by tests/import-notes.html with a fixed clock against a throwaway database. The
-// app runs with index.html's markup. Run the page at 320, 360 and 393px. The tests run in order,
-// as one session in the app. The rules themselves are in tests/import-notes.node.test.js.
+// app runs with index.html's markup. Run the page at 320, 360 and 393px, in English and the
+// pseudo-locale (?lang=xx). Expected words come from t(), so every language checks the same things;
+// the notes themselves are the person's own words and stay as written. The tests run in order, as one
+// session in the app. The rules themselves are in tests/import-notes.node.test.js.
 
 import * as storage from '../js/storage.js';
+import { t } from '../js/i18n.js';
 
 const results = [];
 const dbName = `substracker-test-notes-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -19,7 +22,12 @@ function eq(actual, expected, msg) {
 }
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const text = (el) => el?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
+const text = (el) => norm(el?.textContent ?? '');
+/** The review's summary line, as js/import-ai-sheet.js summaryText builds it from its parts. */
+const summary = (...parts) => norm(t('ai.summary', { parts: parts.join(' · ') }));
+/** A row's problem as the review shows it (js/import-ai.js), in the app's language. */
+const problem = (n, key, params) => norm(t('ai.row.problem', { n, problem: t(key, params) }));
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 async function until(cond, msg, ms = 4000) {
   for (let t = 0; t < ms; t += 25) { if (cond()) return; await tick(25); }
@@ -100,10 +108,10 @@ function setClipboard(on) {
 test('review: each note on one line under its row, read out with a label; no line for rows without one', async () => {
   const reply = await (await fetch('fixtures/ai-reply-notes.txt', { cache: 'no-store' })).text();
   await review(reply);
-  eq(text($('#ai-review-summary')), '5 rows · 5 selected.', 'all five read and selected');
+  eq(text($('#ai-review-summary')), summary(t('ai.summary.rows', { count: 5 }), t('ai.summary.selected', { count: 5 })), 'all five read and selected');
   eq([1, 2, 3].map((n) => seen(noteOf(n))), [NOTE_1, NOTE_2, NOTE_3], 'the notes, curly quotes and emoji as written');
   eq([4, 5].map((n) => !!noteOf(n)), [false, false], 'no note line without a note');
-  eq(text($('.sr-only', noteOf(1))), 'Notes:', 'screen readers hear what it is');
+  eq(text($('.sr-only', noteOf(1))), norm(t('ai.row.notes.label')), 'screen readers hear what it is');
   for (const n of [1, 2, 3]) {
     const el = noteOf(n);
     assert($('.ai-row-body', row(n)).contains(el), `row ${n}: under the name and details`);
@@ -121,9 +129,10 @@ test('import: the notes land in each item\u2019s More details, income too', asyn
   const before = (await storage.getAll()).length;
   await review(await (await fetch('fixtures/ai-reply-notes.txt', { cache: 'no-store' })).text()); // each test starts with the sheets closed
   $('#ai-import').click();
-  await until(() => confirmOpen() && confirmButton('Merge'), 'the choice');
-  confirmButton('Merge').click();
-  await until(() => text($('#toast-text')) === 'Added 5 items', 'merged');
+  const merge = norm(t('import.merge'));
+  await until(() => confirmOpen() && confirmButton(merge), 'the choice');
+  confirmButton(merge).click();
+  await until(() => text($('#toast-text')) === norm(t('ai.toast.added', { items: t('common.items', { count: 5 }) })), 'merged');
   const all = await storage.getAll();
   eq(all.length, before + 5, 'five added');
   const by = (name) => all.find((s) => s.name === name);
@@ -141,15 +150,18 @@ test('import: the notes land in each item\u2019s More details, income too', asyn
 test('a long note: shortened, flagged, still selected, one line; a notes error goes in the copied report', async () => {
   const long = 'Shared with your family. '.repeat(26); // 650 characters; character 500 is a space
   await review(aiReply([aiRow({ notes: long }), aiRow({ name: 'Test Lamp', cycle: 'one-off', nextDate: '2026-11-02', notes: 42 })]));
-  eq(text($('#ai-review-summary')), '2 rows · 1 selected · 1 note shortened · 1 can\u2019t be imported.', 'summary');
-  assert(text(row(1)).includes('Note shortened'), 'the tag');
-  assert(text(row(1)).includes('Row 1: notes were longer than 500 characters and were shortened; check them after importing'), 'what happened');
+  eq(text($('#ai-review-summary')), summary(t('ai.summary.rows', { count: 2 }), t('ai.summary.selected', { count: 1 }),
+    t('ai.summary.notes', { count: 1 }), t('ai.summary.blocked', { count: 1 })), 'summary');
+  assert(text(row(1)).includes(norm(t('ai.tag.note'))), 'the tag');
+  const shortened = problem(1, 'ai.row.notes.long', { max: 500 });
+  assert(text(row(1)).includes(shortened), 'what happened');
   assert($('[data-include="1"]').checked && !$('[data-include="1"]').disabled, 'still selected');
   assert(!row(1).classList.contains('is-blocked'), 'not blocked');
   const el = noteOf(1);
   eq([...seen(el)].length, 500 - 1, 'the shortened note is shown (cut at 500, the space at the cut trimmed)');
   assert(oneLine(el) && el.scrollWidth > el.clientWidth, 'one line, the rest behind the ellipsis');
-  assert(text(row(2)).includes('Row 2: notes must be text in quotes, or ""'), 'the wrong note says how to fix it');
+  const wrong = problem(2, 'ai.row.notes.text');
+  assert(text(row(2)).includes(wrong), 'the wrong note says how to fix it');
   assert(row(2).classList.contains('is-blocked') && $('[data-include="2"]').disabled, 'and blocks its row');
   assert(!$('#ai-review-error').hidden, 'Copy error for your AI is offered');
   copied.length = 0;
@@ -158,9 +170,9 @@ test('a long note: shortened, flagged, still selected, one line; a notes error g
     $('#ai-review-copy-error').click();
     await until(() => copied.length === 1, 'the report copied');
   } finally { setClipboard(false); }
-  const report = copied[0].split('\n');
-  assert(report.includes('- Row 2: notes must be text in quotes, or ""'), 'the notes error, like any other field');
-  assert(!copied[0].includes('shortened'), 'the shortened note is not an error for the AI');
+  const report = copied[0].split('\n').map(norm);
+  assert(report.includes(`- ${wrong}`), 'the notes error, like any other field');
+  assert(!report.some((l) => l.includes(shortened)), 'the shortened note is not an error for the AI');
 });
 
 test('Reduce motion and effects: the review with notes draws with no animations', async () => {
