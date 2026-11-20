@@ -502,10 +502,14 @@ function itemForm(mod, { subs, defaultCurrency }) {
   const src = mod.appSource;
   const isDayLine = /^const isDay = .*$/m.exec(src)?.[0];
   if (!isDayLine) throw new Error('app.js: isDay not found');
+  // Since 1.21.1 the sheet folds its optional fields under More details (MORE_FIELDS, setMoreDetails)
+  // and focuses Name only when a hardware keyboard is likely (keyboardLikely). 1.19.0 has none of them.
+  const moreLine = /^const MORE_FIELDS = .*$/m.exec(src)?.[0] ?? '';
   const body = [
     'let formBase = null;',
     'const auto = { domain: false, category: false };',
     isDayLine,
+    moreLine,
     topLevel(src, 'function openForm('),
     topLevel(src, 'function readForm('),
     topLevel(src, 'function mergeFormEdit('),
@@ -519,11 +523,13 @@ function itemForm(mod, { subs, defaultCurrency }) {
   const state = { subs, settings: { defaultCurrency }, editingId: null, formType: 'expense' };
   const fns = new Function(
     'form', 'state', 't', 'uid', 'cleanDomain', 'firstEmoji', 'isIncome', '$', 'fillCurrencySelect', 'clearErrors',
-    'syncFormMode', 'updateFormLogo', 'openDialog', 'dialog', 'matchMedia', 'reportError', 'console', body,
+    'syncFormMode', 'updateFormLogo', 'openDialog', 'dialog', 'matchMedia', 'reportError', 'console',
+    'setMoreDetails', 'keyboardLikely', body,
   )(
     form, state, mod.i18n.t, mod.util.uid, mod.services.cleanDomain, mod.util.firstEmoji, mod.util.isIncome, $,
     (select, selected) => { select.value = selected; }, () => { for (const k of Object.keys(errors)) delete errors[k]; },
-    () => {}, () => {}, () => {}, {}, () => ({ matches: true }), (msg, err) => { throw err ?? new Error(msg); }, console,
+    () => {}, () => {}, () => {}, { focus() {} }, () => ({ matches: true }), (msg, err) => { throw err ?? new Error(msg); }, console,
+    () => {}, () => false,
   );
   return {
     open: (sub, type) => fns.openForm(sub, type),
