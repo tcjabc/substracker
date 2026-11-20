@@ -18,6 +18,7 @@ import { t } from './i18n.js';
 import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
 import { isReadableInterval, shadowCycle, effectiveInterval, dayNumber, dayOf } from './interval.js';
+import { stepperCheck, planColours, verifyFormatMigration, liveGroups, FORMAT } from './format-migration.js';
 
 export const APP_ID = 'substracker';
 
@@ -27,7 +28,8 @@ export const APP_ID = 'substracker';
 //      and kept untouched as a fallback.
 //   3  adds `records` + `outbox` (sync-ready data). `items` is copied into `records` once,
 //      verified, and kept untouched as a fallback in the same way.
-// SCHEMA_VERSION is the data/export format, recorded in `meta`: 3 = plain items, 4 = records.
+// SCHEMA_VERSION is the data/export format, recorded in `meta`: 3 = plain items, 4 = records, and 5
+// once format 5's first-launch step (migrateFormat) has been verified. Neither changes DB_VERSION.
 let dbName = 'substracker';
 const DB_VERSION = 3;
 export const SCHEMA_VERSION = 4;
@@ -50,6 +52,9 @@ let migration = null; // the 1.3.0 subscriptions → items record, for status()
 let syncMigration = null; // the items → records record, for status()
 let settingsMigration = null; // the settings → shared settings record step, for status()
 let settingsShared = false; // true once that step is verified: settings are read from the record
+let formatMigration = null; // format 5's first-launch step (migrateFormat), for status()
+let appVersion = null; // the app's version, for this device's version note (setAppVersion)
+let migrationFault = null; // tests only (setMigrationFault): the step of migrateFormat to fail at
 let onBlocked = () => {};
 let onEnqueued = () => {};
 
@@ -63,8 +68,24 @@ export function useDatabase(name) {
   syncMigration = null;
   settingsMigration = null;
   settingsShared = false;
+  formatMigration = null;
   old?.then((db) => db.close()).catch(() => {});
 }
+
+/**
+ * The app's version (js/app.js APP_VERSION), set before the database is first opened. Format 5's
+ * first-launch step writes it into this device's version note, so the step waits (and nothing
+ * changes) until it is known: pages that use storage without the app (tests) stay on format 4.
+ */
+export function setAppVersion(version) {
+  appVersion = typeof version === 'string' && version.length > 0 && version.length <= 32 ? version : null;
+}
+
+/**
+ * Tests only: make format 5's first-launch step fail at `step` ('plan', 'write', 'readback' or
+ * 'switch'), or null for none. The app never sets it.
+ */
+export function setMigrationFault(step) { migrationFault = step ?? null; }
 
 /** Called when another open tab of an older version holds the database and delays the upgrade. */
 export function setBlockedHandler(fn) { onBlocked = fn; }
@@ -124,6 +145,7 @@ async function migrate(db) {
   migration = meta.migration ?? null;
   syncMigration = meta.syncMigration ?? null;
   settingsMigration = meta.settingsMigration ?? null;
+  formatMigration = meta.formatMigration ?? null;
   settingsShared = false;
   if (db.objectStoreNames.contains(LEGACY) && !meta.migration?.verified) {
     if (!(await migrateLegacy(db))) { source = LEGACY; return; }
@@ -132,6 +154,107 @@ async function migrate(db) {
   else source = (await migrateToRecords(db)) ? RECORDS : ITEMS;
   if (source !== RECORDS) return;
   settingsShared = meta.settingsMigration?.verified ? true : await migrateSettings(db);
+  if (settingsShared && !meta.formatMigration?.verified && appVersion) await migrateFormat(db);
+}
+
+/**
+ * Format 5's first-launch step (docs/plan-intervals-groups.md section 6; the pure parts are in
+ * js/format-migration.js), after every step before it has been verified:
+ * 1. Plan (read-only): the stepper check on every live item (1.19.0's date rules against the
+ *    shared stepper; any difference stops here), this device's automatic colours adopted as shared
+ *    palette slots (planColours: only groups the record has no colour for; picks never move, old
+ *    g1–g10 picks are never rewritten), and this device's version note { v, fmt: 5, at }.
+ * 2. Write, one transaction over records, outbox and meta: the settings record's new fields, their
+ *    outbox ops and the clock. Items and the settings store are only read.
+ * 3. Read back the record: every planned field there with its value (or a newer one from another
+ *    device), no `del`, every live group with a slot (or an old g pick), the note there.
+ * 4. Switch: meta.formatMigration { verified: true, … } and schemaVersion 5, in one transaction.
+ * A failure at 1 or 2 changes nothing at all. A failure at 3 or 4 leaves only the fields written in
+ * 2 (the planned values, nothing overwritten), and the switch isn't made. Either way it's logged with
+ * counts only, nothing is shown, and the step runs again on the next load, planning only what's
+ * still missing. Once verified it never runs again; and planning on its own result plans nothing.
+ */
+async function migrateFormat(db) {
+  const fail = (step, why) => {
+    formatMigration = { verified: false, step };
+    console.warn(`Storage: format 5 step not done (${step}: ${why}). Nothing changes; it runs again next time.`);
+    return false;
+  };
+  const fault = (step) => { if (migrationFault === step) throw new Error('test fault'); };
+  const now = Date.now();
+  let planned;
+  let stamps;
+  let check;
+  let noteField;
+  let groups = 0;
+  try {
+    const tx = db.transaction([SETTINGS, RECORDS, OUTBOX, META], 'readwrite');
+    const metaStore = tx.objectStore(META);
+    const [rows, autoRow, devRow, hlcRow] = await Promise.all([
+      result(tx.objectStore(RECORDS).getAll()), result(tx.objectStore(SETTINGS).get(AUTO_COLORS)),
+      result(metaStore.get('deviceId')), result(metaStore.get('hlc')),
+    ]);
+    let ops;
+    let replica;
+    try {
+      fault('plan');
+      if (!sync.isDeviceId(devRow?.value)) throw new Error('this device has no sync id');
+      const items = rows.filter((r) => r.id !== SETTINGS_ID).map(toItem).filter(Boolean);
+      check = stepperCheck(items, new Date(now));
+      if (check.diff) throw new Error(`stepper check: ${check.diff} of ${check.checked} items differ (${check.first})`);
+      const rec = rows.find((r) => r.id === SETTINGS_ID) ?? null;
+      replica = { clock: loadClock(hlcRow?.value, devRow.value), records: new Map(rec ? [[rec.id, rec]] : []) };
+      planned = planColours({ items, record: rec, autoColors: cleanColors(autoRow?.value) }).fields;
+      groups = liveGroups(items).length;
+      noteField = versionNoteField(devRow.value);
+      ops = [
+        ...sync.setFields(replica, SETTINGS_ID, planned, { now }),
+        ...versionNoteOps(replica, { deviceId: devRow.value, version: appVersion, fmt: FORMAT, now }),
+      ];
+      const note = ops.find((op) => op.f === noteField);
+      if (note) planned = { ...planned, [noteField]: note.v };
+      stamps = Object.fromEntries(ops.map((op) => [op.f, op.t]));
+    } catch (err) {
+      tx.abort();
+      throw Object.assign(err instanceof Error ? err : new Error(String(err)), { step: 'plan' });
+    }
+    if (ops.length) {
+      tx.objectStore(RECORDS).put(replica.records.get(SETTINGS_ID));
+      for (const op of ops) tx.objectStore(OUTBOX).put(op);
+      metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+    }
+    if (migrationFault === 'write') { tx.abort(); throw Object.assign(new Error('test fault'), { step: 'write' }); }
+    await done(tx);
+    if (ops.length) changesEnqueued(ops.length);
+  } catch (err) {
+    return fail(err?.step ?? 'write', err?.message ?? err);
+  }
+
+  let problem;
+  try {
+    fault('readback');
+    const tx = db.transaction(RECORDS);
+    const rows = await result(tx.objectStore(RECORDS).getAll());
+    const items = rows.filter((r) => r.id !== SETTINGS_ID).map(toItem).filter(Boolean);
+    problem = verifyFormatMigration({ record: rows.find((r) => r.id === SETTINGS_ID) ?? null, planned, stamps, items, noteField });
+  } catch (err) { problem = err?.message ?? String(err); }
+  if (problem) return fail('readback', problem);
+
+  const record = {
+    verified: true, at: new Date(now).toISOString(), fields: Object.keys(planned).length,
+    groups, items: check.checked + check.skipped, stepper: { checked: check.checked, skipped: check.skipped, custom: check.custom },
+  };
+  try {
+    const tx = db.transaction(META, 'readwrite');
+    tx.objectStore(META).put({ key: 'formatMigration', value: record });
+    tx.objectStore(META).put({ key: 'schemaVersion', value: FORMAT });
+    if (migrationFault === 'switch') { tx.abort(); throw new Error('test fault'); }
+    await done(tx);
+  } catch (err) {
+    return fail('switch', err?.message ?? err);
+  }
+  formatMigration = record;
+  return true;
 }
 
 /**
@@ -302,7 +425,7 @@ export async function status() {
   const db = await open();
   const meta = await readMeta(db);
   return {
-    schemaVersion: meta.schemaVersion ?? null, migration, syncMigration, settingsMigration,
+    schemaVersion: meta.schemaVersion ?? null, migration, syncMigration, settingsMigration, formatMigration,
     usingLegacy: source !== RECORDS, settingsShared,
   };
 }
@@ -832,8 +955,8 @@ export function settingsFromRecord(record) {
 // One field per device in the settings record: `app_` plus a 64-bit hash of its device id (the
 // same cyrb53 as colorField; a device id may hold characters a field name can't), with the value
 // { v: app version, fmt: data format, at: YYYY-MM-DD }. 1.21.0 reads them to tell whether every
-// active device can show custom intervals. 1.19.0 keeps the field and ignores it. The plan writes a
-// device's note in 1.20.0's first-launch step, so nothing calls versionNoteOps yet.
+// active device can show custom intervals. 1.19.0 keeps the field and ignores it. Format 5's
+// first-launch step (migrateFormat) writes this device's note; nothing refreshes it later yet.
 const NOTE_PREFIX = 'app_';
 const NOTE_MAX_AGE_DAYS = 30;
 
@@ -853,7 +976,7 @@ export function versionNotes(record) {
 
 /**
  * Ops for this device's version note, only when it's due: none yet, another version or format, or
- * written more than 30 days before `now`. { deviceId, version, fmt, now (ms) }. Not called yet.
+ * written more than 30 days before `now`. { deviceId, version, fmt, now (ms) }. Called by migrateFormat.
  */
 export function versionNoteOps(replica, { deviceId, version, fmt, now = Date.now(), ...opts }) {
   const field = versionNoteField(deviceId);
@@ -1206,7 +1329,7 @@ export function checkBackup(payload, items, settings = {}) {
 /**
  * What exporting writes, from `items` and `settings` (pure): { payload, format, problem }. Format 5
  * when checkBackup holds; otherwise format 4, exactly as 1.19.0 would have written it, with the
- * problem (counts only). The app doesn't say so on screen yet (that needs a message in 1.20.0).
+ * problem (counts only). The app says so on screen when it's format 4 (app.js exportData).
  */
 export function exportBackupFrom(items, settings, exportedAt) {
   const payload = backupPayload(items, settings, exportedAt);

@@ -289,12 +289,20 @@ test('a version note is written only when due: none yet, another version or form
   assert.ok(!('del' in r.records.get(storage.SETTINGS_ID).fields));
 });
 
-test('nothing in the app writes a version note or a repeat yet; a slot only with a picked colour', () => {
+test('only the format 5 step writes a version note; nothing in the app writes a repeat yet; a slot only with a picked colour', () => {
   const dir = new URL('../js/', import.meta.url);
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.js'))) {
     const src = readFileSync(new URL(f, dir), 'utf8');
-    if (f !== 'storage.js') assert.ok(!src.includes('versionNoteOps'), `${f} calls versionNoteOps`);
+    if (f !== 'storage.js') assert.ok(!/versionNoteOps\(/.test(src), `${f} calls versionNoteOps`);
   }
+  // In storage.js: its definition and one call, inside migrateFormat (the first-launch step).
+  const store = readFileSync(new URL('storage.js', dir), 'utf8');
+  const calls = [...store.matchAll(/versionNoteOps\(/g)].map((m) => m.index);
+  assert.equal(calls.length, 2, 'the definition and one call');
+  const step = store.indexOf('async function migrateFormat(');
+  const end = step + store.slice(step).search(/\n\}\r?\n/);
+  const def = store.indexOf('export function versionNoteOps(') + 'export function '.length;
+  assert.ok(step > 0 && calls.every((i) => i === def || (i > step && i < end)), 'called only in migrateFormat');
   const app = readFileSync(new URL('app.js', dir), 'utf8');
   assert.ok(!/repeat\s*:/.test(app), 'the app builds no repeat values');
   assert.deepEqual([...app.matchAll(/groupSlots:/g)].length, 1, 'one place writes a slot: the colour picker');

@@ -38,6 +38,8 @@ import {
 } from './insights-calc.js';
 
 const APP_VERSION = '1.22.2';
+// Format 5's first-launch step writes it into this device's version note (js/storage.js migrateFormat).
+storage.setAppVersion(APP_VERSION);
 
 // The old picked colours, g1 … g10 (--group-1 … --group-10 in app.css): still read and drawn exactly
 // as they were picked, but no longer offered. New picks are palette slots (WALLET_KEYS, w1 … w15),
@@ -53,7 +55,8 @@ const WALLET_COLOUR_KEYS = ['colour.w1', 'colour.w2', 'colour.w3', 'colour.w4', 
   'colour.w8', 'colour.w9', 'colour.w10', 'colour.w11', 'colour.w12', 'colour.w13', 'colour.w14', 'colour.w15'];
 const SWATCH_KEYS = new Set(SWATCHES.map((s) => s.key));
 // Automatic colours come from the Wallet palette instead (w1 … w15, --wallet-1 … --wallet-15; see
-// js/wallet-math.js). They stay on this device: never synced, and left out of exports.
+// js/wallet-math.js). With settings shared they are palette slots in the household's record (synced,
+// and in backups); only a device whose format 5 step hasn't run yet keeps some of its own.
 const validSwatch = (k) => SWATCH_KEYS.has(k) || isWalletKey(k);
 const swatchVarName = (key) => (isWalletKey(key) ? `--wallet-${key.slice(1)}` : `--group-${String(key).slice(1)}`);
 const swatchVar = (key) => `var(${swatchVarName(key)})`;
@@ -68,6 +71,7 @@ const state = {
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups with a colour in the household's record: picked, or a shared slot (left alone by this device's automatic colours)
   settingsRecord: null, // the shared settings record, read for group slots (js/group-slots.js); null before settings are shared
+  formatMigrated: false, // format 5's first-launch step is verified here: this device's automatic colours are shared slots
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
@@ -240,7 +244,9 @@ async function init() {
     const [subs, settings, picks, record] = await Promise.all([storage.getAll(), storage.getSettings(), storage.getPickedGroupColors(), storage.getSettingsRecord()]);
     state.colorPicks = new Set(Object.keys(picks));
     state.settingsRecord = record;
-    const usingLegacy = (await storage.status()).usingLegacy;
+    const st = await storage.status();
+    state.formatMigrated = st.formatMigration?.verified === true;
+    const usingLegacy = st.usingLegacy;
     syncUnavailable = usingLegacy ? t('sync.unavailable.legacy') : '';
     if (usingLegacy) {
       toast(t('toast.legacy'), {
@@ -406,10 +412,11 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 
  * too). With the household's settings shared, a group with no colour gets a shared palette slot
  * (js/group-slots.js: a default group's fixed slot, else the hash probe; past 15 groups the colours
  * repeat), written to the record so every device draws it the same; and the household's repair
- * moves a later automatic slot off one another group already uses. A group that has an automatic
- * colour of this device's own from before keeps it, as before (1.20.0's first-launch step adopts
- * those): js/wallet-math.js assignAutoColours, never the same as its A–Z neighbour. Income has no
- * colour. Sort never changes a colour; close neighbours get the Wallet's divider. See the README.
+ * moves a later automatic slot off one another group already uses. Format 5's first-launch step
+ * (js/storage.js migrateFormat) adopts this device's own automatic colours from before as shared
+ * slots; until it has been verified here, a group with such a colour keeps it on this device only,
+ * as before (js/wallet-math.js assignAutoColours, never the same as its A–Z neighbour). Income has
+ * no colour. Sort never changes a colour; close neighbours get the Wallet's divider. See the README.
  */
 function ensureGroupColors() {
   const map = state.settings.groupColors;
@@ -421,7 +428,8 @@ function ensureGroupColors() {
     for (const n of names) {
       if (shared.has(n)) continue;
       if (picks.has(n)) held.set(n, null); // an old g pick: holds no slot
-      else if (isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1); // this device's own automatic colour
+      // This device's own automatic colour, kept only until the format 5 step has shared them.
+      else if (!state.formatMigrated && isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1);
     }
     const plan = planSlots({ live: names, shared: new Map([...shared].filter(([n]) => names.includes(n))), held });
     const writes = [...plan.assign, ...plan.moves];
