@@ -177,7 +177,7 @@ test('the purple card is gone: one small line under the month says the share of 
 });
 
 for (const view of ['ring', 'donut', 'list']) {
-  test(`${view}: the chart fills the first screen, the month total in its centre, all of it visible on landing`, async () => {
+  test(`${view}: the chart is on the first screen, the month total in its centre, all of it visible on landing`, async () => {
     await insights({ view });
     const total = $('#insights [data-roll="month-due"]');
     eq(text(total), T(80919), 'the month total');
@@ -192,7 +192,8 @@ for (const view of ['ring', 'donut', 'list']) {
       return;
     }
     onFirstScreen(chart, 'the chart');
-    assert(fold() - box(chart).bottom <= 32, `it fills the screen down to the tab bar (${r0(fold() - box(chart).bottom)}px left)`);
+    // Since 1.22.1 the card is capped (tests/insights-chart.html checks the cap) and pinned, the legend under it.
+    assert($('#insights .ins-pinned') && box(chart).height <= innerHeight * 0.42, `a capped card (${r0(box(chart).height)}px)`);
     const ring = $('#insights .ring-stage');
     if (ring) {
       onFirstScreen(ring, 'the Ring');
@@ -220,7 +221,7 @@ for (const view of ['ring', 'donut', 'list']) {
   });
 }
 
-test('below the fold, in order: the legend (with the month\'s plan counts), then the yearly card', async () => {
+test('under the chart, in order: the legend (with the month\'s plan counts), then the yearly card', async () => {
   const tw = await inCur('TWD');
   const due = breakdown(tw.filter((s) => s.type !== 'income'), 2026, 10);
   const n = (k) => due.byType.find((x) => x.key === k)?.names.length ?? 0;
@@ -233,10 +234,9 @@ test('below the fold, in order: the legend (with the month\'s plan counts), then
     const legend = $('#insights .ins-legend');
     const card = $('#insights .ins-stats .stat-year');
     assert(legend && card, `${view}: the legend and the yearly card`);
-    assert(box(legend).top >= chart.bottom && box(legend).top >= fold() - 2, `${view}: the legend starts under the chart, at the fold (${r0(box(legend).top)} / ${r0(fold())})`);
+    assert(box(legend).top >= chart.bottom && box(legend).top < fold(), `${view}: the legend starts right under the chart, on the first screen (${r0(box(legend).top)} / ${r0(fold())})`);
     assert(box(card).top >= box(legend).bottom, `${view}: then the yearly card`);
-    const order = $$('#insights > *');
-    assert(order.indexOf(legend) < order.indexOf($('#insights .ins-stats')), 'in that order in the page');
+    assert(legend.compareDocumentPosition($('#insights .ins-stats')) & Node.DOCUMENT_POSITION_FOLLOWING, 'in that order in the page');
     eq(text($('.legend-foot', legend)), counts, `${view}: the plan counts, folded into the legend`);
     eq($$('.legend-row .legend-name', legend).map(text), ['Travel', 'House', t('donut.otherSlice')], `${view}: the legend rows`);
     const lines = Object.fromEntries($$('.year-line', card).map((l) => [$('dd', l).dataset.roll, Number($('dd', l).dataset.value)]));

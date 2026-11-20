@@ -202,7 +202,7 @@ test('Ring: a 3D view with caption, legend and labels; arrow keys turn it; aria-
   await openRing();
   eq(caption(), 'Utilities', 'the largest slice starts at the front');
   eq(text($('#insights .ring-amount')), T(499), 'caption amount');
-  eq(text($('#insights .ring-share')), `58% of ${$('#insights .month-label').textContent}`, 'caption share of the month');
+  eq(text($('#insights .ring-share')), '58%', 'caption share of the month (one caption line since 1.22.1)');
   eq(pressedRows(), ['true', 'false'], 'legend marks the front slice');
   assert(stage().getAttribute('aria-label').includes(`Front: Utilities, ${T(499)}, 58%`), 'stage label names the front slice');
   assert($('#insights .ring-canvas').getAttribute('aria-hidden') === 'true', 'the canvas itself is hidden from screen readers');
