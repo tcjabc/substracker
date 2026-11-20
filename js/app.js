@@ -1848,11 +1848,15 @@ let logoTimer;
 function bindForm() {
   const f = form.elements;
 
-  // Fill domain/category from a known service name, unless the user has typed their own.
+  // Fill domain/category from a known service name, unless the user has typed their own. When adding,
+  // a field filled that way is under More details, so it opens by itself to show it (as it opens for
+  // an edited item with a value there). Only opens, never folds; open or closed isn't saved.
   const suggestFromName = () => {
     const svc = state.formType === 'income' ? null : matchService(f.name.value);
+    const before = [f.domain.value, f.category.value];
     if (auto.domain) f.domain.value = svc ? svc.domain : '';
     if (auto.category) f.category.value = svc ? t(DEFAULT_GROUPS.find((g) => g.id === svc.group).key) : '';
+    if (svc && !state.editingId && (f.domain.value !== before[0] || f.category.value !== before[1])) setMoreDetails(true);
     updateFormLogo();
   };
   f.name.addEventListener('input', () => {

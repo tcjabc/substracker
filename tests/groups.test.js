@@ -225,10 +225,9 @@ test('add sheet: the default groups are the suggestions for Group, under More de
   eq(options.length, new Set(options).size, 'no name twice');
   f().name.value = 'Netflix';
   f().name.dispatchEvent(new Event('input', { bubbles: true }));
-  eq(f().category.value, t('group.preset.entertainment'), 'a known service fills Group, folded or not');
-  $('#more-toggle').click();
+  eq(f().category.value, t('group.preset.entertainment'), 'a known service fills Group');
   await tick(30);
-  assert(!$('#more-details').hidden && f().category.getClientRects().length > 0, 'More details opens; Group shows what was filled');
+  assert(!$('#more-details').hidden && f().category.getClientRects().length > 0, 'More details opens by itself; Group shows what was filled');
   for (const d of $$('dialog[open]')) d.close();
   await tick(60);
   eq(overlays.ids(), [], 'closed');

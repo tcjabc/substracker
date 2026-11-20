@@ -227,6 +227,43 @@ test('More details: folded when adding; a tap opens it; open when editing an ite
   await closeSheets();
 });
 
+test('More details opens by itself when a known service fills a field in it while adding; not saved; one Back closes the sheet', async () => {
+  await openAdd();
+  await pickKind('expense');
+  setValue('name', 'Lessons');
+  await tick(30);
+  eq(more().getAttribute('aria-expanded'), 'false', 'a name that is no known service: still folded');
+  const focused = document.activeElement;
+  setValue('name', 'Netflix');
+  await tick(30);
+  eq(more().getAttribute('aria-expanded'), 'true', 'Netflix fills Group (and the domain): open');
+  assert(shown(f().category) && shown(f().domain), 'the filled fields show');
+  eq(f().category.value, t('group.preset.entertainment'), 'with the default group, in the language in use');
+  eq(document.activeElement, focused, 'focus stays where it was');
+  eq(overlays.ids(), ['sub-dialog'], 'still an inline disclosure, no overlay of its own');
+  more().click();
+  setValue('name', 'Netflix ');
+  await tick(30);
+  eq(more().getAttribute('aria-expanded'), 'false', 'folded by hand, it stays folded while the same fill holds');
+  more().click();
+  pressBack();
+  await tick(60);
+  assert(!isOpen(sheet()), 'one Back closes the sheet, More details open');
+  eq(overlays.ids(), [], 'nothing left open');
+  await openAdd();
+  eq(more().getAttribute('aria-expanded'), 'false', 'not saved: the next add starts folded');
+  await pickKind('income');
+  setValue('name', 'Netflix');
+  await tick(30);
+  eq(more().getAttribute('aria-expanded'), 'false', 'income: no service fill, so folded');
+  await closeSheets();
+  await openEdit('s-salary');
+  setValue('name', 'Spotify');
+  await tick(30);
+  eq(more().getAttribute('aria-expanded'), 'false', 'editing: as before (it opens for values the item has)');
+  await closeSheets();
+});
+
 test('typed fields survive the Expense | Income switch; income hides the domain, emoji, plan and category, not Notes', async () => {
   await openAdd();
   await pickKind('expense');
