@@ -954,7 +954,7 @@ export function settingsFromRecord(record) {
 /* Per-device version notes (format 5, docs/plan-intervals-groups.md 4.2 and 5.4) ---------------- */
 // One field per device in the settings record: `app_` plus a 64-bit hash of its device id (the
 // same cyrb53 as colorField; a device id may hold characters a field name can't), with the value
-// { v: app version, fmt: data format, at: YYYY-MM-DD }. 1.21.0 reads them to tell whether every
+// { v: app version, fmt: data format, at: YYYY-MM-DD }. Release 2 (custom intervals) reads them to tell whether every
 // active device can show custom intervals. 1.19.0 keeps the field and ignores it. Format 5's
 // first-launch step (migrateFormat) writes this device's note; nothing refreshes it later yet.
 const NOTE_PREFIX = 'app_';

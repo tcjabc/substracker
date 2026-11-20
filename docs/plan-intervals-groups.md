@@ -1,7 +1,12 @@
 # Plan: custom intervals (H) and default groups with palette slots (L)
 
-Status: planning only, for review. Nothing here is built yet. Written against `main` at 1.19.0
-(`08bcdc4`, versionCode 28). Branch `plan-h-l`; this file is its only change.
+Status (refreshed for release 1, 1.23.0 / versionCode 35, branch `groups-slots`): **release 1 is
+built**: the shared stepper, every format-5 reader, backup format 5 with its self-check and the
+format-4 note, the whole of L (11 default groups, shared palette slots with repair, the 15-slot
+picker, Tidy up groups, the Wallet divider) and the first-launch step of section 6. **Release 2
+(H) is not built**: the interval UI, the readiness check, interval-aware yearly figures, CSV and
+Import with AI intervals. Where the built thing differs from the first plan, the rows below say
+so ("Built:"). First written against `main` at 1.19.0 (`08bcdc4`, versionCode 28), as `plan-h-l`.
 
 Both features change what goes over sync and into backups. The plan defines the new format
 (**format 5**) once, ships the code that reads it first, and turns on the writers that older
@@ -12,12 +17,13 @@ change to the group-name hash.
 
 ## 1. Summary
 
-- **One format, two releases.** 1.20.0 ships the foundation and the whole of L: one shared
-  occurrence stepper (it gives exactly today's results), readers for every format-5 field, a
-  small version heartbeat in the settings record, backup format 5, and palette slots with
-  default groups. Every value L writes is one that 1.19.0 already understands. 1.21.0 then turns
-  on H's writers (presets and Custom in the item sheet, Import with AI, CSV), after 1.20.0 has
-  been out long enough for the household's devices to update.
+- **One format, two releases.** Release 1 (planned as 1.20.0, shipping as **1.23.0**) is the
+  foundation and the whole of L: one shared occurrence stepper (it gives exactly today's
+  results), readers for every format-5 field, a small version note in the settings record,
+  backup format 5, palette slots with default groups, and the first-launch step. Every value L
+  writes is one that 1.19.0 already understands. Release 2 (H) then turns on H's writers
+  (presets and Custom in the item sheet, Import with AI, CSV), after release 1 has been out long
+  enough for the household's devices to update.
 - **H data:** one new item field, `repeat: { every, unit }`. `nextRenewal` stays the anchor date
   and `cycle` stays a legacy value, always `monthly`, `annual` or `once` (a "shadow"). Old
   devices keep working, keep the field, and show the nearest legacy cycle. No existing item is
@@ -79,13 +85,13 @@ match.
 | Month ends | Day = min(anchor day, days in that month). Every 1 month from 31 Jan gives 28/29 Feb, 31 Mar, 30 Apr, 31 May. Every year from 29 Feb gives 28 Feb in other years and 29 Feb in leap years. | Stepping from the previous date (drifts: 31 Jan, 28 Feb, 28 Mar, 28 Apr). | Matches `nextRenewal()` and the calendar today exactly (prototype P1: 618,003 comparisons, 0 differences). |
 | Days and weeks across DST | Calendar arithmetic only: whole UTC day numbers built with `setUTCFullYear(y, m, d)`, never milliseconds or local `Date` sums. A week is 7 days. | Local `Date` with `setDate(+7)`. | Can't move across DST or time zones. Prototype P1 passes in London, New York, Lord Howe (30-minute DST), Apia, Santiago and Taipei. Note that `Date.UTC` maps years 0–99 to the 1900s; the fuzz test found this. |
 | Occurrences per month | Cash basis: `dueInMonth = price × number of occurrences in that month`. Weekly gives 4 or 5, fortnightly 2 or 3, daily 28–31. | A monthly average for weekly items. | Cash basis is the app's rule. The counts are exact (prototype P2). |
-| Yearly total and Avg | `yearTotal` = price × the item's occurrences in that calendar year (weekly 52 or 53, fortnightly 26 or 27). Undated recurring items use a nominal rate (weekly ×365.2425/7, every N months ×12/N). Avg = yearTotal ÷ 12, as now. | A nominal rate for everything. | Keeps the existing identity: Avg equals the mean of the twelve cash months when every item has a date (prototype P2: 0 mismatches). Monthly and annual results don't change. |
+| Yearly figures | **Built (release 1):** no screen shows `yearTotal` or "Avg" any more. The yearly card's Outgoings is the sum of the twelve cash months (`yearSummary`), and the year chart's "Average of these months" is the mean of the months shown (`seriesAverage`); both count occurrences through the stepper, so they are already right for any interval. `yearTotal` (monthly × 12 + annual, `util.amountInYear`) is still there, used only by the first-launch stepper check. **Release 2:** remove `yearTotal`/`monthlyAverage` or make them occurrence-based (undated items nominal: weekly ×365.2425/7, every N months ×12/N). | A nominal rate for everything. | The cash months are the app's one basis; a second yearly formula would only disagree with them. |
 | Insights type colours | Keep the three keys and their colours (`--type-monthly`, `--type-annual`, `--type-once`). `monthly` becomes "every month or more often" (period up to a month: weekly, fortnightly, every 4 weeks, monthly). `annual` becomes "less often than monthly" (quarterly, 6-monthly, yearly, custom above a month). New label strings, no new colour. | Four buckets with a new token. Per-unit buckets. | No new colour to tune and test. The year chart and the strip legend stay readable. |
 | Item sheet | Replace the three-way cycle choice with: Weekly, Fortnightly, Monthly, Quarterly, Every 6 months, Yearly, Once, Custom. Custom shows "Every [N] [days / weeks / months / years]". Under it, a line: "Next: Thu 26 Nov, then every 2 weeks". Income keeps "How often". | A free text field. A separate interval sheet. | Presets cover what the AI tests actually produced. Custom covers the rest without a second screen. |
 | Validation | N is a whole number, 1–99 in the sheet. The period is at most 10 years. Recurring items need a date (today's rule). The reader accepts wider ranges (days up to 3660, weeks up to 520, months up to 120, years up to 10) and treats anything outside as "use `cycle`". | The reader rejects bad values. | A strict reader must never drop an op (F2). Interpret strictly, store loosely. |
 | CSV | Keep the 7 columns in place. **Cycle** gets the readable value (`weekly`, `fortnightly`, `monthly`, `quarterly`, `every 6 months`, `annual`, `one-off`, or `every 3 weeks`). Add **Every** and **Unit** columns at the end. **Next date** comes from the stepper. | Replace Cycle with Every and Unit. | Existing spreadsheet formulas on columns A–G keep working. |
 | Import with AI | Schema version 1 stays. `cycle` also accepts `weekly`, `fortnightly`, `quarterly`, `every 6 months`, `yearly`, plus `custom` with optional `"every"` and `"unit"` fields. Synonyms map to presets ("every two weeks" is fortnightly, "half-yearly" and "semi-annual" are every 6 months). Ambiguous words (`biweekly`, `bimonthly`) are flagged with the existing cycle fix, never guessed. The prompt stays English. | A schema version 2. | Old replies stay valid. The flag-don't-guess rule already exists in `import-ai.js`. |
-| Banner (due soon) | One row per item: the first date in the window, and "×2" plus the summed amount when it falls more than once (weekly in a 14-day window). | One row per occurrence. | Keeps the banner short. A daily item would otherwise fill it. |
+| Due soon (now a chip on the Money card and its sheet, no longer a banner) | Release 2: one row per item in the chip's sheet: the first date in the window, and "×2" plus the summed amount when it falls more than once (weekly in a 14-day window); the chip's count counts items, not occurrences. | One row per occurrence. | Keeps the sheet short. A daily item would otherwise fill it. |
 | Calendar | `stepDays()` returns every day in the month (it already returns a list). Each row's amount comes from a new `insights-calc` function `dueOnDays(s, y, m)` (one price per occurrence), whose days add up to `dueInMonth`. | Amounts worked out in the calendar. | Keeps "no money maths outside insights-calc", and keeps the day totals adding up to `cashDue`. |
 | Stepping far away | Every month query is direct arithmetic, not a walk from the anchor. Each query returns at most 400 occurrences. Anchor years are limited to 1900–2199. | A loop with a guard (today). | 100,000 month queries 300 years from the anchor take about 100–170 ms in Node (P1). It also fixes F13. |
 
@@ -100,13 +106,13 @@ match.
 | Two offline devices pick the same slot | **Repair**, the same on every device: when two live groups share a slot and the later one was automatic, the later one moves to its next free slot. Picked colours never move. Two names for the **same preset** (for example `Housing` and `居住`) are allowed to share. | Accept the clash. Ask the person. | P3: the repair always converged, with at most one move per clash in practice. The group that moves is the one just created on the other device. |
 | How presets are stored | **Plain presets**: choosing one writes its name text in the current language, plus its fixed slot. No id or flag. A built-in table maps both languages' names to the preset, and is used only to pick the slot. | A stored preset id. | The name hash and name sync stay exactly as they are. A renamed preset is simply a custom group. Nothing matches names across languages; the same colour for `Housing` and `居住` is a coincidence of slot, not a match. |
 | Renamed or translated defaults | A name typed by the person never changes. Switching the app's language doesn't rename groups; new presets are offered in the new language. A "Rename group" action (part of the merge helper) moves the items and takes the old slot along. | Translating stored names. | Names are the person's own data (see the glossary's conventions). |
-| Migrating today's picked colours (g1–g10) | Rewrite each picked `gN` to its mapped slot (table in 5.3), stamped at the upgrade, **once**, as a verified step. The mapping is fixed, so every device writes the same value. | Keep `g` keys as a "Classic" palette. Map only when reading. | One palette everywhere. Old devices see the new `w` key too, so every device matches. Colours shift slightly (OKLab 7–20) for groups someone picked. |
+| Migrating today's picked colours (g1–g10) | **Built: never moved or rewritten.** A `gN` pick is drawn exactly as it was picked (`--group-N`), holds no slot, and the first-launch step leaves it alone. The picker offers only the 15 slots, so a person moves a group to a slot by picking one. (First plan: rewrite each `gN` once by the table in 5.3.) | Rewrite once by the table; map only when reading. | Nothing someone chose changes colour by itself, and nothing is written for it. |
 | Migrating automatic colours (w1–w15, per device) | Each live group with no record field gets its **current local automatic colour** as its slot (`auto: true`), unless another group already holds that slot in the record. Then it probes. | Recompute everything. | Nothing visibly changes on the device that upgrades first. Others take its colours, a one-time change for groups whose automatic colours differed between devices. |
 | More than 15 groups | Slots 15–29 are a second lap of **hand-tuned** lighter or darker versions of the same hues (one table per theme). Old devices see the base hue (`swatch` = base key). | Computed lightness shifts. | P4: a computed ±0.14 OKLCH shift fails 4.5:1 in dark mode (4.44) and nearly matches another slot under deutan (orange vs yellow², ΔE 0.7). It needs a tuned table with its own tests. |
 | What syncs and what stays on the device | **Synced:** `slot`, `auto`, `swatch`, `name`. **This device only:** which palette slots are drawn in (`palette` preference in localStorage: `default` now, Pastel and Neon later as Pro cosmetics). | Syncing the palette choice. | A household can use different palettes and groups still match by slot. |
 | Colour picker | 15 swatches of this device's palette, with a "More shades" row for the second lap. Slots used by other live groups show a small mark. Choosing one writes `slot` and drops `auto`. | The old 10 `g` colours. | Picks are slots from now on. The mark makes duplicates a choice, not an accident. |
 | Contrast and distance checks | One `PALETTES` registry. Every palette has tests for each theme and both laps: text 4.5:1 with depth (exists), neighbours in slot order, default presets in English A–Z **and** Zhuyin order, normal vision plus protan/deutan/tritan (P4 thresholds in 7.4). | Only the default palette. | Sticky slots plus A–Z order mean any two slots can end up next to each other (F15). P4 shows this palette can't keep **every** pair apart under colour-blindness (blue and violet are ΔE 1.2 under protan). Names on the cards and the Wallet divider carry that case, never colour alone. |
-| Wallet, Ring, year chart, calendar dots | All read one `slotVar(slot)` (CSS `--slot-0` … `--slot-29`, set from the palette tokens). The calendar's 3:1 ring rule runs on every slot. The Wallet divider follow-up makes neighbouring cards distinct even when their colours are close. | Per-view mappings. | One shared layer, as DESIGN rules ask. |
+| Wallet, Ring, year chart, calendar dots | **Built:** every call site goes through `groupSwatch(name)` (the group's swatch key, `w1`–`w15` or an old `g1`–`g10`) and then `swatchVar(key)` in `js/app.js`, which resolves to `var(--wallet-1)` … `var(--wallet-15)` (slots 0–14) or `var(--group-1)` … `var(--group-10)`. There are no `--slot-*` tokens and no `slotVar`; slots 15–29 (a second lap) aren't offered, and one from a later version draws as its base colour (slot mod 15). The calendar's 3:1 ring rule runs on every colour. The Wallet divider (built: a band of page colour above a card within ΔE 26 of the one before, in normal vision or any colour-blindness simulation, in every sort) keeps close neighbours apart. (First plan: `slotVar(slot)` over `--slot-0` … `--slot-29`.) | Per-view mappings. | One shared layer, as DESIGN rules ask. |
 | Presets vs `js/services.js` and Import with AI | Map the service categories to presets: Entertainment and Gaming to Entertainment, Music to Hobbies, AI, Cloud storage, Software and Productivity to Software & cloud, News to Entertainment, Fitness to Health & fitness, Utilities to Utilities. `DEFAULT_CATEGORIES` becomes the 11 English preset names, and the AI prompt lists them. | Keep the old category list. | One vocabulary. The AI suggests the groups the person will see. |
 | Suggest merges | An optional helper, driven by an alias table (no fuzzy matching): it suggests "move these groups into that preset", shows the result, and applies it as ordinary category edits (old devices understand them). P5 on your real list gives exactly your merge map: 13 groups become 9. | Automatic merging. | Explainable and undoable, and nothing happens without a tap. |
 
@@ -117,7 +123,7 @@ match.
 | Format number | Backup `schemaVersion` **5**, and `meta.schemaVersion` 5 once the step in section 6 is verified. | Stay on 4. | A 1.19.0 import of a 1.21 file loses intervals; the "newer version" note (F10) should say so, and it does only for a higher number. |
 | IndexedDB `DB_VERSION` | Stays **3**. No new stores. | A new store for slots or history. | F11: a higher number stops 1.19.0 opening the data, so going back would be impossible. |
 | Relay | No change. | – | Ciphertext only, small ops, full log (F12). Checked against the room logic and the engine. |
-| Release split | **Two:** 1.20.0 (foundation and L), then 1.21.0 (H writers). At least 2 weeks between them in production. | One release. Three releases (foundation, L, H). | The H readers must reach every device before any H writer exists. L needs no such wait, because 1.19.0 already draws its values. |
+| Release split | **Two:** release 1 (foundation, L and the first-launch step: 1.23.0), then release 2 (H writers). At least 2 weeks between them in production. | One release. Three releases (foundation, L, H). | The H readers must reach every device before any H writer exists. L needs no such wait, because 1.19.0 already draws its values. |
 
 ---
 
@@ -254,6 +260,8 @@ Hobbies matches your map).
 
 ### 5.3 g1–g10 to slots (the fixed migration table)
 
+**Not applied** (release 1 decision, section 3 L): `g` picks are never rewritten and hold no slot.
+The table stays as the nearest slot to each old colour, should a later release offer the move.
 The nearest distinct slots, light theme, OKLab ×100 (P4):
 
 | g | Old name | Slot | Distance |
@@ -269,13 +277,16 @@ The nearest distinct slots, light theme, OKLab ×100 (P4):
 | g9 | Teal | 0 Teal | 8.0 |
 | g10 | Brick | 2 Red | 7.7 |
 
-### 5.4 Readiness heartbeat (in 1.20.0, used by 1.21.0)
+### 5.4 Readiness heartbeat (the version note: written in release 1, refreshed and used in release 2)
 
-- Each 1.20+ device writes `app_<hash(deviceId)>` when sync is on and the version changed or
-  the value is more than 30 days old. That's one small op, usually once a month.
+- **Built (release 1):** each device writes its `app_<hash(deviceId)>` note once, in the
+  first-launch step (section 6), whether sync is on or not (it waits in the outbox). Nothing
+  refreshes it yet.
+- **Release 2:** each device rewrites it when the version changed or the value is more than 30 days
+  old (`versionNoteOps` already decides that). That's one small op, usually once a month.
 - **Ready** means every device id found in a record stamp from the last 90 days has a heartbeat
   with `fmt` 5 or more.
-- 1.21.0 checks this the first time someone saves an interval that 1.19.0 can't show. If the
+- Release 2 checks this the first time someone saves an interval that 1.19.0 can't show. If the
   household isn't ready, it says: "Another device in your household hasn't been updated, and it
   will show this as monthly until it is." The choices are **Save anyway** and **Cancel**.
 - A device that never edits leaves no stamps, so it can't be detected. That gap is accepted and
@@ -290,29 +301,42 @@ has been verified. Each new step works like `migrateSettings`: one transaction, 
 check, then switch. A failure changes nothing, is logged with counts only, and runs again on
 the next load.
 
-**First launch of 1.20.0**
+**First launch of release 1 (1.23.0)**, as built (`migrateFormat` in `js/storage.js`, the pure
+parts in `js/format-migration.js`). It needs the app's version (`storage.setAppVersion`, from
+`app.js`), so pages that use storage without the app stay on format 4.
 
-1. **Stepper check (read-only).** For every live item, compare the 1.19 code (kept for 1.20 only,
-   as `js/legacy-step.js`) with the new stepper over 25 months (−6 to +18): next date, calendar
-   days, `dueInMonth`/`incomeInMonth`, and `yearTotal` for this year and next. Any difference
-   means this device keeps the legacy code (a flag) and records
-   `meta.formatMigration = { verified: false, step: 'intervals', diff: n }`.
-2. **Plan colours (pure).** Every `gN` field gets its slot from 5.3. Every live expense group
-   without a field (Uncategorised too) adopts its local automatic colour if no group in the
-   record already uses that slot; otherwise it probes. Also this device's heartbeat.
-3. **Write** (one transaction over records, outbox and meta): the settings-record ops, their
-   outbox entries and the clock. The `settings` store isn't touched.
-4. **Read back** the record. Every planned field must have a stamp, and its value must be the
+1. **Plan (read-only).** *Stepper check:* for every live item (its `repeat` set aside), 1.19.0's
+   rules (`js/legacy-step.js`, checked against the frozen 1.19.0 modules) and the shared stepper
+   must give the same next date, calendar days, `dueInMonth`/`incomeInMonth` in 25 months (−6 to
+   +18) and yearly figure for this year and next. Items only 1.19.0 got wrong (dates in the years
+   0–99, anchors past its 1200-step walk, F13) are skipped and counted. Any difference stops the
+   step (there is no legacy fallback: the shared stepper is the only one in use). *Colours:*
+   every live expense group (Uncategorised too) with no colour in the record and an automatic
+   colour on this device adopts that colour as its slot (`auto: true`), unless a live group in the
+   record already holds it; then it probes. A live group with no colour at all gets a slot as the
+   app gives one, then the household's repair runs. `g` picks and every other pick are left
+   alone; names over 40 characters (no colour value can carry them) are skipped. *Note:* this
+   device's `app_<hash>` = `{ v, fmt: 5, at }`.
+2. **Write** (one transaction over records, outbox and meta): the settings-record ops, their
+   outbox entries and the clock. Items and the `settings` store are only read.
+3. **Read back** the record. Every planned field must have a stamp, and its value must be the
    planned one or one with a **newer stamp** from another device (never lost). The record must
-   have no `del`. Every live group must resolve to a slot.
-5. **Switch:** write `meta.formatMigration = { verified: true, at, fields }` and `schemaVersion: 5`.
-   From then on, groups created here write slots.
-6. **On failure** (step 3 or 4), colours stay as they are today on this device. The read path
-   is the same either way (slots come from the swatch), so there's no second UI. Only sharing
-   waits.
+   have no `del`. Every live group must have a slot or be an old `g` pick. The note must be there.
+4. **Switch:** `meta.formatMigration = { verified: true, at, fields, groups, items, stepper }` and
+   `schemaVersion: 5`, in one transaction. From then on, a group's automatic colour is never kept
+   on this device only.
+5. **On failure** at 1 or 2 nothing changes at all; at 3 or 4 only the planned values (fields the
+   record lacked) have been added, and the switch isn't made. Nothing is shown (a count-only
+   console warning) and the step runs again on the next load, planning only what's missing.
+   Colours stay as they were on this device meanwhile. Once verified it never runs again, and
+   planning on its own result plans nothing (idempotent).
 
-**First launch of 1.21.0:** nothing to migrate. `legacy-step.js` and its check are removed
-(after 1.20.0 has reported `verified` on your devices: see the dev screen's storage status).
+**Not done by the step:** refreshing the note later (when the version changes or after 30 days;
+`versionNoteOps` already knows when one is due) is left to release 2's readiness check.
+
+**First launch of release 2:** nothing to migrate. `legacy-step.js` and its check are removed
+(after release 1 has reported `verified` on your devices: `storage.status().formatMigration`, from
+the browser console or Chrome's remote inspector; the dev screen doesn't show it yet).
 
 **Half-synced household:**
 - Device A migrates and pushes. B (1.19.0) pulls and shows A's colours as picks (F8).
@@ -369,7 +393,7 @@ the next load.
 | `js/services.js` | Service categories mapped to presets; `DEFAULT_CATEGORIES` = presets; preset table (en/zh names, slot) |
 | `js/import-ai.js`, `js/import-ai-prompt.js`, `js/import-ai-sheet.js` | New cycle values, `every`/`unit`, ambiguous words flagged; the fix list gets the presets; duplicate key includes the interval |
 | `js/csv-export.js` | Cycle text; **Every** and **Unit** columns |
-| `css/app.css` | `--slot-0` … `--slot-29` per theme (second-lap tokens); the default maps to `--wallet-*` |
+| `css/app.css` | Built: none needed; slots draw `--wallet-1` … `--wallet-15` (plus `--wallet-divider`). Second-lap tokens only if a later release offers slots 15–29 |
 | `js/locales/en.js`, `zh-TW.js` | Interval presets, units (plurals), summary line, errors, type labels, preset names, second-lap colour names, readiness and merge texts |
 | `docs/glossary-zh-TW.md` | Interval terms (每週, 每兩週, 每季, 每半年, 自訂, 每 N 天/週/個月/年), preset names, "default group" |
 | `README.md`, `sw.js` | Docs and `VERSION` bump in each release (not in this plan) |
@@ -401,17 +425,17 @@ the next load.
 
 ## 10. Branch and version plan
 
-| Step | Branch | Version | Contents |
-|---|---|---|---|
-| 0 | `plan-h-l` | – | This doc (review only) |
-| 1 | `test-legacy-fixture` | – (tests only) | 1.19.0 fixture, `device()` either version, the golden hash test |
-| 2 | `feature/format5-groups` | **1.20.0**, versionCode **29** | Stepper refactor (no behaviour change) + legacy check; format-5 readers; heartbeat; backup 5; L in full; tag `pre-1.20.0-main` before merging |
-| 3 | soak | – | 14 days on your devices (section 12) |
-| 4 | `feature/custom-intervals` | **1.21.0**, versionCode **30** | H writers and UI, Import with AI, CSV, banner, calendar, readiness check; `legacy-step.js` removed; tag `pre-1.21.0-main` |
-| 5 | soak | – | 14 days |
+Main moved on to 1.22.2 while the stack was built (on `h-l-groups`, then `h-l-on-main`), so the
+version numbers moved too. As it stands:
 
-If you'd rather keep each release small: 1.20.0 foundation only, 1.21.0 L, 1.22.0 H. That's
-slower, with the same format.
+| Release | Branch | Version | Contents |
+|---|---|---|---|
+| – | `plan-h-l` | – | This doc (review only) |
+| – | `h-l-groups` → `h-l-on-main` | – (no release) | 1.19.0 fixture and mixed-version harness, the golden hash test, the shared stepper, format-5 readers, backup 5 with its self-check, L (default groups, slots, repair, the picker, Tidy up groups, the divider) |
+| **1** | `groups-slots` | **1.23.0**, versionCode **35** | **L + readers + the first-launch step** (section 6), the format-4 note, More details opening for a service fill; tag `pre-1.23.0-main` before merging |
+| – | soak | – | 14 days on your devices (section 12) |
+| **2** | (next) | next minor, next versionCode | **H**: interval UI (presets, Custom), the readiness check (and refreshing the version note), interval-aware yearly figures, CSV columns, Import with AI `every`/`unit`, Insights type labels; `legacy-step.js` removed |
+| – | soak | – | 14 days |
 
 ---
 
@@ -447,15 +471,16 @@ slower, with the same format.
 ## 12. Sync soak test (each release)
 
 - **Devices:** the Android phone (new version), desktop web (new), a second browser profile kept
-  on 1.19.0 (`www/` from the `pre-1.20.0-main` tag served locally). 14 days.
+  on 1.19.0 (`www/` from 1.19.0, commit `08bcdc4`, served locally). 14 days.
 - **Daily:** add, edit, delete one item on each, one of them offline for a day. Create one group
   offline on two devices on day 3 and day 9 (slot repair). 1.21: change a weekly item's price on
   1.19, and its cycle on 1.19 once.
 - **Checks each evening:** a script compares the format-5 exports of the two new devices
   (normalised, sorted; must be equal) and the 1.19 export (items equal except `repeat`). Outbox
   0 and cursor = head on each. Console has no "ignored N change(s)". The relay head grows only by
-  edits plus at most one heartbeat a month per device. The dev screen's storage status shows
-  `formatMigration.verified`.
+  edits plus at most one version note a month per device (release 1 writes it once, in the
+  first-launch step). `storage.status().formatMigration.verified` is true (console or remote
+  inspector).
 - **Exit:** 14 days with no mismatch, then start the next release.
 
 ---
@@ -501,7 +526,8 @@ passes P4's checks; (4) the extended AI prompt with two or three AI chat tools o
 10. **Banner:** one row with ×2 (recommended) or a row per occurrence?
 11. **Uncategorised:** an ordinary slot (recommended), or a fixed neutral?
 12. **CSV:** Every and Unit appended at the end (recommended)?
-13. **Wallet divider follow-up:** I found no note of it in the repo. What do you have in mind?
+13. **Wallet divider follow-up:** answered and built: a band of page colour above a card within
+    ΔE 26 of the one before (normal vision or any colour-blindness simulation), in every sort.
     It decides how much the palette tests must guarantee for any-pair neighbours.
 
 ---
