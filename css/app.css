@@ -823,7 +823,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .cal-today { min-height: var(--control-sm); padding: 0 var(--space-3); font-size: var(--text-sm); }
 /* The month's In, Out and Left over: three columns, a label over each figure, spread across the
    width (In at the start, Out in the middle, Left over at the end). Figures never wrap or clip:
-   js/calendar.js fitFlow steps them down a size (is-tight, is-tighter) when the three don't fit.
+   js/calendar.js fitFlow steps them down (is-tight, is-tighter, is-tightest) when the three don't fit.
    Only Left over is coloured, with its arrow; In and Out are the page's text colour. */
 .cal-flow { margin-bottom: var(--space-3); padding-inline: var(--space-2); }
 .cal-flow-cells { display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; column-gap: var(--space-3); }
@@ -837,7 +837,10 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   line-height: var(--leading-tight); white-space: nowrap;
 }
 .cal-flow-cells.is-tight .cal-flow-value { font-size: var(--text-base); }
+.cal-flow-cells.is-tighter { column-gap: var(--space-2); }
 .cal-flow-cells.is-tighter .cal-flow-value { font-size: var(--text-sm); }
+.cal-flow-cells.is-tightest { column-gap: var(--space-1); }
+.cal-flow-cells.is-tightest .cal-flow-value { font-size: var(--text-xs); }
 .cal-flow-arrow { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .cal-flow[data-dir="up"] .cal-flow-left .cal-flow-value { color: var(--positive-text); }
 .cal-flow[data-dir="down"] .cal-flow-left .cal-flow-value { color: var(--negative-text); }
@@ -1527,7 +1530,7 @@ dialog::backdrop { background: var(--scrim); }
 /* The readout over the empty top of the chart (its first 90 of 470 units: 25cqw of the SVG's width),
    in the flow: when its words need more lines (a narrow screen, a long language) it pushes the chart
    down instead of running into the scale's labels. The total goes under the month when both don't fit. */
-.yc-readout { position: relative; min-height: 25cqw; padding: var(--space-2) var(--space-3) 0; pointer-events: none; }
+.yc-readout { position: relative; min-height: 25cqw; padding: var(--space-2) var(--space-3); pointer-events: none; } /* its foot: room for the top label's rise above its line */
 .yc-readout + .yc-back + .yc-svg { margin-top: -25cqw; }
 .yc-read-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: var(--space-3); }
 .yc-read-name { font-size: clamp(var(--text-base), 5.4cqw, var(--text-lg)); font-weight: var(--weight-bold); }

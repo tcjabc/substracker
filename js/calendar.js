@@ -32,8 +32,8 @@ const ARROW = {
   up: '<svg class="cal-flow-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>',
   down: '<svg class="cal-flow-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 9v8H9"/></svg>',
 };
-// The figures step down a size, then another, when the three don't fit the width side by side.
-const FIT_STEPS = ['', 'is-tight', 'is-tighter'];
+// The figures step down a size at a time (and the gaps narrow) while the three don't fit side by side.
+const FIT_STEPS = ['', 'is-tight', 'is-tighter', 'is-tightest'];
 const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 // A swipe counts once it's moved this far sideways (px) before moving as far up or down; it changes
 // the month past a share of the width, or on a fling.
