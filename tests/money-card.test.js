@@ -160,7 +160,7 @@ test('the Money card: this month, Cash due as the big figure, Income and Left ov
   eq([text($('[data-roll="cash"]', card())), text($('[data-roll="income"]', card())), text($('[data-roll="left"]', card()))], [T(80919), T(40000), T(-40919)], 'as money');
   eq($$('.mc-cell dt', card()).map(text), [t('money.income'), t('money.leftOver')], 'Income and Left over, always shown');
   assert(text(card()).includes(t('common.moreOutThanIn')), 'a short month says so in words, with its minus sign');
-  assert(!text(card()).includes(T(m.average)) && !text(card()).includes(t('common.avgPerMonth', { amount: T(m.average) })), `no Avg line on the card (${T(m.average)})`);
+  assert(!text(card()).includes(T(m.average)), `no Avg line on the card (${T(m.average)})`);
   const und = $('.mc-undated', card());
   eq(text(und), t('common.excludesUndated', { count: 1 }), 'the undated line');
   await period('annual');
@@ -173,7 +173,7 @@ test('the Money card: this month, Cash due as the big figure, Income and Left ov
   await period('monthly');
 });
 
-test('the card\'s figures are the Insights headline and yearly card, Monthly and Annual', async () => {
+test('the card\'s figures are Insights\' month total, share of income and yearly card, and the Calendar\'s In and Out; Monthly and Annual', async () => {
   // Step Insights to another month first: the card opens Insights on this month all the same.
   await goTab('insights');
   if (storage.getPref('insightsMode') === 'year') $('[data-insights-mode="month"]').click();
@@ -191,9 +191,12 @@ test('the card\'s figures are the Insights headline and yearly card, Monthly and
     const yearCard = { income: Number($('#insights [data-roll="year-Income"]').dataset.value), out: Number($('#insights [data-roll="year-Outgoings"]').dataset.value), left: Number($('#insights [data-roll="year-Left over"]').dataset.value) };
     if (p === 'monthly') {
       eq(Number($('#insights [data-roll="month-due"]').dataset.value), cash, 'Cash due = the month\'s cash due');
-      const headline = text($('#insights .headline-text'));
-      assert(headline.includes(T(cash)) && headline.includes(T(income)), `the headline has the same Cash due and Income: ${headline}`);
+      eq(text($('#insights [data-roll="month-due"]')), T(cash), 'the month total in the chart');
+      eq(text($('#insights .ins-pct')), t('insights.pctOfIncome', { pct: Math.round((cash / income) * 100) }), 'the share of the same income');
       eq(left, income - cash, 'Left over = Income − Cash due');
+      await goTab('calendar');
+      const flow = (k) => Number($(`#calendar .cal-flow-amount[data-flow="${k}"]`).dataset.value);
+      eq([flow('in'), flow('out'), flow('left')], [income, cash, Math.abs(left)], 'the Calendar\'s In, Out and Left over (its size)');
     } else {
       eq([income, cash, left], [yearCard.income, yearCard.out, yearCard.left], 'Annual = the yearly card');
     }

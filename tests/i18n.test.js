@@ -186,7 +186,8 @@ async function walk() {
   put('doc', [document.title, `lang=${document.documentElement.lang}`]);
   // 1.20.0: Money's header is the title and one View button, and there's one + (both on new keys);
   // the Calendar tab is new, so English records the tab bar without it and the tab on its own key.
-  put('header.money', grab($('.app-header')));
+  // Insights' Month | Year is in the header too, hidden here: it's recorded with the Insights screens.
+  put('header.money', grab($('.app-header'), { skip: ['#insights-actions'] }));
   put('tabbar', grab($('.tabbar'), { skip: MODE === 'en' ? ['#tab-calendar'] : [] }));
   put('tab.calendar', grab($('#tab-calendar')));
   put('fab.add', grab($('#fab-stack')));
@@ -310,32 +311,34 @@ async function walk() {
 
   // Insights, month: the flat donut standing in for the Ring (Reduce motion is on), Donut, List.
   $('#tab-insights').click();
-  await until(() => $('#insights .stat-primary'), 'Insights drawn');
+  await until(() => $('#insights .ins-hero'), 'Insights drawn');
   put('doc.insights', [document.title, $('#page-title').textContent]);
   put('insights.chips', grab($('#currency-chips')));
-  put('insights.month.ring', grab($('#insights')));
+  // Month | Year sits in the header since 1.22.0: each Insights screen takes it in, as before.
+  const insightsScreen = (el) => grab($('#insights-actions')).concat(grab(el));
+  put('insights.month.ring', insightsScreen($('#insights')));
   $('#insights [data-catview="donut"]').click();
   await tick(20);
-  put('insights.month.donut', grab($('#insights')));
+  put('insights.month.donut', insightsScreen($('#insights')));
   $('#insights [data-catview="list"]').click();
   await tick(20);
-  put('insights.month.list', grab($('#insights')));
+  put('insights.month.list', insightsScreen($('#insights')));
   $('#insights [data-month-step="-1"]').click();
   await tick(20);
-  put('insights.month.previous', grab($('#insights .headline')).concat(grab($('#insights .stats'))));
+  put('insights.month.previous', grab($('#insights .ins-pct')).concat(grab($('#insights .stats'))));
   $('#insights [data-month-step="1"]').click();
   await tick(20);
   $('#currency-chips [data-currency="USD"]').click();
   await tick(20);
-  put('insights.month.usd', grab($('#insights .headline')).concat(grab($('#insights .stats'))));
+  put('insights.month.usd', grab($('#insights .ins-pct')).concat(grab($('#insights .stats'))));
   $('#currency-chips [data-currency="TWD"]').click();
   await tick(20);
 
   // Insights, year: the chart, its key, and the yearly card.
-  $('#insights [data-insights-mode="year"]').click();
+  $('#insights-actions [data-insights-mode="year"]').click();
   await until(() => $('#year-chart svg'), 'year chart drawn');
   await tick(50);
-  put('insights.year', grab($('#insights')));
+  put('insights.year', insightsScreen($('#insights')));
   $('#year-chart .yc-keybtn').click();
   await tick(20);
   put('insights.year.key', grab($('#year-chart .yc-keybox')));
@@ -346,7 +349,7 @@ async function walk() {
   put('insights.year.income', grab($('#year-chart')));
   $('#insights [data-year-income]').click();
   await tick(20);
-  $('#insights [data-insights-mode="month"]').click();
+  $('#insights-actions [data-insights-mode="month"]').click();
   await tick(20);
 
   // Settings (not the developer screen, not the version line).

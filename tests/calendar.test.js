@@ -145,30 +145,35 @@ test('the header fits: Calendar\'s title alone, Money\'s title and its View butt
   await goTab('calendar');
 });
 
-test('the Calendar page: the month heading, previous, next and Today, one summary line, the grid; no Money card, chip or income card', async () => {
+test('the Calendar page: the month heading, previous, next and Today, the month\'s In, Out and Left over, the grid; no Money card, chip or income card', async () => {
   for (const sel of ['#money-summary', '#due-chip', '#income-card', '#subs-list', '.wallet']) {
     const el = $(sel);
     assert(!el || !el.getClientRects().length, `${sel} is not on this page`);
   }
   eq(storage.getPref('dueSoon'), null, 'the due-soon chip is on (its default), shown on Money only');
   eq($$('#calendar .cal-head > *').map((e) => e.dataset.calStep ?? (e.matches('[data-cal-today]') ? 'today' : e.id)), ['-1', 'cal-month', '1', 'today'], 'previous, the month, next, Today');
-  const sum = $('#calendar .cal-summary');
-  eq([...sum.children].map((e) => e.className), ['cal-summary-label', 'cal-summary-value'], 'one summary line: its label and figure, nothing under it');
+  assert(!$('#calendar .cal-summary'), 'the old one-line summary is gone');
+  const sum = $('#calendar .cal-flow');
+  eq($$('.cal-flow-cell', sum).map((e) => e.className), ['cal-flow-cell cal-flow-in', 'cal-flow-cell cal-flow-out', 'cal-flow-cell cal-flow-left'], 'In, Out and Left over, nothing else');
   const head = $('#calendar .cal-head').getBoundingClientRect();
   const s = sum.getBoundingClientRect();
   const g = $('#calendar .cal-grid').getBoundingClientRect();
-  assert(head.bottom <= s.top && s.bottom <= g.top, `heading ${Math.round(head.bottom)} ≤ summary ${Math.round(s.top)}–${Math.round(s.bottom)} ≤ grid ${Math.round(g.top)}`);
-  const line = parseFloat(getComputedStyle($('.cal-summary-value', sum)).lineHeight) || 24;
-  assert(s.height < line * 1.6, `the summary is on one line (${Math.round(s.height)}px for a ${line}px line)`);
+  assert(head.bottom <= s.top && s.bottom <= g.top, `heading ${Math.round(head.bottom)} ≤ cash flow ${Math.round(s.top)}–${Math.round(s.bottom)} ≤ grid ${Math.round(g.top)}`);
+  const tops = $$('.cal-flow-cell', sum).map((e) => Math.round(e.getBoundingClientRect().top));
+  eq(new Set(tops).size, 1, `the three on one row (${tops.join(', ')})`);
+  for (const v of $$('.cal-flow-value', sum)) {
+    const line = parseFloat(getComputedStyle(v).lineHeight) || 24;
+    assert(v.getBoundingClientRect().height < line * 1.6, `"${text(v)}" on one line (${Math.round(v.getBoundingClientRect().height)}px for a ${line}px line)`);
+  }
 });
 
-test('the month summary is the Money card\'s Cash due for this month, on the same basis', async () => {
-  eq(text($('#calendar .cal-summary-label')), `Cash due in ${monthName(2026, 10)}`, 'labelled with the month');
+test('the month\'s Out is the Money card\'s Cash due for this month and In its Income, on the same basis', async () => {
+  eq($$('#calendar .cal-flow-label').map(text), ['In', 'Out', 'Left over'], 'labelled');
   const strip = $('#money-summary [data-roll="cash"]');
   await tick(1200); // let any roll finish
-  eq(text($('#calendar .cal-summary-value')), text(strip), 'the same figure as the Money card');
+  eq(text($('#calendar .cal-flow-amount[data-flow="out"]')), text(strip), 'Out is the Money card\'s Cash due');
+  eq(text($('#calendar .cal-flow-amount[data-flow="in"]')), text($('#money-summary [data-roll="income"]')), 'In is its Income');
   eq(text(strip), T(NOV_DUE), 'and the worked total');
-  assert(!$('#calendar .cal-summary-sub'), 'no second line: income and other currencies are on their days');
   const items = (await storage.getAll()).filter((s) => s.currency === 'TWD');
   eq(NOV_DUE, cashDue(items, 2026, 10), "Insights' cashDue");
   eq(40000, incomeDue(items, 2026, 10), "Insights' incomeDue");
@@ -320,7 +325,8 @@ test('months: next, previous and Today; the month heading is announced once, in 
   assert(!$('#calendar .cal-list'), 'no day selected in another month');
   const items = (await storage.getAll()).filter((s) => s.currency === 'TWD');
   await tick(1200);
-  eq(text($('#calendar .cal-summary-value')), T(cashDue(items, 2026, 11)), "December's cash due");
+  eq(text($('#calendar .cal-flow-amount[data-flow="out"]')), T(cashDue(items, 2026, 11)), "December's cash due (Out)");
+  eq(text($('#calendar .cal-flow-amount[data-flow="in"]')), T(incomeDue(items, 2026, 11)), "December's income (In)");
   eq($$('#calendar .cal-weeks [role="row"]').length, 5, 'December 2026 is five weeks from Monday');
   eq(day(1).getAttribute('aria-label'), `${longDate(2026, 11, 1)}, 1 payment, ${T(30000)}`, 'Rent on its stored date');
   eq(day(31).getAttribute('aria-label'), `${longDate(2026, 11, 31)}, 1 payment, ${T(250)}`, 'the 31st plan on the 31st again');
@@ -396,7 +402,7 @@ test('swipe: left for the next month, right for the previous; a short drag stays
 test('Reduce motion and effects: the months change at once, with no animations and no animation frames', async () => {
   const mine = () => document.getAnimations().filter((a) => cal().contains(a.effect?.target));
   if (!reduced()) {
-    // With motion: a swipe slides, and the month's figure rolls (only that figure).
+    // With motion: a swipe slides, and the month's In, Out and Left over roll (only those).
     const el = $('#calendar .cal-weeks');
     const r = el.getBoundingClientRect();
     const ev = (type, px) => el.dispatchEvent(new PointerEvent(type, { pointerId: 9, isPrimary: true, pointerType: 'touch', clientX: px, clientY: r.top + 20, bubbles: true }));
@@ -407,7 +413,7 @@ test('Reduce motion and effects: the months change at once, with no animations a
     await tick(20);
     assert(mine().length > 0, 'with motion, the weeks slide');
     await tick(600);
-    assert($('#calendar .cal-summary-value .odo-roll') || mine().length, 'and the month\'s figure rolls');
+    assert($('#calendar .cal-flow .odo-roll') || mine().length, 'and the month\'s figures roll');
     eq($$('#calendar .cal-grid .odo').length, 0, 'the days never roll');
     await tick(1200);
     $('#calendar [data-cal-today]').click();
@@ -500,7 +506,8 @@ test('an empty month: the grid is still there, with a quiet "Nothing due in …"
     c.show(2026, 11);
     eq($$('.cal-day', host).length, 31, 'December\'s grid, every day');
     eq(text($('.cal-empty', host)), `Nothing due in ${monthName(2026, 11)}`, 'the quiet line');
-    eq(text($('.cal-summary-value', host)), T(0), 'and a zero, labelled');
+    eq($$('.cal-flow-amount', host).map(text), [T(0), T(0), T(0)], 'and zeros, labelled');
+    assert(!$('.cal-flow-arrow', host), 'with no arrow');
     eq($$('.cal-dot', host).length, 0, 'no dots');
     c.destroy();
   } finally {

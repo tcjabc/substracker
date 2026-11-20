@@ -83,13 +83,28 @@ const step = async (n) => {
   }
 };
 const chip = (code) => $(`#currency-chips [data-currency="${code}"]`);
+const monthTotal = () => $('#insights [data-roll="month-due"]');
+const share = () => text($('#insights .ins-pct'));
+/** The income paid in month M + k, as the Calendar's In shows it (Insights shows only its share). */
+async function monthIn(k) {
+  const back = $('.tab[aria-selected="true"]').dataset.tab;
+  $('.tab[data-tab="calendar"]').click();
+  await tick(30);
+  const d = new Date(Y, M + k, 1);
+  $('#calendar').calendar.show(d.getFullYear(), d.getMonth());
+  const v = text($('#calendar .cal-flow-amount[data-flow="in"]'));
+  $('#calendar').calendar.show(Y, M);
+  $(`.tab[data-tab="${back}"]`).click();
+  await tick(30);
+  return v;
+}
 
 /* ---------------------------------------------------------------- Insights */
 
-test('headline card shows the cash due this month, with the Avg line', async () => {
-  const card = $('#insights .stat-primary');
-  eq(text($('.stat-value', card)), T(1699), 'cash due');
-  eq($$('.stat-sub', card).map(text), ['Cash due this month', `Avg ${T(1629)}/mo`], 'subtitle and Avg');
+test('the month total is the cash due this month, and one line says its share of the income', async () => {
+  eq(text(monthTotal()), T(1699), 'cash due, in the chart');
+  eq(share(), '4% of income', 'the share of the income (1,699 of 43,000)');
+  assert(!$('#insights .stat-primary') && !text($('#insights')).includes('Avg'), 'no month card and no Avg line');
 });
 
 const yearCard = () => $('#insights .stat-year');
@@ -129,15 +144,15 @@ test('a year with more going out than coming in, and a year with no income', asy
   eq(text($('.stat-label', yearCard())), String(Y), 'back to this year in TWD');
 });
 
-test('the income bar, the donut and the category list all use the month cash total', async () => {
-  assert(text($('#insights .headline-text')).includes(T(1699)), 'headline uses the cash total');
+test('the share of income, the donut and the category list all use the month cash total', async () => {
+  eq(share(), `${Math.round((1699 / 43000) * 100)}% of income`, 'the share uses the cash total');
   $('#insights [data-catview="donut"]').click();
   eq(text($('#insights .donut-total')), T(1699), 'donut centre');
   const legend = $$('#insights .legend-row .legend-name').map(text);
   eq(legend, ['Utilities'], 'only categories with something due');
   $('#insights [data-catview="list"]').click();
   eq($$('#insights .cat-row .cat-amount').map((el) => el.firstChild.textContent.trim()), [T(1699)], 'category list total');
-  eq(text($$('#insights .stat')[2].querySelector('.stat-sub')), '1 monthly · 1 annual · 0 one-off', 'items due');
+  eq(text($('#insights .ins-list .legend-foot')), '1 monthly · 1 annual · 0 one-off', 'items due, under the list');
 });
 
 /* ------------------------------------------------- Insights Ring (3D) */
@@ -278,7 +293,7 @@ const period = (p) => $(`#money-summary [data-period="${p}"]`).click();
 // in Insights (no Avg line on the card since 1.21.0). This year: as the yearly card. Before, on the
 // monthly-equivalent basis with undated items, it showed 49,000 / 1,629 for the month and
 // 555,000 / 19,548 for the year.
-test('the Money card shows this month on the cash basis, as the Insights headline does; no Avg line', async () => {
+test('the Money card shows this month on the cash basis, as Insights does; no Avg line', async () => {
   period('monthly');
   eq(stripCells(), [
     ['Cash due', T(1699), ''],
@@ -287,7 +302,7 @@ test('the Money card shows this month on the cash basis, as the Insights headlin
   ], 'monthly card');
   const thisMonth = new Date(Y, M, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   eq(text($('#money-summary .mc-when')), thisMonth, 'this month');
-  eq(text($('#insights .headline-text')), `Outgoings ${T(1699)} of ${T(43000)} income (4%)`, 'same as the Insights headline');
+  eq([text(monthTotal()), share()], [T(1699), '4% of income'], 'the same as Insights: its month total, and its share of the same income');
   assert(!text($('#money-summary')).includes('Avg'), 'no Avg line');
   eq(text($('#money-summary > p.mc-note')), "TWD only. 3 items in other currencies aren't included.", 'currency note kept');
 });
@@ -337,11 +352,11 @@ test('the notice names the undated plans and their amount', async () => {
 });
 
 test('the month income is what is paid in it, not a monthly equivalent', async () => {
-  eq(text($('#insights .headline-text')), `Outgoings ${T(1699)} of ${T(43000)} income (4%)`, 'this month');
+  eq([text(monthTotal()), share(), await monthIn(0)], [T(1699), '4% of income', T(43000)], 'this month');
   await step(2);
-  eq(text($('#insights .headline-text')), `Outgoings ${T(499)} of ${T(52000)} income (1%)`, 'bonus month');
+  eq([text(monthTotal()), share(), await monthIn(2)], [T(499), '1% of income', T(52000)], 'bonus month');
   await step(-1);
-  eq(text($('#insights .headline-text')), `Outgoings ${T(499)} of ${T(40000)} income (1%)`, 'salary only');
+  eq([text(monthTotal()), share(), await monthIn(1)], [T(499), '1% of income', T(40000)], 'salary only');
   await step(-1);
 });
 
@@ -349,13 +364,13 @@ test('a month with no income shows no percentage and says why', async () => {
   chip('USD').click();
   const usd = (n) => money(n, 'USD');
   const monthName = (k) => new Date(Y, M + k, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  eq(text($('#insights .headline-text')), `Outgoings ${usd(10)} · no USD income paid in ${monthName(0)}, so no percentage`, 'none paid');
-  assert(!$('#insights .headline .bar'), 'no bar');
+  eq([text(monthTotal()), share()], [usd(10), `No USD income paid in ${monthName(0)}, so no percentage`], 'none paid');
+  assert(!/%/.test(share()), 'no percentage');
   await step(1);
-  eq(text($('#insights .headline-text')), `Outgoings ${usd(10)} of ${usd(200)} income (5%)`, 'next month');
+  eq([text(monthTotal()), share()], [usd(10), '5% of income'], 'next month: 10 of 200');
   await step(-1);
   chip('TWD').click();
-  assert(text($('#insights .headline-text')).includes(T(43000)), 'back to TWD');
+  eq([text(monthTotal()), share()], [T(1699), '4% of income'], 'back to TWD');
 });
 
 test('undated income has its own notice; income and plan amounts are never added', async () => {
@@ -419,7 +434,7 @@ test('picking the date clears the error and saves only the fields that changed',
 
 test('a plan that has its date leaves the notice, and its amount moves into the month', async () => {
   eq(text(notice()), `1 plan needs a renewal date, ${T(1200)} not shown`, 'one left');
-  eq(text($('#insights .stat-primary .stat-value')), T(1699 + 900), 'month now includes Gym');
+  eq(text(monthTotal()), T(1699 + 900), 'month now includes Gym');
 });
 
 test('a plan with a past stored date still saves as it is, and rolls forward for display', async () => {
@@ -433,7 +448,7 @@ test('a plan with a past stored date still saves as it is, and rolls forward for
   await tick(50);
   eq(written(before, await opStamps('test-cloud')), ['price', 'updatedAt'], 'date not rewritten');
   eq((await stored('test-cloud')).nextRenewal, day(Y - 2, M, 15), 'stored date unchanged');
-  eq(text($('#insights .stat-primary .stat-value')), T(499 + 900 + 1300), 'still due this month');
+  eq(text(monthTotal()), T(499 + 900 + 1300), 'still due this month');
   // The Money tab shows the rolled-forward date: this year's or next year's 15th of this month.
   const tag = text($('#subs-list [data-id="test-cloud"] .tag'));
   assert(/^Renews/.test(tag), `renewal tag shown (${tag})`);
@@ -495,7 +510,8 @@ test('tapping the income notice opens the undated income; saving it needs a paym
   await tick(50);
   eq(written(before, await opStamps('test-lodger')), ['nextRenewal', 'notes', 'updatedAt'], 'fields written');
   assert(!incomeNotice(), 'income notice gone');
-  assert(text($('#insights .headline-text')).includes(`of ${T(48000)} income`), 'Lodger now paid this month');
+  eq(await monthIn(0), T(48000), 'Lodger now paid this month');
+  eq(share(), `${Math.round((Number(monthTotal().dataset.value) / 48000) * 100)}% of income`, 'and the share is of that');
 });
 
 test('new income needs a payment date when monthly or annual, and its date when one-off', async () => {
@@ -592,7 +608,7 @@ const monthTitle = (k) => { const d = new Date(Y, M + k, 1); return `${d.toLocal
 test('Month | Year: Year shows the chart and the yearly card; Month is unchanged', async () => {
   $('.tab[data-tab="insights"]').click();
   mode('month');
-  const cardMonth = text($('#insights .stat-primary .stat-value'));
+  const cardMonth = text(monthTotal());
   mode('year');
   assert(chart(), 'chart drawn');
   assert(!$('#insights .month-nav'), 'no month arrows in Year');
@@ -600,10 +616,10 @@ test('Month | Year: Year shows the chart and the yearly card; Month is unchanged
   eq(text($('#insights .stat-year .stat-label')), String(Y), 'yearly card for this year');
   eq(chart().state().centre, 6, 'rolling, centred on the current month');
   eq(text($('#year-chart .yc-read-name')), `${monthTitle(0)} · now`, 'readout');
-  eq(text($('#year-chart .yc-read-total')), cardMonth, 'the chart agrees with the month headline');
+  eq(text($('#year-chart .yc-read-total')), cardMonth, 'the chart agrees with the month total');
   mode('month');
   assert($('#insights .month-nav') && !host(), 'Month view is back');
-  eq(text($('#insights .stat-primary .stat-value')), cardMonth, 'unchanged');
+  eq(text(monthTotal()), cardMonth, 'unchanged');
   mode('year');
 });
 
@@ -617,12 +633,15 @@ test('every bar has an aria-label and the listbox is one tab stop', async () => 
   eq($('#year-chart [aria-live]').getAttribute('aria-live'), 'polite', 'live readout');
 });
 
-test('range toggle: This year is 12 months, Rolling 13 with the year under each month', async () => {
+test('range toggle: This year is 12 months (the year only on months past the seam), Rolling 13 with the year under each month', async () => {
   $('[data-year-range="year"]').click();
   await settle();
   eq(options().length, 12, '12 months');
   eq(chart().state().centre, M, 'centred on the current month');
-  eq($$('#year-chart .yc-year').length, 0, 'no year labels');
+  // A month drawn on the far side of the loop's seam (its place in the loop isn't its place in the year).
+  const wrapped = (i) => ((((i - M + 6) % 12) + 12) % 12) - 6 !== i - M;
+  const years = $$('#year-chart .yc-year');
+  eq(years.map((e) => e.getAttribute('display') !== 'none'), years.map((_, i) => wrapped(i)), 'a year label only past the seam');
   eq(storage.getPref('yearRange'), 'year', 'remembered');
   $('[data-year-range="roll"]').click();
   await settle();
@@ -1781,16 +1800,17 @@ test('Rolling totals: Reduce motion and effects: the number just changes, 0 anim
 });
 
 /* ------------------------------------------------------------------ Rolling totals: Insights */
-// The month's total and Avg, the yearly card and the donut's centre roll by the same rules; the
-// year chart's readout and the per-slice amounts never do.
+// The month's total (the donut's or the Ring's centre, the List's head) and the yearly card roll by
+// the same rules; the year chart's readout and the per-slice amounts never do. Since 1.22.0 the
+// yearly card is below the fold, so it rolls once it's on screen.
 const insRolling = () => $$('#insights .odo').map((o) => o.parentElement.dataset.roll);
 const insTexts = () => $$('#insights [data-roll]').map((el) => [el.dataset.roll, text(el)]);
-const primary = () => $('#insights .stat-primary .stat-value');
+const primary = () => monthTotal();
 /** Only figures on screen roll. On this page the results list sits above the app, pushing it down;
  * `onTop(true)` hides the list so the app is at the top of the page, as it is for real. */
 const onTop = (on) => { $('.t-wrap').hidden = on; window.scrollTo({ top: 0 }); };
 
-test('Rolling totals (Insights): the month total, Avg and yearly card roll when the tab comes to the front, on a month step, and on resume; not on a redraw', async () => {
+test('Rolling totals (Insights): the month total and the yearly card roll when the tab comes to the front, on a month step, and on resume (when on screen); not on a redraw', async () => {
   setMotion(false);
   onTop(true);
   try { await insightsRolls(); } finally { onTop(false); }
@@ -1801,14 +1821,17 @@ async function insightsRolls() {
   mode('month');
   await rollsDone();
   const still = insTexts();
-  eq(still.map(([k]) => k).slice(0, 2), ['month-due', 'month-avg'], 'the month card\'s two figures are marked');
+  eq(still.map(([k]) => k)[0], 'month-due', 'the month total is marked');
+  assert(!still.some(([k]) => k === 'month-avg'), 'no Avg any more');
   assert(still.some(([k]) => k === 'year-Outgoings'), 'and the yearly card');
+  const yearOnScreen = () => { const r = $('#insights .stat-year').getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; };
   goTab('subs');
   await rollsDone();
   let started = roller().stats().started;
   goTab('insights');
   assert(roller().stats().started > started, 'coming to the tab rolls them');
-  for (const k of ['month-due', 'month-avg', 'year-Income', 'year-Outgoings', 'year-Left over']) assert(insRolling().includes(k), `${k} rolls`);
+  assert(insRolling().includes('month-due'), 'month-due rolls');
+  for (const k of ['year-Income', 'year-Outgoings', 'year-Left over']) eq(insRolling().includes(k), yearOnScreen(), `${k} rolls only if the yearly card is on screen`);
   eq(insTexts(), still, 'the text content is the final value while rolling');
   assert($$('#insights .odo-roll').every((r) => r.getAttribute('aria-hidden') === 'true'), 'digits hidden from screen readers');
   eq($$('#insights [data-roll][aria-live], #insights [data-roll] [aria-live]').length, 0, 'no live region on or in a rolling figure');
@@ -1829,9 +1852,16 @@ async function insightsRolls() {
   assert(text(primary()) !== before, 'found a month with another total');
   assert(insRolling().includes('month-due'), 'the total rolls on a month step');
   const d = $('#insights .donut-total').getBoundingClientRect();
-  eq(insRolling().includes('donut-total'), d.bottom > 0 && d.top < innerHeight, 'the donut centre rolls when it is on screen, else just changes');
+  assert(d.bottom > 0 && d.top < innerHeight, 'the donut centre (the month total) is on the first screen, so it rolled');
   eq(insTexts().find(([key]) => key === 'month-due')[1], text(primary()), 'its text is the new value');
   await rollsDone();
+  // Scrolled down to the yearly card, coming back to the app rolls it too.
+  $('#insights .stat-year').scrollIntoView({ block: 'center' });
+  started = roller().stats().started;
+  resumeApp();
+  for (const k of ['year-Income', 'year-Outgoings', 'year-Left over']) assert(insRolling().includes(k), `${k} rolls once on screen`);
+  await rollsDone();
+  window.scrollTo({ top: 0 });
   await step(-k);
   await rollsDone();
   eq(insTexts(), still, 'back where it started');
@@ -2458,7 +2488,7 @@ async function run() {
   $$('script', doc.body).forEach((s) => s.remove());
   $('#app-host').append(...doc.body.childNodes);
   await import('../js/app.js');
-  await until(() => $('#insights .stat-primary'), 'Insights rendered');
+  await until(() => $('#insights .ins-hero'), 'Insights rendered');
 
   const list = document.getElementById('results');
   let passed = 0;
