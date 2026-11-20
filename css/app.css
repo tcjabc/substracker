@@ -1344,6 +1344,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ai-row-name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
 .ai-row-n { color: var(--text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
 .ai-row-meta { font-size: var(--text-xs); color: var(--text-muted); }
+/* The imported note: one line, the rest behind an ellipsis (line breaks in it fold to spaces). */
+.ai-row-note { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ai-row-amount { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ai-row-tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .ai-row-problems { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-muted); }

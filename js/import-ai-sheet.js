@@ -22,6 +22,7 @@ const STATUS_TAG = {
   [PROBLEM.cycle]: () => `<span class="tag tag-warn">${esc(t('ai.tag.cycle'))}</span>`,
   [PROBLEM.date]: () => `<span class="tag tag-warn">${esc(t('ai.tag.date'))}</span>`,
   [PROBLEM.duplicate]: () => `<span class="tag">${esc(t('ai.tag.duplicate'))}</span>`,
+  [PROBLEM.note]: () => `<span class="tag tag-warn">${esc(t('ai.tag.note'))}</span>`,
 };
 
 /**
@@ -247,6 +248,7 @@ export function initImportAiSheet({ storage, ui }) {
         <span class="ai-row-body">
           <span class="ai-row-name"><span class="ai-row-n">${r.n}.</span> ${esc(name)}</span>
           ${meta ? `<span class="ai-row-meta">${meta}</span>` : ''}
+          ${f.notes ? `<span class="ai-row-note"><span class="sr-only">${esc(t('ai.row.notes.label'))} </span>${esc(f.notes)}</span>` : ''}
         </span>
         <span class="ai-row-amount">${esc(amount)}</span>
       </label>
@@ -280,6 +282,9 @@ export function initImportAiSheet({ storage, ui }) {
     if (count(PROBLEM.date)) parts.push(t('ai.summary.needDate', { count: count(PROBLEM.date) }));
     if (count(PROBLEM.cycle)) parts.push(t('ai.summary.cycle', { count: count(PROBLEM.cycle) }));
     if (count(PROBLEM.duplicate)) parts.push(t('ai.summary.duplicates', { count: count(PROBLEM.duplicate) }));
+    // Any row with a shortened note, whatever else its status says.
+    const shortened = rows.filter((r) => r.problems.some((p) => p.code === PROBLEM.note)).length;
+    if (shortened) parts.push(t('ai.summary.notes', { count: shortened }));
     if (count(PROBLEM.error)) parts.push(t('ai.summary.blocked', { count: count(PROBLEM.error) }));
     return t('ai.summary', { parts: parts.join(' · ') });
   }
