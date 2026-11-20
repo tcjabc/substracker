@@ -75,9 +75,13 @@ export function createTabPill(bar, { reduceMotion = () => false } = {}) {
   let last = 0;
 
   const restWidth = () => parseFloat(getComputedStyle(pill).getPropertyValue('--tab-pill-w')) || Infinity;
+  // From the boxes as laid out, to the fraction of a pixel: with four tabs their widths are rarely
+  // whole pixels (393px / 4), and offsetLeft / offsetWidth would round the pill off centre.
   const place = (tab) => {
-    const w = Math.min(restWidth(), tab.offsetWidth);
-    const left = tab.offsetLeft + (tab.offsetWidth - w) / 2;
+    const b = bar.getBoundingClientRect();
+    const r = tab.getBoundingClientRect();
+    const w = Math.min(restWidth(), r.width);
+    const left = r.left - b.left - bar.clientLeft + (r.width - w) / 2;
     return { left, right: left + w };
   };
   const draw = () => {

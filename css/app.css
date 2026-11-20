@@ -17,13 +17,24 @@
   --accent-hover: #4338ca;
   --accent-soft: #ebeafd;
   --accent-contrast: #ffffff;
+  /* On an accent fill (the Money card): secondary text, a control's fill and its edge, mixed from
+     the accent and its contrast colour, so they follow the theme. Muted text keeps 4.5:1. */
+  --on-accent-muted: color-mix(in srgb, var(--accent-contrast) 86%, var(--accent));
+  --on-accent-soft: color-mix(in srgb, var(--accent-contrast) 12%, var(--accent));
+  --on-accent-line: color-mix(in srgb, var(--accent-contrast) 40%, var(--accent));
   --danger: #d92d3a;
   --danger-soft: #fde8ea;
   --warn: #b45309;
   --warn-soft: #fef3e2;
   --positive: #1a7f4b;
   --positive-soft: #e3f4ea;
-  --positive-border: #bfe3cd;
+  /* Money in and money out as text: the add sheet's Expense | Income switch (and later the Calendar).
+     The green leans teal and the red warm, so they stay apart in red-green colour blindness; words
+     always carry the meaning. Each keeps 4.5:1 on its own tint below, in both themes. */
+  --positive-text: #137239;
+  --negative-text: #b91c1c;
+  --positive-tint: color-mix(in srgb, var(--positive-text) 15%, var(--surface));
+  --negative-tint: color-mix(in srgb, var(--negative-text) 15%, var(--surface));
 
   /* Group colours (Money group dots, Insights donut). A muted family at similar lightness:
      not the income green or the indigo accent. Order = auto-assign order, most distinct first. */
@@ -45,6 +56,12 @@
   --wallet-6: #1d2e65; --wallet-7: #f58028; --wallet-8: #7a38bf; --wallet-9: #70c7ed; --wallet-10: #09672e;
   --wallet-11: #9cd242; --wallet-12: #b30a7b; --wallet-13: #f5acc2; --wallet-14: #7f4d30; --wallet-15: #f6d236;
   --wallet-income: #ffffff; /* the Income card: neutral, never a group colour */
+  /* The income card's gauge: a dark neutral track in both themes, and the thin ring round a
+     segment whose colour is under 3:1 against it (tests/wallet-math.node.test.js checks every
+     automatic and picked colour, and the accent, against the track). */
+  --gauge-track: #23242c;
+  --gauge-ring: #ffffff;
+  --gauge-ring-width: 1.5px;
   /* Wallet depth: sheen peak, raised top lip, hairline edge, the short shadow onto the card behind,
      and the front/open card's drop shadow (spread −(blur − y), so nothing reaches above its top). */
   --wallet-sheen: 0.07;
@@ -100,6 +117,9 @@
   --weight-bold: 700;
   --leading: 1.45;
   --leading-tight: 1.2;
+  /* A big figure on its own line (the Money card's Cash due): room for the tallest UI font's ascent
+     and descent (the Chinese system fonts), so a rolling figure's digits are never cut. */
+  --leading-figure: 1.35;
   /* Letter-spacing for the small all-caps labels (group titles, the Wallet's stat labels). */
   --tracking-caps: 0.04em;
   /* A tick, used as a mask (so it takes any colour): the chosen item in a menu. */
@@ -134,13 +154,23 @@
   --wallet-lip-room: 24px; /* card height below that, under the next card (GEOM.lip) */
   --logo-md: 44px;
   --fab: 64px;
-  --fab-sm: 48px;
   --fab-gap: var(--space-3);
-  --fab-stack: calc(var(--fab) + var(--fab-gap) + var(--fab-sm)); /* total height of the FAB stack */
+  /* The room kept above the tab bar for the floating +: the one button (since 1.21.0; until then it
+     was still the old + / − pair's, about 60px more). The Wallet measures the button itself. */
+  --fab-stack: var(--fab);
   --dot: 12px;          /* group colour dot */
   --dot-hit: 24px;      /* its tap target */
   --swatch-size: 32px;  /* swatches in the colour popover */
   --donut-size: 13.5rem;
+  /* Insights: the chart fills the first screen (.ins-hero-fill) within these bounds. */
+  --chart-min: 13rem;    /* the least room the chart keeps on a short screen */
+  --donut-max: 20rem;    /* the flat donut at its largest */
+  --ring-max: 30rem;     /* the Ring's stage at its widest */
+  /* Month view's Ring and Donut card (.ins-pinned): about 40% of the visible screen on a tall phone
+     (39% at 852px), less on a short one, so the legend's first rows show under it on landing. */
+  --ins-chart-h: clamp(10rem, 60dvh - 11rem, 22rem);
+  --year-chart-max: 32rem;
+  --year-chart-ratio: 0.766; /* the year chart's width per unit of height (its 360 × 470 SVG) */
   --donut-stroke: 28px; /* SVG user units: ring thickness in the 200 × 200 viewBox */
   --donut-stroke-active: 34px;
   --tabbar-h: 60px;
@@ -157,7 +187,6 @@
   --tag-h: 22px;
   --seg-pad: 3px;
   --seg-btn-w: 40px;
-  --seg-btn-w-narrow: 30px; /* the header's segments when it's narrow (phones under 360px), so four views and Sort fit */
   --cal-cell-h: 3rem;   /* a calendar day: its number and a row of dots */
   --cal-dot: 6px;       /* a calendar day's dots, in the group colours */
   --icon-sm: 18px;
@@ -218,7 +247,8 @@
     --warn-soft: #3a2a12;
     --positive: #4cc38a;
     --positive-soft: #173627;
-    --positive-border: #245a3e;
+    --positive-text: #4ade80;
+    --negative-text: #f87171;
     --group-1: #d4a54a;
     --group-2: #7aa3d4;
     --group-3: #e0845f;
@@ -229,11 +259,11 @@
     --group-8: #b88f6e;
     --group-9: #5bb3b3;
     --group-10: #d0727a;
-    --group-other: #5f6270;
+    --group-other: #868a99; /* 4.9:1 on the dark card, so the Ring's "Other" reads (was #5f6270, 2.8:1) */
     --wallet-1: #017073; --wallet-2: #7fc7ab; --wallet-3: #b92524; --wallet-4: #2153b5; --wallet-5: #b296d3;
     --wallet-6: #2c407f; --wallet-7: #d66e1c; --wallet-8: #773db6; --wallet-9: #5eadcf; --wallet-10: #186632;
     --wallet-11: #86b734; --wallet-12: #ac1d77; --wallet-13: #d694a8; --wallet-14: #6e4127; --wallet-15: #d7b626;
-    --wallet-income: #2a2b33;
+    --wallet-income: #2a2b33; --gauge-track: #0b0c10; --gauge-ring: #ececf1;
     --wallet-sheen: 0.05;
     --wallet-lip: rgb(255 255 255 / 0.15);
     --wallet-hairline: inset 0 0 0 1px rgb(255 255 255 / 0.06);
@@ -272,7 +302,8 @@
   --warn-soft: #3a2a12;
   --positive: #4cc38a;
   --positive-soft: #173627;
-  --positive-border: #245a3e;
+  --positive-text: #4ade80;
+  --negative-text: #f87171;
   --group-1: #d4a54a;
   --group-2: #7aa3d4;
   --group-3: #e0845f;
@@ -283,11 +314,11 @@
   --group-8: #b88f6e;
   --group-9: #5bb3b3;
   --group-10: #d0727a;
-  --group-other: #5f6270;
+  --group-other: #868a99; /* as above */
   --wallet-1: #017073; --wallet-2: #7fc7ab; --wallet-3: #b92524; --wallet-4: #2153b5; --wallet-5: #b296d3;
   --wallet-6: #2c407f; --wallet-7: #d66e1c; --wallet-8: #773db6; --wallet-9: #5eadcf; --wallet-10: #186632;
   --wallet-11: #86b734; --wallet-12: #ac1d77; --wallet-13: #d694a8; --wallet-14: #6e4127; --wallet-15: #d7b626;
-  --wallet-income: #2a2b33;
+  --wallet-income: #2a2b33; --gauge-track: #0b0c10; --gauge-ring: #ececf1;
   --wallet-sheen: 0.05;
   --wallet-lip: rgb(255 255 255 / 0.15);
   --wallet-hairline: inset 0 0 0 1px rgb(255 255 255 / 0.06);
@@ -337,10 +368,13 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   min-height: 100dvh;
-  /* Clear the tab bar, the stack's offset above it, the FAB stack itself, plus breathing room,
-     so the last card can always scroll fully clear of the floating buttons. */
+  /* Clear the tab bar, the button's offset above it, the room for the floating + (--fab-stack), plus
+     breathing room, so the last card or day can always scroll fully clear of the button. */
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4) + var(--fab-stack) + var(--space-4));
 }
+/* Insights has no floating + (js/app.js FAB_TABS): its own room under the last card, clear of the
+   tab bar, that doesn't follow the button's (--fab-stack). */
+body.insights-view { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-6)); }
 h1, h2, h3, p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -385,7 +419,6 @@ button { cursor: pointer; }
   padding-top: var(--safe-top);
 }
 .header-inner {
-  container: header / inline-size; /* for the narrow header's segments (.header-actions) */
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   min-height: var(--header-h);
 }
@@ -441,10 +474,6 @@ button { cursor: pointer; }
 .seg-btn[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .seg-btn-text { width: auto; padding: 0 var(--space-3); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
 .seg-btn:disabled { opacity: var(--disabled-opacity); cursor: not-allowed; }
-/* A narrow header (phones under 360px, or 360px with a classic scrollbar): narrower segments and
-   gap, so the four views and Sort fit beside the page title without squeezing it onto two lines.
-   Measured on the header itself, so a scrollbar's width counts. */
-@container header (max-width: 327.98px) { .header-actions { --seg-btn-w: var(--seg-btn-w-narrow); gap: var(--space-1); } }
 
 .segmented-wide { display: flex; width: 100%; }
 .seg-option { flex: 1; position: relative; }
@@ -457,6 +486,9 @@ button { cursor: pointer; }
 }
 .seg-option input:checked + span { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .seg-option input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Expense | Income: the chosen type takes its soft tint and its text colour (the label says it too). */
+.seg-type input[value="expense"]:checked + span { background: var(--negative-tint); color: var(--negative-text); }
+.seg-type input[value="income"]:checked + span { background: var(--positive-tint); color: var(--positive-text); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
 .chips:empty { display: none; }
@@ -490,6 +522,16 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .field { display: flex; flex-direction: column; gap: var(--space-1); border: 0; padding: 0; margin: 0; min-width: 0; }
 .field-label { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); padding: 0; }
 .optional { font-weight: 400; color: var(--text-faint); }
+.required { font-weight: 400; color: var(--text-muted); }
+/* A row that folds a group of fields away (the add sheet's More details): its words and a chevron. */
+.disclosure {
+  appearance: none; display: flex; align-items: center; gap: var(--space-1); justify-self: start;
+  min-height: var(--tap); padding: 0; border: 0; background: transparent;
+  color: var(--accent); font: inherit; font-weight: var(--weight-medium); cursor: pointer;
+}
+.disclosure-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur) var(--ease); }
+.disclosure[aria-expanded="true"] .disclosure-chev { transform: rotate(180deg); }
+.more-details { display: grid; gap: var(--space-4); }
 .field-error { font-size: var(--text-xs); color: var(--danger); min-height: 0; }
 .field-error:empty { display: none; }
 .field-row { display: flex; gap: var(--space-3); }
@@ -531,22 +573,98 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .logo-xs.logo-emoji { font-size: calc(var(--logo-xs) * 0.6); }
 
 /* ==========================================================================
-   Money: summary strip, groups, grid + list
+   Money: the Money card, the income card, groups, grid + list
    ========================================================================== */
-.money-summary {
-  padding: var(--space-4); margin-bottom: var(--space-6);
-  background: var(--surface); border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+/* The Money card: the Insights card's look (the accent fill and its contrast ink, shared with
+   .stat-primary below), with the period, Cash due as the big figure, and Income and Left over.
+   A button the card's full size sits underneath (.mc-open): the text lets taps through to it, so a
+   tap anywhere opens Insights, while the toggle, the chip and the undated line sit above it as
+   controls of their own. Secondary text and the controls' fills use the --on-accent-* tokens,
+   which keep 4.5:1 on the accent in both themes. */
+.money-card {
+  position: relative; isolation: isolate;
+  padding: var(--space-4); margin-bottom: var(--space-3);
+  border: var(--border-width) solid; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
 }
-.summary-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.summary-when { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
-/* Phones: one row per figure, so long annual totals never wrap mid-number. */
-.summary-cells { display: grid; gap: var(--space-2); }
-.summary-cell { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: var(--space-3); min-width: 0; }
-.summary-cell .stat-sub { grid-column: 1 / -1; }
-.summary-cell:last-child { padding-top: var(--space-2); border-top: var(--border-width) solid var(--border); }
-.summary-value { font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); text-align: right; }
-.summary-cell:last-child .summary-value { font-size: var(--text-lg); }
+.money-card > :not(.mc-open) { position: relative; z-index: 1; pointer-events: none; }
+.money-card :is(.mc-period, .mc-chip, .mc-undated) { pointer-events: auto; }
+.money-card :focus-visible { outline-color: var(--accent-contrast); }
+.mc-open {
+  position: absolute; inset: 0; z-index: 0; width: 100%; margin: 0; padding: 0;
+  border: 0; border-radius: inherit; background: transparent; cursor: pointer;
+}
+.mc-open:focus-visible { outline: 3px solid var(--accent-contrast); outline-offset: -5px; }
+/* Where the toggle's words are long (another language), it goes onto its own line under the period
+   rather than squeeze it; likewise the chip under a long "Cash due". */
+.mc-head, .mc-due { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-width: 0; }
+.mc-when, .mc-label { min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--on-accent-muted); }
+.mc-due { min-height: var(--control-sm); margin-top: var(--space-2); }
+.mc-period { flex: none; background: var(--on-accent-soft); box-shadow: inset 0 0 0 var(--border-width) var(--on-accent-line); }
+.mc-period .seg-btn { color: var(--accent-contrast); }
+.mc-period .seg-btn[aria-pressed="true"] { background: var(--accent-contrast); color: var(--accent); box-shadow: none; }
+/* The due-soon chip: "3 due" with the calendar icon; it opens the Due soon sheet. */
+.mc-chip {
+  flex: none; display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: var(--control-sm); padding: 0 var(--space-3) 0 var(--space-2);
+  border: var(--border-width) solid var(--on-accent-line); border-radius: var(--radius-full);
+  background: var(--on-accent-soft); color: var(--accent-contrast);
+  font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.mc-chip .icon { width: var(--icon-sm); height: var(--icon-sm); }
+/* The big figure never wraps or gets cut: the narrowest phone fits an annual total in it. */
+.mc-value {
+  font-size: var(--text-2xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em; line-height: var(--leading-figure); white-space: nowrap;
+}
+.mc-cells {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3);
+  margin: var(--space-3) 0 0; padding-top: var(--space-3); border-top: var(--border-width) solid var(--on-accent-line);
+}
+.mc-cell { min-width: 0; }
+.mc-cell dt { font-size: var(--text-sm); color: var(--on-accent-muted); }
+.mc-cell dd { margin: 0; font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--leading-tight); white-space: nowrap; }
+/* Short (Left over under 0): the minus sign and the words say so; the warning colour has no 4.5:1 on the accent. */
+.money-card .mc-note { margin-top: var(--space-1); font-size: var(--text-xs); font-weight: var(--weight-regular); color: var(--on-accent-muted); white-space: normal; }
+.money-card > .mc-note { margin-top: var(--space-2); }
+/* "Excludes N undated items": a note you can tap to open the first such item. */
+.mc-undated {
+  display: block; min-height: var(--control-sm); padding: 0; margin: var(--space-1) 0 calc(-1 * var(--space-2));
+  border: 0; background: transparent; color: var(--accent-contrast); text-align: left; cursor: pointer;
+  font: inherit; font-size: var(--text-xs); font-weight: var(--weight-semibold);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+:lang(zh) .mc-note { word-break: keep-all; overflow-wrap: break-word; }
+
+/* The income card: the Wallet's neutral income card, compact, above the stack (pinned there; first
+   in Grid and List). Its title, a gauge (the front card's share of the income, in its group colour
+   on a dark neutral track; a colour under 3:1 against the track gets a thin ring) and the gauge's
+   words. A tap lists the income items. */
+.income-card {
+  margin-bottom: var(--space-6); overflow: hidden;
+  background: var(--wallet-income); color: var(--text); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--shadow-sm);
+}
+.ic-toggle {
+  appearance: none; display: grid; gap: var(--space-2); width: 100%; margin: 0;
+  padding: var(--space-3) var(--space-4); border: 0; border-radius: inherit;
+  background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.ic-toggle:focus-visible { outline-offset: -3px; }
+.ic-head { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.ic-title { font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+.ic-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--dur) var(--ease); }
+.income-card.is-open .ic-chev { transform: rotate(180deg); }
+.ic-track { display: block; height: var(--bar-h); border-radius: var(--radius-full); background: var(--gauge-track); overflow: hidden; }
+/* No CSS transition: the segment moves on js/app.js's spring, or jumps (Reduce motion and effects). */
+.ic-seg { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--gauge-fill, var(--accent)); transition-property: none; }
+.ic-seg-ring { box-shadow: inset 0 0 0 var(--gauge-ring-width) var(--gauge-ring); }
+.ic-label { font-size: var(--text-sm); color: var(--text-muted); line-height: var(--leading-tight); }
+.ic-list { list-style: none; margin: 0; padding: 0; border-top: var(--border-width) solid var(--border); }
+.ic-list li:last-child .sub-row { border-bottom: 0; }
+.ic-row .sub-text { min-width: 0; }
+.ic-row .sub-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-add { justify-content: center; color: var(--accent); font-weight: var(--weight-semibold); }
+
 /* Rolling totals (js/count-anim.js): the real text stays, transparent, so the box keeps its size and
    is what screen readers read; the digits roll over it (generated content, aria-hidden), each one a
    column one figure wide, with tabular figures. Only while a roll plays; then it's plain text again. */
@@ -560,69 +678,32 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .odo-c::before { content: attr(data-z); visibility: hidden; }
 .odo-s { position: absolute; top: 0; left: 0; right: 0; text-align: center; }
 .odo-s::before { content: attr(data-s); display: block; white-space: pre; }
-.summary-income .summary-value { color: var(--positive); }
-.summary-short .summary-value, .summary-short .stat-sub { color: var(--warn); opacity: 1; }
 .summary-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-3); }
-/* The strip's "Excludes N undated items" line: a note you can tap to open the first such item. */
+/* "Excludes N undated items" (Insights, Calendar): a note you can tap to open the first such item. */
 .summary-note-action {
   display: block; min-height: var(--control-sm); padding: 0; margin-bottom: calc(-1 * var(--space-2));
   border: 0; background: transparent; text-align: left; cursor: pointer;
   font: inherit; font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--warn);
   text-decoration: underline; text-underline-offset: 2px;
 }
-/* Due soon (js/due-soon.js): a slim card under the strip, one line that opens the list in a sheet,
-   and a close button that hides it until tomorrow. The same surface as the strip; no shadow of its
-   own beyond the strip's. Not drawn at all when nothing is due, so it leaves no gap. The strip
-   above sits closer while it's there. */
-.money-summary:has(+ .due-banner:not([hidden])) { margin-bottom: var(--space-2); }
-.due-banner {
-  display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-1);
-  margin-bottom: var(--space-6); padding: var(--space-1);
-  background: var(--surface); border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
-}
-.due-toggle {
-  flex: 1 1 0; min-width: 0; min-height: var(--tap);
-  display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-3);
-  border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text); text-align: left;
-  font-size: var(--text-sm); font-weight: var(--weight-semibold);
-}
-.due-toggle:hover { background: var(--surface-hover); }
-.due-icon { flex: none; width: var(--icon-sm); height: var(--icon-sm); color: var(--accent); }
-/* One line where it fits; on the narrowest phones the sentence wraps to a second line rather than
-   lose its end ("3 due in the ne…"), and only past two lines is it cut. The total never wraps. */
-.due-text {
-  flex: 1 1 auto; min-width: 0; padding-block: var(--space-1); line-height: var(--leading-tight);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
+/* Due soon (js/due-soon.js): the sheet the Money card's chip opens. At the top, what the banner
+   used to say: how many and the default currency's total, then, quiet, income coming in, "+1 in
+   USD" and "2 items need a date" (which opens the first of them); then the rows. */
+.due-summary { display: grid; gap: var(--space-1); margin-bottom: var(--space-2); }
+.due-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--space-3); font-weight: var(--weight-semibold); }
+.due-text { min-width: 0; line-height: var(--leading-tight); }
 .due-sum { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.due-chev { flex: none; width: var(--icon-sm); height: var(--icon-sm); color: var(--text-muted); }
-.due-close { flex: none; }
-/* The quiet second line: income coming in, "+1 in USD", and "2 items need a date", which opens the
-   first of them. */
-.due-notes {
-  flex: 1 0 100%; display: flex; align-items: center; min-width: 0; min-height: var(--control-sm);
-  margin: calc(-1 * var(--space-1)) 0 0; padding: 0 var(--space-3);
-  font-size: var(--text-xs); color: var(--text-muted);
-}
-.due-notes > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-notes { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; min-height: var(--control-sm); font-size: var(--text-xs); color: var(--text-muted); }
 .due-notes.has-both > span::after { content: " · "; white-space: pre; }
 .due-undated {
-  flex: 0 1 auto; min-width: 0; min-height: var(--control-sm); padding: 0;
+  min-width: 0; min-height: var(--control-sm); padding: 0;
   border: 0; background: transparent; text-align: left; cursor: pointer;
   font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .due-list { list-style: none; margin: 0; padding: 0; }
 .due-list li:last-child .sub-row { border-bottom: 0; }
 .due-row .sub-text { min-width: 0; }
 .due-today .sub-plan { color: var(--warn); font-weight: var(--weight-semibold); }
-@media (min-width: 640px) {
-  .summary-cells { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
-  .summary-cell { display: block; }
-  .summary-cell:last-child { padding-top: 0; border-top: 0; padding-left: var(--space-4); border-left: var(--border-width) solid var(--border); }
-  .summary-value, .summary-cell:last-child .summary-value { font-size: var(--text-xl); text-align: left; margin-top: var(--space-1); overflow-wrap: anywhere; }
-}
 
 .money-group { margin-bottom: var(--space-6); }
 .group-head { display: flex; align-items: center; gap: var(--space-1); }
@@ -636,7 +717,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .group-dot::before { content: ""; width: var(--dot); height: var(--dot); border-radius: var(--radius-full); background: var(--swatch); }
 .group-dot:hover, .group-dot[aria-expanded="true"] { background: var(--surface-2); }
 
-/* Popovers: the swatch picker and the Sort menu share one surface. */
+/* Popovers: the swatch picker and the View menu share one surface. */
 .pop {
   position: absolute; z-index: 15;
   padding: var(--space-3); display: grid; gap: var(--space-2);
@@ -646,9 +727,12 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 .pop-title { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-muted); }
 
-/* Sort menu: under the header's Sort button; the header is sticky, so it's fixed too. */
+/* View menu: under the header's View button; the header is sticky, so it's fixed too. Two groups
+   (View, then Sort groups), a hairline between them. */
 .menu-pop { position: fixed; z-index: 25; gap: 0; padding: var(--space-2); min-width: 12rem; transform-origin: top right; }
 .menu-pop .pop-title { padding: var(--space-1) var(--space-2) var(--space-2); }
+.menu-group { display: grid; }
+.menu-group + .menu-group { margin-top: var(--space-2); padding-top: var(--space-2); border-top: var(--border-width) solid var(--border); }
 .menu-item {
   display: flex; align-items: center; gap: var(--space-2);
   min-height: var(--tap); padding: 0 var(--space-3) 0 var(--space-2);
@@ -664,8 +748,11 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); }
 .menu-item:focus-visible { outline-offset: -2px; }
 .menu-hint { color: var(--text-muted); font-size: var(--text-sm); font-weight: var(--weight-regular); }
-/* A non-default order shows on the button itself, so the reordered groups are never a surprise. */
-.sort-btn:not([data-sort="az"]) { color: var(--accent); }
+/* The View button's icon is the view in use. A non-default order shows on the button itself (the
+   accent colour), so the reordered groups are never a surprise. */
+.view-btn > .icon { display: none; }
+.view-btn[data-view="wallet"] > [data-icon="wallet"], .view-btn[data-view="grid"] > [data-icon="grid"], .view-btn[data-view="list"] > [data-icon="list"] { display: block; }
+.view-btn:not([data-sort="az"]) { color: var(--accent); }
 .swatch-grid { display: grid; grid-template-columns: repeat(5, var(--swatch-size)); gap: var(--space-2); }
 .swatch {
   width: var(--swatch-size); height: var(--swatch-size); padding: 0;
@@ -733,9 +820,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .sub-row-price .tag { margin-top: var(--hairline-gap); }
 
 /* ==========================================================================
-   Money: Calendar view (js/calendar.js). The month on the strip's card surface; days with items
+   Calendar tab (js/calendar.js). The month on the strip's card surface; days with items
    have a tinted cell (so the dots are never the only cue), today's number sits in an accent pill
-   and the selected day is outlined. Day numbers are plain text; only the month's figure may roll.
+   and the selected day is outlined. Day numbers are plain text; only the month's In, Out and Left over may roll.
    ========================================================================== */
 .calendar { margin-bottom: var(--space-6); }
 .cal-head { display: flex; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }
@@ -744,13 +831,35 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   font-size: var(--text-md); font-weight: var(--weight-bold); line-height: var(--leading-tight); overflow-wrap: anywhere;
 }
 .cal-today { min-height: var(--control-sm); padding: 0 var(--space-3); font-size: var(--text-sm); }
-.cal-summary {
-  display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3);
-  margin-bottom: var(--space-3); padding-inline: var(--space-2);
+/* The month's In, Out and Left over: three columns, a label over each figure, spread across the
+   width (In at the start, Out in the middle, Left over at the end). Figures never wrap or clip:
+   js/calendar.js fitFlow steps them down (is-tight, is-tighter, is-tightest) when the three don't fit.
+   Only Left over is coloured, with its arrow; In and Out are the page's text colour. */
+.cal-flow { margin-bottom: var(--space-3); padding-inline: var(--space-2); }
+.cal-flow-cells { display: grid; grid-template-columns: repeat(3, auto); justify-content: space-between; column-gap: var(--space-3); }
+.cal-flow-cell { display: grid; min-width: 0; row-gap: 1px; }
+/* No CSS transition in it: a size step (inherited by the figures and arrows) applies at once (Reduce
+   motion and effects gives every property a 0.01ms one, which would also make fitFlow measure the
+   old size). */
+.cal-flow, .cal-flow * { transition-property: none; }
+.cal-flow-out { justify-items: center; text-align: center; }
+.cal-flow-left { justify-items: end; text-align: end; }
+.cal-flow-label { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-muted); white-space: nowrap; }
+.cal-flow-value {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: var(--text-md); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight); white-space: nowrap;
 }
-.cal-summary-label { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
-.cal-summary-value { flex: none; margin-left: auto; font-size: var(--text-md); font-weight: var(--weight-bold); white-space: nowrap; }
-.cal-summary-sub { flex: 1 0 100%; font-size: var(--text-xs); color: var(--text-muted); }
+.cal-flow-cells.is-tight .cal-flow-value { font-size: var(--text-base); }
+.cal-flow-cells.is-tighter { column-gap: var(--space-2); }
+.cal-flow-cells.is-tighter .cal-flow-value { font-size: var(--text-sm); }
+.cal-flow-cells.is-tightest { column-gap: var(--space-1); }
+.cal-flow-cells.is-tightest .cal-flow-value { font-size: var(--text-xs); }
+.cal-flow-arrow { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.cal-flow[data-dir="up"] .cal-flow-left .cal-flow-value { color: var(--positive-text); }
+.cal-flow[data-dir="down"] .cal-flow-left .cal-flow-value { color: var(--negative-text); }
+/* Amounts in other currencies, counted ("+1 in USD"), never in the figures above. */
+.cal-flow-note { margin: calc(-1 * var(--space-2)) 0 var(--space-3); padding-inline: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); text-align: end; }
 .cal-grid {
   padding: var(--space-2); overflow: hidden;
   background: var(--surface); border: var(--border-width) solid var(--border);
@@ -812,7 +921,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   touch-action: none; user-select: none; -webkit-user-select: none;
   /* Clip at the page gutter, not at the cards, so their shadows fade out instead of being cut. */
   margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter);
-  /* The pile above the front card uses the summary strip's bottom margin, with a little clearance. */
+  /* The pile above the front card uses the income card's bottom margin, with a little clearance. */
   margin-top: calc(var(--space-1) - var(--space-6));
 }
 .wallet.has-open { touch-action: pan-y; }
@@ -832,19 +941,29 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .w-card.w-divide.w-last:not(.is-open) { box-shadow: inset 0 1px 0 var(--wallet-lip), var(--wallet-hairline), var(--wallet-cast), var(--wallet-drop), 0 calc(-1 * var(--wallet-divider)) 0 0 var(--bg); }
 .w-band {
   appearance: none; border: 0; background: transparent; color: inherit; width: 100%; height: var(--wallet-band);
-  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name logos total" "meta sub sub";
+  display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name logos total" "foot foot foot";
   align-content: center; column-gap: var(--space-2); padding: 0 var(--space-4); text-align: left;
   border-radius: var(--radius-lg); cursor: pointer;
 }
 .w-band:focus-visible { outline: 3px solid var(--ink); outline-offset: -5px; }
 .w-name { grid-area: name; display: flex; align-items: center; gap: var(--space-1); min-width: 0; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
-.w-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long name next to a wide total ("US$26.98" at 320px) takes a second line, breaking inside a word
+   only when it must, before it's cut. Two lines and the meta row still fit the band's height. */
+.w-name > span {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere; white-space: normal;
+}
+/* Even two lines would cut the name: this card leaves out its logo chip (js/wallet.js fitNames). */
+.w-band.w-tight .w-logos { display: none; }
 .w-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: transform var(--dur) var(--ease); }
 .is-open .w-chev { transform: rotate(180deg); }
 .w-total { grid-area: total; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.w-meta, .w-sub { font-size: var(--text-sm); color: var(--ink-2); line-height: var(--leading-tight); white-space: nowrap; margin-top: 2px; }
-.w-meta { grid-area: meta; }
-.w-sub { grid-area: sub; text-align: right; overflow: hidden; text-overflow: ellipsis; }
+/* The second row (items, and what's due) is one line across the card, so its width never squeezes the
+   name's column above it. The due words give way (an ellipsis) before the item count does. */
+.w-foot { grid-area: foot; display: flex; justify-content: space-between; gap: var(--space-2); min-width: 0; margin-top: 2px; }
+.w-meta, .w-sub { font-size: var(--text-sm); color: var(--ink-2); line-height: var(--leading-tight); white-space: nowrap; }
+.w-meta { flex: none; }
+.w-sub { min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; }
 /* Up to three logos and "+N": the chip has an outline only, so it never changes the text contrast. */
 .w-logos {
   grid-area: logos; align-self: center; display: inline-flex; align-items: center; gap: var(--space-1);
@@ -923,43 +1042,88 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 /* ==========================================================================
    Insights
    ========================================================================== */
-.month-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.month-label { font-size: var(--text-md); font-weight: var(--weight-semibold); }
-.headline {
-  display: grid; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-4);
-  background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
+/* The chart first: the month arrows, the share-of-income line and the chart fill the first screen
+   between the header and the tab bar (.ins-hero-fill), the chart taking the room that's left
+   (.ins-fit, a size container the Ring, donut and year chart fit into). The legend, the yearly card
+   and the rest start under the fold. --header-now is the header's measured height (js/app.js). */
+.ins-hero { display: flex; flex-direction: column; margin-bottom: var(--space-4); }
+.ins-hero-fill {
+  min-height: calc(100vh - var(--header-now, calc(var(--header-h) + var(--safe-top))) - var(--tabbar-h) - var(--safe-bottom) - var(--border-width) - var(--space-4));
+  min-height: calc(100svh - var(--header-now, calc(var(--header-h) + var(--safe-top))) - var(--tabbar-h) - var(--safe-bottom) - var(--border-width) - var(--space-4));
 }
-.headline-text { font-size: var(--text-md); }
-.headline-text strong { font-variant-numeric: tabular-nums; }
-.headline-text .pct { color: var(--text-muted); }
-.stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); margin-bottom: var(--space-6); }
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.month-label { font-size: var(--text-md); font-weight: var(--weight-semibold); text-align: center; }
+/* One line under the month: its outgoings as a share of its income, or why there's no share. */
+.ins-pct { margin: 0 0 var(--space-3); text-align: center; font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ins-hero .chips { justify-content: center; margin-bottom: var(--space-3); }
+.ins-chart-head { margin-bottom: var(--space-2); }
+.ins-chart-head .section-title { font-size: var(--text-base); }
+.ins-chart { flex: 1 0 auto; display: flex; flex-direction: column; }
+.ins-hero:not(.ins-hero-fill) .ins-chart { flex: none; }
+/* Ring and Donut (Month): the card is --ins-chart-h tall and stays pinned under the header while the
+   legend under it scrolls (position: sticky, inside .ins-pinned, which ends with the legend: after
+   the list the card scrolls away with it). The page's scroll padding keeps a focused row clear of it.
+   On a screen too short to keep both in view (a phone on its side) it scrolls like the rest. */
+.ins-pinned { container-type: inline-size; }
+.ins-pinned > .ins-chart {
+  position: sticky; z-index: 5; top: var(--header-now, calc(var(--header-h) + var(--safe-top)));
+  /* No taller than the tilted ring needs at this width (about three quarters of it), so there's no
+     empty box round it. */
+  height: min(var(--ins-chart-h), 75cqw);
+}
+.ins-pinned > .ins-chart .ins-fit { flex: 1 1 0; min-height: 0; padding: var(--space-2); }
+.ins-pinned > .ins-legend { margin: var(--space-2) 0 0; }
+:root:has(body.insights-view .ins-pinned) {
+  /* The card's own height: the smaller of the cap and three quarters of the page's content width. */
+  scroll-padding-top: calc(var(--header-now, calc(var(--header-h) + var(--safe-top))) + min(var(--ins-chart-h), 0.75 * (min(100vw, var(--container)) - 2 * var(--gutter))) + var(--space-2));
+  scroll-padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+}
+@media (max-height: 30rem) {
+  .ins-pinned > .ins-chart { position: static; }
+  :root:has(body.insights-view .ins-pinned) { scroll-padding-top: var(--header-now, var(--header-h)); }
+}
+@supports not (height: 1dvh) {
+  :root { --ins-chart-h: clamp(10rem, 60vh - 11rem, 22rem); }
+}
+.ins-fit { flex: 1 0 var(--chart-min); container-type: size; display: grid; place-items: center; padding: var(--space-3); }
+.ins-fit .donut { width: min(100cqw, 100cqh, var(--donut-max)); }
+.ins-fit .donut-total { font-size: var(--text-xl); white-space: nowrap; }
+/* The pinned card's donut can be small (a short screen, or the note above it): its total, on one line,
+   takes its size from the donut's width so it fits the hole; the month is in the arrows above it. */
+.ins-pinned .ins-fit .donut { container-type: inline-size; }
+.ins-pinned .ins-fit .donut-total { font-size: clamp(var(--text-xs), 9cqw, var(--text-xl)); }
+.ins-pinned .ins-fit .donut-label { display: none; }
+/* Tall enough that the ring (framed by js/donut-3d.js to fit both ways) fills the width. */
+.ins-fit .ring-stage { width: min(100cqw, var(--ring-max)); height: min(100cqh, min(100cqw, var(--ring-max)) * 1.05); aspect-ratio: auto; }
+.ins-pinned .ins-fit .ring-stage { width: min(100cqw, var(--ring-max), 100cqh * 1.3); height: 100cqh; }
+.donut-empty.ins-chart { justify-content: center; }
+/* The month total: in the donut's or the Ring's centre, at the top of the List. */
+.ins-total { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); overflow-wrap: anywhere; }
+.ins-list-head { display: grid; justify-items: center; padding: var(--space-4); border-bottom: var(--border-width) solid var(--border); text-align: center; }
+.ins-list-head .ins-total { font-size: var(--text-xl); }
+/* The legend in its own panel under the chart, its last line the month's plan counts. */
+.ins-legend { margin-bottom: var(--space-4); }
+.ins-legend .legend { border-top: 0; }
+.legend-foot { padding: var(--space-3) var(--space-4); border-top: var(--border-width) solid var(--border); font-size: var(--text-xs); color: var(--text-muted); }
+.stats { display: grid; grid-template-columns: 1fr; gap: var(--space-3); margin-bottom: var(--space-6); }
 .stat {
   padding: var(--space-4); background: var(--surface);
   border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
   min-width: 0;
 }
-.stat-primary { grid-column: 1 / -1; background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
-.stat-label { font-size: var(--text-sm); font-weight: var(--weight-medium); opacity: 0.8; }
-.stat-value { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: var(--leading-tight); margin-top: var(--space-1); overflow-wrap: anywhere; }
-.stat-primary .stat-value { font-size: var(--text-2xl); }
-.stat-sub { font-size: var(--text-xs); opacity: 0.75; margin-top: var(--space-1); }
-/* Yearly card: Income / Outgoings / Left over rows. On a phone (two cards side by side) each row
-   is the label over its amount; from 640px the amount sits on the right of its label. */
+/* The accent card (the Money card's look). */
+.money-card { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.stat-label { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-muted); }
+.stat-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1); }
+/* Yearly card: Income / Outgoings / Left over rows, each amount on the right of its label. */
 .year-lines { display: grid; gap: var(--space-1); margin: var(--space-2) 0 0; }
-.year-line { display: grid; font-size: var(--text-sm); }
-@media (min-width: 640px) {
-  .year-line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-2); }
-}
-.year-line dt { opacity: 0.8; }
+.year-line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-2); font-size: var(--text-sm); }
+.year-line dt { color: var(--text-muted); }
 .year-line dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 .year-line-total { padding-top: var(--space-1); border-top: var(--border-width) solid var(--border); }
 .year-line-total dd { font-weight: var(--weight-bold); }
 /* Short: the minus sign and the note under it say so too, not only the colour. */
-.year-short dd, .stat-sub.year-short-note { color: var(--warn); opacity: 1; }
-@media (min-width: 640px) {
-  .stats { grid-template-columns: 2fr 1.4fr 1fr; }
-  .stat-primary { grid-column: auto; }
-}
+.year-short dd, .stat-sub.year-short-note { color: var(--warn); }
 
 .section-title { font-size: var(--text-md); font-weight: var(--weight-semibold); margin: 0 0 var(--space-3); }
 .section { margin-bottom: var(--space-6); }
@@ -1030,13 +1194,25 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ring-stage:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .ring-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .ring-stage.is-dragging .ring-canvas { cursor: grabbing; }
+/* One line under the ring: the front slice's name, its amount and its share. */
 .ring-caption {
-  position: absolute; left: 0; right: 0; bottom: 4%; display: grid; justify-items: center; gap: 2px;
-  text-align: center; pointer-events: none; line-height: var(--leading-tight);
+  position: absolute; left: 0; right: 0; bottom: 2%; display: flex; justify-content: center; align-items: baseline;
+  column-gap: var(--space-2); padding-inline: var(--space-2); white-space: nowrap;
+  font-size: var(--text-sm); pointer-events: none; line-height: var(--leading-tight);
 }
-.ring-name { font-size: var(--text-sm); color: var(--text-muted); }
-.ring-amount { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.ring-share { font-size: var(--text-xs); color: var(--text-muted); }
+.ring-caption > span + span::before { content: "·"; margin-right: var(--space-2); color: var(--text-muted); font-weight: 400; }
+/* The month total in the ring's hole: js/donut-3d.js sets where (--ring-cx, --ring-cy) and how wide
+   it is; until the ring is drawn (or if it can't be) these defaults stand. */
+.ring-total {
+  position: absolute; left: var(--ring-cx, 50%); top: var(--ring-cy, 34%); transform: translate(-50%, -50%);
+  padding: 1px var(--space-2); border-radius: var(--radius-full); white-space: nowrap; pointer-events: none;
+  /* A soft backing of the card colour, so the figure reads over the slices where it meets them. */
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  font-size: clamp(var(--text-sm), calc(var(--ring-hole-w, 8rem) * 0.15), var(--text-lg));
+}
+.ring-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.ring-amount { flex: none; font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+.ring-share { flex: none; color: var(--text-muted); }
 .ring-note { font-size: var(--text-xs); color: var(--text-muted); padding: var(--space-3) var(--space-4) 0; text-align: center; }
 
 .donut-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-6) var(--space-4); text-align: center; }
@@ -1264,7 +1440,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   pointer-events: none; will-change: transform, width;
 }
 
-/* Vertical FAB stack: small income "+" on top, large expense "−" at the bottom (nearest the thumb). */
+/* The floating + (Money and Calendar): the add sheet, which switches between expense and income. */
 .fab-stack {
   position: fixed; z-index: 21;
   right: max(var(--gutter), calc((100vw - var(--container)) / 2 + var(--gutter)));
@@ -1272,7 +1448,7 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   display: flex; flex-direction: column; align-items: center; gap: var(--fab-gap);
   transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease), visibility 0s;
 }
-/* While the add/edit sheet is open the stack fades out and can't be tapped or focused. */
+/* While the add/edit sheet is open the button fades out and can't be tapped or focused. */
 .sheet-open .fab-stack {
   opacity: 0; transform: translateY(var(--space-4)); pointer-events: none; visibility: hidden;
   transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease), visibility 0s linear var(--dur);
@@ -1286,14 +1462,6 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .fab .icon { width: var(--icon-fab); height: var(--icon-fab); stroke-width: 2.2; }
 .fab:hover { background: var(--accent-hover); }
 .fab:active { transform: scale(0.94); }
-.fab-sm { width: var(--fab-sm); height: var(--fab-sm); }
-.fab-sm .icon { width: var(--icon); height: var(--icon); }
-/* Same green as the Income figure in the summary card. */
-.fab-income {
-  background: var(--positive-soft); color: var(--positive);
-  box-shadow: var(--shadow-lg), inset 0 0 0 var(--border-width) var(--positive-border);
-}
-.fab-income:hover { background: var(--positive-soft); filter: brightness(0.97); }
 
 /* ==========================================================================
    Dialogs
@@ -1328,6 +1496,11 @@ dialog::backdrop { background: var(--scrim); }
   border-bottom: var(--border-width) solid var(--border);
 }
 .sheet-head h2 { flex: 1; font-size: var(--text-md); font-weight: var(--weight-semibold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The edit sheet takes focus itself on opening (no ring on the container; its controls keep theirs). */
+.sheet:focus { outline: none; }
+/* The add sheet's "?" tile, before there's a name, logo or emoji, takes the type's tint. */
+#form-logo[data-placeholder="expense"] .logo { background: var(--negative-tint); color: var(--negative-text); }
+#form-logo[data-placeholder="income"] .logo { background: var(--positive-tint); color: var(--positive-text); }
 .sheet-body {
   flex: 1 1 auto; min-height: var(--sheet-body-min);
   padding: var(--space-4); display: grid; gap: var(--space-4);
@@ -1390,10 +1563,14 @@ dialog::backdrop { background: var(--scrim); }
 /* ==========================================================================
    Insights: Month | Year, and the year chart (js/year-chart.js)
    ========================================================================== */
-.insights-mode { display: flex; margin-bottom: var(--space-4); }
 .yc-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+/* The chart fits the room left in the first screen: as wide as that height allows at its own
+   proportions (.yc-fit is a size container). */
+.yc-fit { flex: 1 0 var(--chart-min); container-type: size; display: grid; justify-items: center; align-content: start; }
+.yc-fit #year-chart { width: min(100cqw, var(--year-chart-max), (100cqh - var(--space-4)) * var(--year-chart-ratio)); }
 .yc-stage {
-  position: relative; max-width: 32rem; margin: 0 auto var(--space-3);
+  position: relative; max-width: var(--year-chart-max); margin: 0 auto;
+  container-type: inline-size;
   padding: var(--space-1) var(--space-1) 2px;
   background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-lg);
 }
@@ -1403,9 +1580,13 @@ dialog::backdrop { background: var(--scrim); }
 .yc-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-md); }
 .yc-svg:focus-visible .yc-hit[aria-selected="true"] { stroke: var(--accent); stroke-width: 1.5; }
 .yc-hit { fill: transparent; cursor: pointer; }
-.yc-readout { position: absolute; top: var(--space-3); left: var(--space-4); right: var(--space-4); pointer-events: none; }
-.yc-read-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
-.yc-read-name { font-size: var(--text-lg); font-weight: var(--weight-bold); }
+/* The readout over the empty top of the chart (its first 90 of 470 units: 25cqw of the SVG's width),
+   in the flow: when its words need more lines (a narrow screen, a long language) it pushes the chart
+   down instead of running into the scale's labels. The total goes under the month when both don't fit. */
+.yc-readout { position: relative; min-height: 25cqw; padding: var(--space-2) var(--space-3); pointer-events: none; } /* its foot: room for the top label's rise above its line */
+.yc-readout + .yc-back + .yc-svg { margin-top: -25cqw; }
+.yc-read-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: var(--space-3); }
+.yc-read-name { font-size: clamp(var(--text-base), 5.4cqw, var(--text-lg)); font-weight: var(--weight-bold); }
 .yc-read-total { font-size: var(--text-md); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 .yc-read-delta { font-size: var(--text-xs); font-weight: var(--weight-medium); margin-top: var(--space-1); }
 .yc-above { color: var(--warn); fill: var(--warn); }
@@ -1471,12 +1652,13 @@ dialog::backdrop { background: var(--scrim); }
 .yc-row-name { fill: var(--text); font-size: 12.5px; font-weight: 500; }
 .yc-row-amount { fill: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .yc-row-sub { fill: var(--text-muted); font-size: 10px; }
-.yc-undated { width: 100%; max-width: 32rem; margin: 0 auto var(--space-3); }
-/* The Year view ends with extra room the height of the FAB stack (on top of the page's own bottom
-   padding), so the chart card's dock (legend, Jump to now) can always scroll well clear of the
-   floating + and − buttons, however little follows the chart. */
-.yc-year-stats { max-width: 32rem; margin: 0 auto calc(var(--space-6) + var(--fab-stack)); grid-template-columns: 1fr; }
+.yc-undated { width: 100%; max-width: var(--year-chart-max); margin: 0 auto var(--space-3); }
+/* The yearly card under the chart. Its room below is the page's own (body.insights-view), never the
+   floating +'s: Insights has none. */
+.yc-year-stats { max-width: var(--year-chart-max); margin: 0 auto var(--space-4); }
 
 /* "Reduce motion and effects" (Settings). js/app.js sets the class from the setting, which follows the
    system's prefers-reduced-motion until it is changed, so either way this one rule applies. */
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+/* A focus ring just appears: the rule above would still give it a 0.01ms transition. */
+.reduce-motion :focus-visible { transition: none !important; }

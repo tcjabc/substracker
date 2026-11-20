@@ -6,52 +6,51 @@
       "Peek Budget",
       "lang=en"
     ],
-    "header": [
-      "Money Wallet Cards List",
-      "aria-label=Sort groups: A to Z",
-      "title=Sort groups",
-      "aria-label=View",
-      "title=Wallet view",
-      "title=Card view",
-      "title=List view"
+    "header.money": [
+      "Money",
+      "aria-label=View: Wallet. Sort: A to Z",
+      "title=View"
     ],
     "tabbar": [
       "Money Insights Settings",
       "aria-label=Sections"
     ],
-    "fab": [
+    "tab.calendar": [
+      "Calendar"
+    ],
+    "fab.add": [
       "",
-      "aria-label=Add income",
-      "aria-label=Add expense"
+      "aria-label=Add expense or income"
     ],
-    "money.strip.monthly": [
-      "November 2026 Monthly Annual Income NT$40,000 Outgoings NT$32,389 Avg NT$32,014/mo Left over NT$7,611 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
+    "money.card.monthly": [
+      "November 2026 Monthly Annual Cash due 3 due NT$32,389 IncomeNT$40,000 Left overNT$7,611 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
       "aria-label=Summary",
-      "aria-label=Summary period"
+      "aria-label=Cash due this month NT$32,389. Open Insights",
+      "aria-label=Summary period",
+      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
-    "money.banner": [
-      "3 due in the next 7 days NT$889 +1 in USD1 item needs a date",
-      "aria-label=Due soon",
-      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD",
-      "aria-label=Hide until tomorrow",
-      "title=Hide until tomorrow"
+    "money.chip": [
+      "3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
-    "money.banner.sheet": [
-      "Due soon Today to 25 Nov 🎬 StreamingToday NT$390 P PhoneIn 2 days NT$499 T ToolIn 4 days US$10not in TWD totals Tap an item to edit it.",
+    "money.due.sheet": [
+      "Due soon 3 due in the next 7 daysNT$889 due +1 in USD1 item needs a date Today to 25 Nov 🎬 StreamingToday NT$390 P PhoneIn 2 days NT$499 T ToolIn 4 days US$10not in TWD totals Tap an item to edit it.",
       "aria-label=Close",
       "aria-label=Streaming, today, NT$390",
       "aria-label=Phone, in 2 days, NT$499",
       "aria-label=Tool, in 4 days, US$10"
     ],
+    "money.income": [
+      "Income Outgoings · 81% of income",
+      "aria-label=Income"
+    ],
+    "money.income.open": [
+      "Income Outgoings · 81% of income Bonus NT$12,000 Salary NT$40,000",
+      "aria-label=Income",
+      "aria-label=Edit Bonus",
+      "aria-label=Edit Salary"
+    ],
     "wallet.host": [
       "Groups. Arrow keys move between groups, Enter opens one, Escape closes it."
-    ],
-    "wallet.card.0": [
-      "IncomeNT$40,000 2 itemspaid this month SalaryNT$40,000BonusPayment 10 Jan 2027 Paid in NovemberNT$40,000 Paid in 2026NT$492,000 💼 Salary NT$40,000 /mo Monthly Payment 25 Nov B Bonus NT$12,000 /yr Yearly · not paid this month Payment 10 Jan 2027",
-      "aria-label=Income, 2 items, NT$40,000 paid this month",
-      "aria-label=Income items",
-      "aria-label=Edit Salary",
-      "aria-label=Edit Bonus"
     ],
     "wallet.card.1": [
       "EntertainmentNT$1,890 2 itemsdue this month ConcertNT$1,500StreamingNT$390 Due in NovemberNT$1,890 Due in 2026NT$6,180 C Concert NT$1,500 One-off 28 Nov 🎬 Streaming NT$390 /mo Monthly Renews today",
@@ -86,20 +85,18 @@
       "aria-label=Uncategorised items",
       "aria-label=Edit Stamps"
     ],
-    "wallet.announce.open": [
-      "Income opened. 2 items, NT$40,000 paid this month."
+    "wallet.announce.open.group": [
+      "Entertainment opened. 2 items, NT$1,890 due this month."
     ],
-    "wallet.announce.close": [
-      "Income closed."
+    "wallet.announce.close.group": [
+      "Entertainment closed."
     ],
-    "money.strip.annual": [
-      "2026 Monthly Annual Income NT$492,000 Outgoings NT$373,368 Left over NT$118,632 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
+    "money.card.annual": [
+      "2026 Monthly Annual Cash due 3 due NT$373,368 IncomeNT$492,000 Left overNT$118,632 Excludes 1 undated item TWD only. 1 item in other currencies isn't included.",
       "aria-label=Summary",
-      "aria-label=Summary period"
-    ],
-    "wallet.annual.band.0": [
-      "Income, 2 items, NT$492,000 paid this year",
-      "Income💼BNT$492,000 2 itemspaid this year"
+      "aria-label=Cash due this year NT$373,368. Open Insights",
+      "aria-label=Summary period",
+      "aria-label=3 due in the next 7 days · NT$889 due · +1 in USD"
     ],
     "wallet.annual.band.1": [
       "Entertainment, 2 items, NT$6,180 this year",
@@ -121,100 +118,94 @@
       "Uncategorised, 1 item, nothing due this year",
       "UncategorisedSNothing due 1 itemthis year"
     ],
-    "sort.button": [
-      "Sort groups: A to Z",
-      "Sort groups"
+    "money.income.annual": [
+      "Outgoings · 76% of income"
     ],
-    "sort.menu": [
-      "Sort groups A to Z Total high to low Items most first"
+    "view.button": [
+      "View: Wallet. Sort: A to Z",
+      "View"
     ],
-    "sort.total": [
-      "Sort groups: Total, high to low"
+    "view.menu": [
+      "View Wallet Cards List Sort groups A to Z Total high to low Items most first",
+      "aria-label=View and sort"
     ],
-    "sort.items": [
-      "Sort groups: Items, most first"
+    "view.sort.total": [
+      "View: Wallet. Sort: Total, high to low"
     ],
-    "money.grid": [
-      "Income 2 B Bonus NT$12,000/ yr Payment 10 Jan 2027 💼 Salary NT$40,000/ mo Payment 25 Nov Entertainment 2 C Concert NT$1,500 One-off28 Nov 🎬 Streaming NT$390/ mo Renews today Health 1 G Gym NT$900/ mo House 1 R Rent NT$30,000/ mo Renews 1 Dec Utilities 3 C Cloud NT$1,200/ yr Renews 15 Mar 2027 P Phone Unlimited NT$499/ mo Renews in 2 days T Tool US$10/ mo Renews in 4 days Uncategorised 1 S Stamps NT$60 One-off2 Feb 2027",
-      "aria-label=Edit Bonus",
-      "aria-label=Edit Salary",
-      "aria-label=Colour for Entertainment: Lilac",
+    "view.sort.items": [
+      "View: Wallet. Sort: Items, most first"
+    ],
+    "money.grid.groups": [
+      "Entertainment 2 C Concert NT$1,500 One-off28 Nov 🎬 Streaming NT$390/ mo Renews today Health 1 G Gym NT$900/ mo House 1 R Rent NT$30,000/ mo Renews 1 Dec Utilities 3 C Cloud NT$1,200/ yr Renews 15 Mar 2027 P Phone Unlimited NT$499/ mo Renews in 2 days T Tool US$10/ mo Renews in 4 days Uncategorised 1 S Stamps NT$60 One-off2 Feb 2027",
+      "aria-label=Colour for Entertainment: Teal",
       "aria-label=Edit Concert",
       "aria-label=Edit Streaming",
-      "aria-label=Colour for Health: Pink",
+      "aria-label=Colour for Health: Mint",
       "aria-label=Edit Gym",
-      "aria-label=Colour for House: Brown",
+      "aria-label=Colour for House: Red",
       "aria-label=Edit Rent",
-      "aria-label=Colour for Utilities: Forest",
+      "aria-label=Colour for Utilities: Blue",
       "aria-label=Edit Cloud",
       "aria-label=Edit Phone",
       "aria-label=Edit Tool",
-      "aria-label=Colour for Uncategorised: Lime",
+      "aria-label=Colour for Uncategorised: Lilac",
       "aria-label=Edit Stamps"
+    ],
+    "money.income.grid": [
+      "Outgoings · 81% of income"
     ],
     "money.swatches": [
       "Colour for Entertainment",
-      "aria-label=Teal",
-      "title=Teal",
-      "aria-label=Mint",
-      "title=Mint",
-      "aria-label=Red",
-      "title=Red",
-      "aria-label=Blue",
-      "title=Blue",
-      "aria-label=Lilac",
-      "title=Lilac",
-      "aria-label=Navy",
-      "title=Navy",
-      "aria-label=Orange",
-      "title=Orange",
-      "aria-label=Violet",
-      "title=Violet",
+      "aria-label=Gold",
+      "title=Gold",
+      "aria-label=Steel blue",
+      "title=Steel blue",
+      "aria-label=Terracotta",
+      "title=Terracotta",
       "aria-label=Sky",
       "title=Sky",
-      "aria-label=Forest, already used by another group",
-      "title=Forest, already used by another group",
-      "aria-label=Lime, already used by another group",
-      "title=Lime, already used by another group",
-      "aria-label=Magenta",
-      "title=Magenta",
-      "aria-label=Pink, already used by another group",
-      "title=Pink, already used by another group",
-      "aria-label=Brown, already used by another group",
-      "title=Brown, already used by another group",
-      "aria-label=Yellow",
-      "title=Yellow"
+      "aria-label=Rose",
+      "title=Rose",
+      "aria-label=Plum",
+      "title=Plum",
+      "aria-label=Olive",
+      "title=Olive",
+      "aria-label=Brown",
+      "title=Brown",
+      "aria-label=Teal",
+      "title=Teal",
+      "aria-label=Brick",
+      "title=Brick"
     ],
-    "money.list": [
-      "Income 2 B Bonus Payment 10 Jan 2027 NT$12,000 yearly 💼 Salary Payment 25 Nov NT$40,000 monthly Entertainment 2 C Concert 28 Nov NT$1,500 One-off 🎬 Streaming Renews today NT$390 monthly Health 1 G Gym NT$900 monthly House 1 R Rent Renews 1 Dec NT$30,000 monthly Utilities 3 C Cloud Renews 15 Mar 2027 NT$1,200 yearly P Phone Unlimited · Renews in 2 days NT$499 monthly T Tool Renews in 4 days US$10 monthly Uncategorised 1 S Stamps 2 Feb 2027 NT$60 One-off",
-      "aria-label=Edit Bonus",
-      "aria-label=Edit Salary",
-      "aria-label=Colour for Entertainment: Lilac",
+    "money.list.groups": [
+      "Entertainment 2 C Concert 28 Nov NT$1,500 One-off 🎬 Streaming Renews today NT$390 monthly Health 1 G Gym NT$900 monthly House 1 R Rent Renews 1 Dec NT$30,000 monthly Utilities 3 C Cloud Renews 15 Mar 2027 NT$1,200 yearly P Phone Unlimited · Renews in 2 days NT$499 monthly T Tool Renews in 4 days US$10 monthly Uncategorised 1 S Stamps 2 Feb 2027 NT$60 One-off",
+      "aria-label=Colour for Entertainment: Teal",
       "aria-label=Edit Concert",
       "aria-label=Edit Streaming",
-      "aria-label=Colour for Health: Pink",
+      "aria-label=Colour for Health: Mint",
       "aria-label=Edit Gym",
-      "aria-label=Colour for House: Brown",
+      "aria-label=Colour for House: Red",
       "aria-label=Edit Rent",
-      "aria-label=Colour for Utilities: Forest",
+      "aria-label=Colour for Utilities: Blue",
       "aria-label=Edit Cloud",
       "aria-label=Edit Phone",
       "aria-label=Edit Tool",
-      "aria-label=Colour for Uncategorised: Lime",
+      "aria-label=Colour for Uncategorised: Lilac",
       "aria-label=Edit Stamps"
     ],
-    "money.calendar.toggle": [
-      "Calendar",
-      "title=Calendar view"
+    "doc.calendar": [
+      "Calendar · Peek Budget",
+      "Calendar"
     ],
-    "money.calendar": [
-      "November 2026 Today Cash due in November 2026 NT$32,389 NT$40,000 income · +1 in USD MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
+    "calendar.month": [
+      "November 2026 Today In NT$40,000 Out NT$32,389 Left over NT$7,611 +1 in USD MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",
       "aria-label=Next month",
       "title=Next month",
       "title=Go to this month",
+      "aria-label=In NT$40,000. Out NT$32,389. Left over NT$7,611",
       "aria-label=Monday",
       "aria-label=Tuesday",
       "aria-label=Wednesday",
@@ -264,14 +255,15 @@
       "Thursday 19 November Nothing due on this day",
       "aria-label=Due on 19 November 2026"
     ],
-    "money.calendar.next": [
-      "December 2026 Today Cash due in December 2026 NT$30,889 NT$40,000 income · +1 in USD MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
+    "calendar.next": [
+      "December 2026 Today In NT$40,000 Out NT$30,889 Left over NT$9,111 +1 in USD MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",
       "aria-label=Next month",
       "title=Next month",
       "title=Go to this month",
+      "aria-label=In NT$40,000. Out NT$30,889. Left over NT$9,111",
       "aria-label=Monday",
       "aria-label=Tuesday",
       "aria-label=Wednesday",
@@ -312,13 +304,13 @@
       "aria-label=31 December 2026, nothing due"
     ],
     "form.new.expense": [
-      "? New expense Type Expense Income Name Website domain for logo Emoji optional Plan optional Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal Date Category optional Notes optional Delete Cancel Save",
+      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. Netflix",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=Shared with family, billed to card ending 1234…"
     ],
@@ -329,13 +321,13 @@
       ""
     ],
     "form.new.income": [
-      "? New income Type Expense Income Name Enter a name. Website domain for logo Emoji optional Plan optional Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment Date Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
@@ -346,13 +338,13 @@
       ""
     ],
     "form.new.income.once": [
-      "? New income Type Expense Income Name Enter a name. Website domain for logo Emoji optional Plan optional Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment Date Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
+      "placeholder=0",
       "placeholder=e.g. example.com",
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
-      "placeholder=0",
       "placeholder=e.g. Music",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
@@ -372,43 +364,48 @@
       "aria-label=Currency"
     ],
     "insights.month.ring": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view Showing the flat donut: Reduce motion and effects is on in Settings. House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 Left and right arrow keys highlight the previous or next category. House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view Showing the flat donut: Reduce motion and effects is on in Settings. House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 Left and right arrow keys highlight the previous or next category. House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
       "title=List view",
       "aria-label=Donut chart of outgoings by category for November 2026. Amounts are listed below.",
+      "aria-label=By category",
       "aria-label=Edit Rent",
       "aria-label=Edit Concert",
       "aria-label=Edit Phone",
       "aria-label=Edit Streaming"
     ],
     "insights.month.donut": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
       "title=List view",
       "aria-label=Donut chart of outgoings by category for November 2026. Amounts are listed below.",
+      "aria-label=By category",
       "aria-label=Edit Rent",
       "aria-label=Edit Concert",
       "aria-label=Edit Phone",
       "aria-label=Edit Streaming"
     ],
     "insights.month.list": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view House 1 NT$30,00093% Entertainment 2 NT$1,8906% Utilities 1 NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view NT$32,389November 2026 House 1 NT$30,00093% Entertainment 2 NT$1,8906% Utilities 1 NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
@@ -422,17 +419,18 @@
       "aria-label=Edit Streaming"
     ],
     "insights.month.previous": [
-      "Outgoings NT$30,889 of NT$40,000 income (77%)",
-      "aria-label=Outgoings are 77% of income",
-      "October 2026 NT$30,889 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 3 3 monthly · 0 annual · 0 one-off"
+      "77% of income",
+      "2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item"
     ],
     "insights.month.usd": [
-      "Outgoings US$10 · no USD income recorded",
-      "November 2026 US$10 Cash due this month Avg US$10/mo 2026 OutgoingsUS$120 No income dated in 2026 Outgoings 1 1 monthly · 0 annual · 0 one-off"
+      "No USD income recorded",
+      "2026 OutgoingsUS$120 No income dated in 2026"
     ],
     "insights.year": [
-      "Month Year Totals are per currency — amounts in other currencies aren't converted. This year Rolling ±6 months By type By category Show income November 2026 · nowNT$32,389NT$1,288 above the averageAll months10k20k30k40kMay 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000June 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000July 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000August 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000September 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000October 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000November 2026NT$32,389NT$1,288 above the averageOne-offsNT$1,500ConcertMonthly plansNT$30,889Phone, Rent, StreamingUtilitiesNT$499EntertainmentNT$1,890HouseNT$30,000December 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000January 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000February 2027NT$30,949About the averageOne-offsNT$60StampsMonthly plansNT$30,889Phone, Rent, StreamingUncategorisedNT$60EntertainmentNT$390UtilitiesNT$499HouseNT$30,000March 2027NT$32,089NT$988 above the averageAnnual renewalsNT$1,200CloudMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$1,699HouseNT$30,000April 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000May 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000Ma'26Ju'26Ju'26Aug'26Sep'26Oct'26Nov'26Dec'26Jan'27Feb'27Ma'27Ap'27Ma'27HouseUtilitiesEntertainmentUncategorisedAverage of these months NT$31,101Show keyJump to now Excludes 1 undated item 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632",
+      "Month Year",
       "aria-label=Insights view",
+      "TWDUSD This year Rolling ±6 months By type By category Show income November 2026 · nowNT$32,389NT$1,288 above the averageAll months10k20k30k40kMay 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000June 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000July 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000August 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000September 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000October 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000November 2026NT$32,389NT$1,288 above the averageOne-offsNT$1,500ConcertMonthly plansNT$30,889Phone, Rent, StreamingUtilitiesNT$499EntertainmentNT$1,890HouseNT$30,000December 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000January 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000February 2027NT$30,949About the averageOne-offsNT$60StampsMonthly plansNT$30,889Phone, Rent, StreamingUncategorisedNT$60EntertainmentNT$390UtilitiesNT$499HouseNT$30,000March 2027NT$32,089NT$988 above the averageAnnual renewalsNT$1,200CloudMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$1,699HouseNT$30,000April 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000May 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000Ma'26Ju'26Ju'26Aug'26Sep'26Oct'26Nov'26Dec'26Jan'27Feb'27Ma'27Ap'27Ma'27HouseUtilitiesEntertainmentUncategorisedAverage of these months NT$31,101Show keyJump to now Totals are per currency — amounts in other currencies aren't converted. Excludes 1 undated item 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632",
+      "aria-label=Currency",
       "aria-label=Months shown",
       "aria-label=Colour the bars by",
       "aria-label=Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.",
@@ -483,7 +481,7 @@
       "Calendar Week starts on Automatic (Monday)MondaySunday"
     ],
     "sync.sheet": [
-      "Sync Sync needs the 12 words on this device. Join again with your recovery words. Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them. Join with 12 words Start sync Your 12 recovery words Write these down. Anyone with them can read your data; if you lose every device and the words, the synced copy can't be recovered. I've saved these words Cancel Start sync Scan QR code Point the camera at the QR code under Show recovery words on the other device. The camera picture stays on this device. Stop scanning Recovery words On a device that already syncs, open Settings → Sync → Show recovery words. Back Join How to join Use the household's data This device's items are replaced by the household's. Items that are only on this device will be lost, so export a backup first if you might want them. Merge this device's data into the household This device's items are sent to every device in the household. Where an item was edited in both places, the later edit wins, so changes from this device can overwrite newer ones made on other devices. Export a backup first Cancel Continue Status Off Last sync Never Changes waiting to send 153 Show recovery words Hide recovery words Devices Use the 12 words to add a device: on it, open Settings → Sync → Join with 12 words. Turn off sync on this device Sync now",
+      "Sync Sync needs the 12 words on this device. Join again with your recovery words. Your data stays stored on this device. Sync is optional and end-to-end encrypted: your data is encrypted on your device before it syncs. There's no account. 12 recovery words are the only key, and they can't be recovered if you lose them. Join with 12 words Start sync Your 12 recovery words Write these down. Anyone with them can read your data; if you lose every device and the words, the synced copy can't be recovered. I've saved these words Cancel Start sync Scan QR code Point the camera at the QR code under Show recovery words on the other device. The camera picture stays on this device. Stop scanning Recovery words On a device that already syncs, open Settings → Sync → Show recovery words. Back Join How to join Use the household's data This device's items are replaced by the household's. Items that are only on this device will be lost, so export a backup first if you might want them. Merge this device's data into the household This device's items are sent to every device in the household. Where an item was edited in both places, the later edit wins, so changes from this device can overwrite newer ones made on other devices. Export a backup first Cancel Continue Status Off Last sync Never Changes waiting to send 148 Show recovery words Hide recovery words Devices Use the 12 words to add a device: on it, open Settings → Sync → Join with 12 words. Turn off sync on this device Sync now",
       "aria-label=Close",
       "aria-label=Camera",
       "placeholder=12 words, separated by spaces"

@@ -1,7 +1,8 @@
-// In-browser tests for the Money tab's due-soon banner (js/due-soon.js, js/app.js), run by
-// tests/due-soon.html with a fixed clock (18 November 2026) against a throwaway database. The app
-// runs with index.html's markup. Run the page at 320, 360 and 393px: the layout tests check the
-// width they're given. The tests run in order, as one session in the app.
+// In-browser tests for the Money card's due-soon chip and its sheet (js/due-soon.js, js/app.js),
+// run by tests/due-soon.html with a fixed clock (18 November 2026) against a throwaway database.
+// The app runs with index.html's markup. Run the page at 320, 360 and 393px: the layout tests
+// check the width they're given. The tests run in order, as one session in the app. Until 1.21.0
+// this was a banner under the strip, with a close button for the day; the chip has neither.
 
 import * as storage from '../js/storage.js';
 import { money } from '../js/util.js';
@@ -56,13 +57,21 @@ const SEED = [
   { ...base, id: 't-c', name: 'Cafe', price: 50, cycle: 'monthly', nextRenewal: '2026-12-11', category: 'Coffee' },
 ];
 
-const banner = () => $('#due-banner');
-const shown = () => !banner().hidden && banner().getClientRects().length > 0;
+const card = () => $('#money-summary');
+const chip = () => $('#due-chip');
+const shown = () => !!chip() && !chip().hidden && chip().getClientRects().length > 0;
 const dueDialog = () => $('#due-dialog');
 const open = (d) => d.open || d.hasAttribute('open');
 const subDialog = () => $('#sub-dialog');
 const rows = () => $$('#due-list .due-row');
-const view = async (v) => { $(`.seg-btn[data-view="${v}"]`).click(); await tick(60); };
+const openSheet = async () => { chip().click(); await until(() => open(dueDialog()), 'the due-soon sheet'); };
+/** Show a Money view through the header's View menu (js/app.js bindViewMenu). */
+const view = async (v) => {
+  $('#tab-subs').click();
+  $('#view-btn').click();
+  $(`#view-menu [data-view="${v}"]`).click();
+  await tick(60);
+};
 // Draw the Money tab again the way the app does when it comes back to the front.
 const comeBack = async () => { document.dispatchEvent(new Event('visibilitychange')); await tick(60); };
 const closeSheets = async () => {
@@ -72,36 +81,37 @@ const closeSheets = async () => {
 
 /* ---------------------------------------------------------------- tests */
 
-test('shown under the strip in Wallet, Grid and List: the count, the TWD total, +1 in USD, the need-a-date line', async () => {
+test('a "5 due" chip on the Money card in Wallet, Grid and List; the totals are in its sheet', async () => {
   for (const v of ['wallet', 'grid', 'list']) {
     await view(v);
-    assert(shown(), `${v}: the banner is shown`);
-    const strip = $('#money-summary').getBoundingClientRect();
-    const b = banner().getBoundingClientRect();
-    const list = $('#subs-list').getBoundingClientRect();
-    assert(b.top >= strip.bottom && b.bottom <= list.top, `${v}: between the strip (${strip.bottom}) and the groups (${list.top}): ${b.top}–${b.bottom}`);
-    eq(text($('#due-text')), '5 due in the next 7 days', `${v}: the count`);
-    eq(text($('#due-sum')), T(1239), `${v}: the TWD total of the listed items`);
-    eq(text($('#due-extra')), '+1 in USD', `${v}: other currencies, counted apart`);
-    eq(text($('#due-undated')), '1 item needs a date', `${v}: the undated line`);
-    eq($('#due-toggle').getAttribute('aria-label'), `5 due in the next 7 days · ${T(1239)} due · +1 in USD`, `${v}: the toggle's full label`);
+    assert(shown(), `${v}: the chip is shown`);
+    assert(card().contains(chip()), `${v}: on the Money card`);
+    assert(!$('#due-banner'), `${v}: no banner any more`);
+    eq(text(chip()), '5 due', `${v}: the count`);
+    assert($('svg', chip()), `${v}: with the calendar icon`);
+    eq(chip().getAttribute('aria-label'), `5 due in the next 7 days · ${T(1239)} due · +1 in USD`, `${v}: read out with the totals`);
   }
+  await openSheet();
+  eq(text($('#due-text')), '5 due in the next 7 days', 'the sheet: the count');
+  eq(text($('#due-sum')), `${T(1239)} due`, 'the TWD total of the listed items');
+  eq(text($('#due-extra')), '+1 in USD', 'other currencies, counted apart');
+  eq(text($('#due-undated')), '1 item needs a date', 'the undated line');
+  pressBack();
   await view('wallet');
 });
 
-test('ARIA: a labelled region; the toggle has aria-expanded and opens a dialog; no live region', async () => {
-  eq(banner().tagName, 'SECTION', 'a section');
-  eq(banner().getAttribute('aria-label'), 'Due soon', 'labelled, so it is a region');
-  eq($('#due-toggle').getAttribute('aria-expanded'), 'false', 'collapsed');
-  eq($('#due-toggle').getAttribute('aria-haspopup'), 'dialog', 'opens a dialog');
-  eq($('#due-close').getAttribute('aria-label'), 'Hide until tomorrow', 'the close button says what it does');
-  eq($$('[aria-live], [role="status"], [role="alert"]', banner()).length + $$('[aria-live], [role="status"], [role="alert"]', dueDialog()).length, 0, 'announces nothing by itself');
+test('ARIA: the chip is a button with aria-expanded that opens a dialog; no live region; no close button', async () => {
+  eq(chip().tagName, 'BUTTON', 'a button');
+  eq(chip().getAttribute('aria-expanded'), 'false', 'collapsed');
+  eq(chip().getAttribute('aria-haspopup'), 'dialog', 'opens a dialog');
+  eq(chip().getAttribute('aria-controls'), 'due-dialog', 'the sheet');
+  assert(!$('#due-close') && !$$('#money-summary [aria-label*="tomorrow"]').length, 'nothing hides it for the day');
+  eq($$('[aria-live], [role="status"], [role="alert"]', card()).length + $$('[aria-live], [role="status"], [role="alert"]', dueDialog()).length, 0, 'announces nothing by itself');
 });
 
 test('the sheet: by date, then name, with relative days; full row labels; Back closes it', async () => {
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'the due-soon sheet');
-  eq($('#due-toggle').getAttribute('aria-expanded'), 'true', 'expanded while open');
+  await openSheet();
+  eq(chip().getAttribute('aria-expanded'), 'true', 'expanded while open');
   eq(overlays.top(), 'due-dialog', 'on the overlay stack');
   eq(text($('#due-range')), `Today to ${new Date(2026, 10, 25).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`, 'the range');
   eq(rows().map((r) => text($('.sub-name', r))), ['Streaming', LONG, 'Phone', 'Old plan', 'Tool'], 'today first, by date');
@@ -113,14 +123,14 @@ test('the sheet: by date, then name, with relative days; full row labels; Back c
   assert(rows().every((r) => r.tagName === 'BUTTON'), 'rows are buttons');
   assert(rows()[0].classList.contains('due-today'), 'today stands out');
   eq(pressBack(), 'closed', 'Back');
-  await tick(30);
   assert(!open(dueDialog()), 'Back closed the sheet');
-  eq($('#due-toggle').getAttribute('aria-expanded'), 'false', 'collapsed again');
+  await until(() => chip().getAttribute('aria-expanded') === 'false', 'the close event', 1000).catch(() => {});
+  eq(chip().getAttribute('aria-expanded'), 'false', 'collapsed again');
+  eq($('#tab-subs').getAttribute('aria-selected'), 'true', 'the chip never opened Insights');
 });
 
 test('a row opens the item in the edit sheet; the need-a-date line opens the undated item', async () => {
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'the due-soon sheet');
+  await openSheet();
   rows()[2].click();
   await until(() => open(subDialog()), 'the edit sheet');
   assert(!open(dueDialog()), 'the list closed');
@@ -129,29 +139,29 @@ test('a row opens the item in the edit sheet; the need-a-date line opens the und
   pressBack();
   await tick(60);
   assert(!open(subDialog()), 'closed');
+  await openSheet();
   $('#due-undated').click();
   await until(() => open(subDialog()), 'the edit sheet for the undated item');
+  assert(!open(dueDialog()), 'the list closed for it');
   eq($('#sub-form').elements.name.value, 'Gym', 'the first undated item');
   pressBack();
   await tick(60);
 });
 
-test('Grid and List: the banner expands to the same sheet, and closing it gives its space back', async () => {
+test('Grid and List: the chip opens the same sheet; it takes no room of its own', async () => {
   for (const v of ['grid', 'list']) {
     await view(v);
-    $('#due-toggle').click();
-    await until(() => open(dueDialog()), `${v}: the sheet`);
+    await openSheet();
     eq(rows().length, 5, `${v}: the same rows`);
     pressBack();
     await tick(30);
     assert(!open(dueDialog()), `${v}: Back closed it`);
-    const before = $('#subs-list').getBoundingClientRect().top;
-    $('#due-close').click();
-    await tick(60);
-    assert(!shown(), `${v}: dismissed`);
-    const after = $('#subs-list').getBoundingClientRect().top;
-    assert(after < before, `${v}: the groups move up (${before} → ${after})`);
-    storage.setPref('dueSoonDismissed', '');
+    const before = [card().getBoundingClientRect().height, $('#subs-list').getBoundingClientRect().top];
+    storage.setPref('dueSoon', 'off');
+    await comeBack();
+    assert(!shown(), `${v}: turned off`);
+    eq([card().getBoundingClientRect().height, $('#subs-list').getBoundingClientRect().top], before, `${v}: the card and the groups don't move`);
+    storage.setPref('dueSoon', 'on');
     await comeBack();
     assert(shown(), `${v}: back`);
   }
@@ -161,8 +171,7 @@ test('Grid and List: the banner expands to the same sheet, and closing it gives 
 test('nothing is written: a rolled-forward date stays as stored, and no sync op is made', async () => {
   const before = await storage.pendingCount();
   await comeBack();
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'sheet');
+  await openSheet();
   pressBack();
   await tick(30);
   eq(await storage.pendingCount(), before, 'no ops');
@@ -170,7 +179,7 @@ test('nothing is written: a rolled-forward date stays as stored, and no sync op 
   eq(old.nextRenewal, '2025-06-21', 'the stored date is untouched');
 });
 
-/** The last Wallet card, scrolled to the end of the stack, sits clear of the + / - buttons. */
+/** The last Wallet card, scrolled to the end of the stack, sits clear of the + button. */
 async function lastCardClear(label) {
   await view('wallet');
   const bands = $$('#wallet .w-band');
@@ -184,7 +193,11 @@ async function lastCardClear(label) {
   const bar = $('.tabbar').getBoundingClientRect();
   const face = [bands.at(-1), ...$$('.w-pv-row', last)].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
   const bottom = Math.max(...face.map((r) => r.bottom));
-  assert(bottom <= fab.top + 1, `${label}: the last card's face ends at ${Math.round(bottom)}, above the buttons at ${Math.round(fab.top)}`);
+  assert(bottom <= fab.top + 1, `${label}: the last card's face ends at ${Math.round(bottom)}, above the button at ${Math.round(fab.top)}`);
+  // The stack's room at its end is measured from the one button (js/app.js walletViewport).
+  const { maxScroll } = await import('../js/wallet-math.js');
+  const st = $('#wallet').wallet.state();
+  eq(st.maxScroll, maxScroll(st.count, st.height, Math.max(0, bar.top - fab.top)), `${label}: the stack's end is measured from the one button`);
   assert(bottom <= bar.top + 1, `${label}: and above the tab bar (${Math.round(bar.top)})`);
   assert(document.documentElement.scrollWidth <= innerWidth + 1, `${label}: no sideways scroll`);
   const top = $('#wallet').getBoundingClientRect().top + scrollY;
@@ -195,40 +208,29 @@ async function lastCardClear(label) {
   return top;
 }
 
-test('Wallet: the last card clears the + / - buttons with the banner shown, turned off and dismissed', async () => {
-  const withBanner = await lastCardClear('banner shown');
+test('Wallet: the last card clears the + button with the chip shown and turned off; the stack stays put', async () => {
+  const withChip = await lastCardClear('chip shown');
   storage.setPref('dueSoon', 'off');
   await comeBack();
   assert(!shown(), 'turned off: hidden');
-  const without = await lastCardClear('banner off');
-  assert(without < withBanner, `the stack moves up without the banner (${without} < ${withBanner})`);
-  eq(getComputedStyle($('#money-summary')).marginBottom, '24px', 'without the banner the strip keeps its usual gap');
+  eq(await lastCardClear('chip off'), withChip, 'the stack starts in the same place: the chip has no row of its own');
   storage.setPref('dueSoon', 'on');
   await comeBack();
   assert(shown(), 'on again');
-  eq(await lastCardClear('banner shown again'), withBanner, 'back where it was');
-  $('#due-close').click();
-  await tick(80);
-  assert(!shown(), 'dismissed: hidden');
-  eq(await lastCardClear('banner dismissed'), without, 'the stack takes the space at once, no gap');
+  eq(await lastCardClear('chip shown again'), withChip, 'back where it was');
 });
 
-test('dismiss: hidden for the rest of today on this device; back the next day; back at once when the window changes', async () => {
-  eq(storage.getPref('dueSoonDismissed'), '2026-11-18', 'today\'s local date, on this device');
-  await comeBack();
-  assert(!shown(), 'still hidden later today');
+test('no dismiss: the chip stays all day and follows the window; nothing is saved for the day', async () => {
+  eq(storage.getPref('dueSoonDismissed'), null, 'no dismissal is ever saved');
   window.testClock.set(2026, 10, 18, 23);
   await comeBack();
-  assert(!shown(), 'still hidden at 23:00');
+  assert(shown(), 'still there at 23:00');
   window.testClock.set(2026, 10, 19, 0);
   await comeBack();
-  assert(shown(), 'back the next day, just after midnight');
-  eq(text($('#due-text')), '4 due in the next 7 days', 'Streaming has moved to next month; the window now ends on the 26th');
+  assert(shown(), 'and just after midnight');
+  eq(text(chip()), '4 due', 'Streaming has moved to next month; the window now ends on the 26th');
   window.testClock.reset();
   await comeBack();
-  $('#due-close').click();
-  await tick(60);
-  assert(!shown(), 'dismissed again');
   $('#tab-settings').click();
   await tick(40);
   const days = $('#set-due-days');
@@ -236,16 +238,17 @@ test('dismiss: hidden for the rest of today on this device; back the next day; b
   days.dispatchEvent(new Event('change', { bubbles: true }));
   $('#tab-subs').click();
   await tick(80);
-  assert(shown(), 'a new window shows it again at once');
-  eq(text($('#due-text')), '7 due in the next 14 days', 'and uses the new window');
+  eq(text(chip()), '7 due', 'a new window counts at once');
+  eq(chip().getAttribute('aria-label').split(' · ')[0], '7 due in the next 14 days', 'and says so');
 });
 
-test('settings: on, 7 days and income off by default; per device; never in a backup, the settings or the sync outbox', async () => {
+test('settings: on, 7 days and income off by default; relabelled for the chip; per device; never in a backup, the settings or the sync outbox', async () => {
   $('#tab-settings').click();
   await tick(40);
   const show = $('#set-due');
   const days = $('#set-due-days');
   const income = $('#set-due-income');
+  eq(text(show.closest('.setting-row').querySelector('.setting-label')), 'Show the due-soon chip A chip on the Money card with how many items come due soon. Tap it for the list.', 'the setting names the chip');
   eq([...days.options].map((o) => [o.value, o.textContent]), [['3', '3 days'], ['7', '7 days'], ['14', '14 days']], 'the windows');
   eq(days.value, '14', 'shows the setting');
   days.value = '7';
@@ -257,11 +260,11 @@ test('settings: on, 7 days and income off by default; per device; never in a bac
   eq(storage.getPref('dueSoonIncome'), 'on', 'kept on this device');
   $('#tab-subs').click();
   await tick(80);
-  eq(text($('#due-text')), '6 due in the next 7 days', 'Salary on day 7 is in');
-  eq(text($('#due-sum')), T(1239), 'the expenses total is unchanged: income is never added to it');
+  eq(text(chip()), '6 due', 'Salary on day 7 is in');
+  await openSheet();
+  eq(text($('#due-text')), '6 due in the next 7 days', 'the sheet says so');
+  eq(text($('#due-sum')), `${T(1239)} due`, 'the expenses total is unchanged: income is never added to it');
   eq(text($('#due-extra')), `${T(40000)} coming in · +1 in USD`, 'income has its own figure');
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'sheet');
   const salary = rows().find((r) => text($('.sub-name', r)) === 'Salary');
   const d25 = new Date(2026, 10, 25).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   eq(text($('.sub-plan', salary)), `${d25} · Income`, 'a week or more ahead: the date; marked as income');
@@ -274,6 +277,11 @@ test('settings: on, 7 days and income off by default; per device; never in a bac
   show.click();
   await tick(30);
   eq([storage.getPref('dueSoon'), storage.getPref('dueSoonDays'), storage.getPref('dueSoonIncome')], ['off', '7', 'off'], 'saved as preferences');
+  $('#tab-subs').click();
+  await tick(60);
+  assert(!shown(), 'off: no chip');
+  $('#tab-settings').click();
+  await tick(30);
   const backup = JSON.stringify(await storage.exportAll());
   assert(!/dueSoon|due-soon|dueSoonDays/.test(backup), 'not in a backup');
   const settings = await storage.getSettings();
@@ -287,7 +295,8 @@ test('settings: on, 7 days and income off by default; per device; never in a bac
   assert(shown(), 'on again');
 });
 
-test('empty: with nothing due in the window, no banner and no gap', async () => {
+test('empty: with nothing due in the window, no chip and the card keeps its size', async () => {
+  const height = card().getBoundingClientRect().height;
   $('#tab-settings').click();
   await tick(30);
   const days = $('#set-due-days');
@@ -299,11 +308,9 @@ test('empty: with nothing due in the window, no banner and no gap', async () => 
     await tick(60);
     for (const v of ['wallet', 'grid', 'list']) {
       await view(v);
-      assert(!shown(), `${v}: no banner`);
-      const strip = $('#money-summary').getBoundingClientRect();
-      const list = $('#subs-list').getBoundingClientRect();
-      // As without a banner: the Wallet's pile uses the strip's 24px margin (4px left), Grid and List leave it.
-      eq(Math.round(list.top - strip.bottom), v === 'wallet' ? 4 : 24, `${v}: the usual gap under the strip, no empty strip`);
+      assert(!shown(), `${v}: no chip`);
+      assert(chip().hidden, `${v}: hidden, not just empty`);
+      eq(card().getBoundingClientRect().height, height, `${v}: the card is the same height`);
     }
   } finally {
     window.testClock.reset();
@@ -315,7 +322,7 @@ test('empty: with nothing due in the window, no banner and no gap', async () => 
   assert(shown(), 'back with things due');
 });
 
-test(`fits this ${innerWidth}px screen: long names end in an ellipsis; nothing runs out or scrolls sideways`, async () => {
+test(`fits this ${innerWidth}px screen: the chip beside Cash due, long names end in an ellipsis; nothing runs out or scrolls sideways`, async () => {
   const problems = [];
   const check = (root) => {
     for (const el of [root, ...root.querySelectorAll('*')]) {
@@ -326,16 +333,18 @@ test(`fits this ${innerWidth}px screen: long names end in an ellipsis; nothing r
       if (words && cs.textOverflow !== 'ellipsis' && el.scrollWidth > el.clientWidth + 1) problems.push(`${el.tagName}.${el.className} is ${el.scrollWidth}px for ${el.clientWidth}px`);
     }
   };
-  for (const v of ['wallet', 'grid', 'list']) { await view(v); check(banner()); }
-  const b = banner().getBoundingClientRect();
-  assert(b.right <= innerWidth + 0.5 && b.left >= 0, `the banner is on screen (${b.left}–${b.right})`);
+  for (const v of ['wallet', 'grid', 'list']) { await view(v); check(card()); }
+  const c = chip().getBoundingClientRect();
+  const r = card().getBoundingClientRect();
+  assert(c.right <= r.right && c.left >= r.left, `the chip is inside the card (${c.left}–${c.right} in ${r.left}–${r.right})`);
+  const label = $('.mc-label', card()).getBoundingClientRect();
+  assert(Math.abs((c.top + c.bottom) / 2 - (label.top + label.bottom) / 2) < 2 && c.left > label.right, 'on the Cash due line, after the label');
   assert(document.documentElement.scrollWidth <= innerWidth + 1, 'the page doesn\'t scroll sideways');
+  await openSheet();
+  check(dueDialog());
   const sum = $('#due-sum');
   assert(sum.scrollWidth <= sum.clientWidth + 1, 'the total is never cut short');
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'sheet');
-  check(dueDialog());
-  const name = $('.sub-name', rows().find((r) => r.dataset.id === 't-long'));
+  const name = $('.sub-name', rows().find((x) => x.dataset.id === 't-long'));
   eq(getComputedStyle(name).textOverflow, 'ellipsis', 'a long name truncates');
   assert(name.scrollWidth > name.clientWidth, 'and is cut at this width');
   pressBack();
@@ -343,27 +352,33 @@ test(`fits this ${innerWidth}px screen: long names end in an ellipsis; nothing r
   eq(problems, [], 'text that runs out of its box');
 });
 
-test('light and dark: the banner\'s text keeps 4.5:1 on its card', async () => {
+test('light and dark: the chip keeps 4.5:1 on the card, the sheet\'s totals on the sheet', async () => {
   for (const theme of ['light', 'dark']) {
     const s = $('#set-theme');
     s.value = theme;
     s.dispatchEvent(new Event('change', { bubbles: true }));
     await tick(30);
-    const bg = parseColour(getComputedStyle(banner()).backgroundColor);
+    // The chip's fill is opaque (a mix of the accent and its ink, --on-accent-soft), so it is the backdrop.
+    const back = parseColour(getComputedStyle(chip()).backgroundColor);
+    const fg = parseColour(getComputedStyle(chip()).color);
+    assert(back && fg && contrast(fg, back) >= 4.5, `${theme}: the chip ${back && fg ? contrast(fg, back).toFixed(2) : '?'}:1`);
+    await openSheet();
+    const bg = parseColour(getComputedStyle(dueDialog()).backgroundColor);
     for (const el of [$('#due-text'), $('#due-sum'), $('#due-extra')]) {
-      const fg = parseColour(getComputedStyle(el).color);
-      assert(contrast(fg, bg) >= 4.5, `${theme}: ${el.id} ${contrast(fg, bg).toFixed(2)}:1`);
+      const c = parseColour(getComputedStyle(el).color);
+      assert(contrast(c, bg) >= 4.5, `${theme}: ${el.id} ${contrast(c, bg).toFixed(2)}:1`);
     }
+    pressBack();
+    await tick(30);
   }
   const s = $('#set-theme');
   s.value = 'light';
   s.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-test('Reduce motion and effects: the sheet opens and closes, and the banner hides, with no animation frames', async () => {
+test('Reduce motion and effects: the sheet opens and closes, and the chip hides, with no animation frames', async () => {
   // With motion, the sheet slides in.
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'sheet');
+  await openSheet();
   const moving = document.getAnimations().filter((a) => dueDialog().contains(a.effect?.target) || a.effect?.target === dueDialog());
   assert(moving.some((a) => a.effect.getComputedTiming().duration > 50), 'with motion, the sheet animates');
   pressBack();
@@ -374,21 +389,20 @@ test('Reduce motion and effects: the sheet opens and closes, and the banner hide
   $('#tab-subs').click();
   await tick(60);
   const longest = () => Math.max(0, ...document.getAnimations()
-    .filter((a) => [banner(), dueDialog()].some((r) => r.contains(a.effect?.target) || a.effect?.target === r))
+    .filter((a) => [card(), dueDialog()].some((r) => r.contains(a.effect?.target) || a.effect?.target === r))
     .map((a) => a.effect.getComputedTiming().duration));
-  $('#due-toggle').click();
-  await until(() => open(dueDialog()), 'sheet');
+  await openSheet();
   assert(longest() <= 0.01, `opening: nothing animates (${longest()} ms)`);
   pressBack();
   assert(longest() <= 0.01, 'closing: nothing animates');
-  const before = banner().getAnimations({ subtree: true }).length;
-  $('#due-close').click();
-  eq(before + banner().getAnimations({ subtree: true }).length, 0, 'the banner has no animations of its own');
-  assert(!shown(), 'hidden at once, in the same frame');
+  storage.setPref('dueSoon', 'off');
+  await comeBack();
+  eq(card().getAnimations({ subtree: true }).length, 0, 'the card has no animations of its own');
+  assert(!shown(), 'hidden at once');
+  storage.setPref('dueSoon', 'on');
   $('#tab-settings').click();
   await tick(20);
   $('#set-motion').click();
-  storage.setPref('dueSoonDismissed', '');
   $('#tab-subs').click();
   await tick(60);
 });

@@ -205,13 +205,30 @@ export function createRing(stage, { slices, selected = 0, onFront = () => {}, on
     cam.setViewOffset(w, hFit, 0, 0, w, h);
     const vHalf = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
     const hHalf = vHalf * cam.aspect;
-    const needW = RO + LIFT_OUT + 0.25;
-    const needH = (RO + LIFT_OUT) * Math.sin(ELEV) + LIFT_UP * Math.cos(ELEV) + 0.5;
-    const dist = Math.max(needW / hHalf, needH / vHalf) + RO * Math.cos(ELEV) * 0.5;
+    // Margins round the ring (its shadow, the raised front slice's lift): since 1.22.1 the card is
+    // only as tall as the ring needs, so they're kept small and the ring fills its card.
+    const needW = RO + LIFT_OUT + 0.15;
+    const needH = (RO + LIFT_OUT) * Math.sin(ELEV) + LIFT_UP * Math.cos(ELEV) + 0.22;
+    const dist = Math.max(needW / hHalf, needH / vHalf) + RO * Math.cos(ELEV) * 0.25;
     cam.position.set(0, Math.sin(ELEV) * dist, Math.cos(ELEV) * dist);
-    cam.lookAt(0, 0.05, 0);
+    cam.lookAt(0, -0.22, 0.12); // a little below and in front of the centre: the ring and its shadow sit in the middle
     cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
     pxPerRad = (RO / (hHalf * dist)) * w * 0.5 * 1.15;
+    // Where the hole is on screen, for the month total that sits in it (app.css .ring-total): the
+    // middle of the ground seen through it, from the far wall's foot to the raised front rim, and
+    // the hole's width across its middle. Written as custom properties on the stage.
+    const at = (x, y, z) => {
+      const v = new THREE.Vector3(x, y, z).project(cam);
+      return { x: ((v.x + 1) * w) / 2, y: ((1 - v.y) * h) / 2 };
+    };
+    const far = at(0, 0, -RI).y;
+    const near = at(0, DEPTH + LIFT_UP, RI + LIFT_OUT).y;
+    const px = (v) => `${v.toFixed(1)}px`;
+    stage.style.setProperty('--ring-cx', px(w / 2));
+    stage.style.setProperty('--ring-cy', px((far + near) / 2));
+    stage.style.setProperty('--ring-hole-w', px(at(RI, DEPTH, 0).x - at(-RI, DEPTH, 0).x));
+    stage.style.setProperty('--ring-hole-h', px(Math.max(0, near - far)));
     return true;
   }
 

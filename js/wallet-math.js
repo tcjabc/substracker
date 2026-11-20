@@ -1,7 +1,7 @@
 // The Money tab's Wallet view: the pure parts (no DOM, no storage), shared by js/wallet.js and the
-// Node tests. Group totals on the Money strip's cash basis, the 15-colour palette and its automatic
-// assignment, the automatic text colour with its contrast fitting, and the stack's geometry and
-// fling maths. See js/wallet.js for the view itself.
+// Node tests. Group totals on the Money card's cash basis, the 15-colour palette and its automatic
+// assignment, the automatic text colour with its contrast fitting, the income card's gauge, and the
+// stack's geometry and fling maths. See js/wallet.js for the view itself.
 
 import { dueInMonth, incomeInMonth, groupOf, byGroupName, groupLabel } from './insights-calc.js';
 import { t } from './i18n.js';
@@ -52,13 +52,18 @@ const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const gam = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
-/** '#rrggbb' (or 'rgb(r, g, b)') → [r, g, b] 0–255; null if it can't be read. */
+/**
+ * '#rrggbb', 'rgb(r, g, b)' or 'color(srgb r g b)' (how a browser gives a color-mix() back) →
+ * [r, g, b] 0–255; null if it can't be read.
+ */
 export function parseColour(s) {
   const t = String(s ?? '').trim();
   let m = /^#([0-9a-f]{6})$/i.exec(t);
   if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
   m = /^#([0-9a-f]{3})$/i.exec(t);
   if (m) return [...m[1]].map((c) => parseInt(c + c, 16));
+  m = /^color\(\s*srgb\s+([\d.e-]+)\s+([\d.e-]+)\s+([\d.e-]+)/i.exec(t);
+  if (m) return [m[1], m[2], m[3]].map((v) => Math.round(clamp(Number(v), 0, 1) * 255));
   m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(t);
   return m ? [m[1], m[2], m[3]].map((v) => Math.round(Number(v))) : null;
 }
@@ -188,18 +193,17 @@ export function periodCash(s, period, year, month) {
 }
 
 /**
- * The wallet's cards, in stack order: Income first (when there is any), then the expense groups as
- * the Money tab groups them (category or Uncategorised, A–Z with Uncategorised last). Each card:
- * { key, name, income, items (A–Z), total, others: [{ currency, count }], ranked }. `total` is the
- * cash in the default `currency` for the period, the same basis as the Money strip (so the
- * expense totals add up to its Outgoings and the Income card to its Income; undated items count
+ * The wallet's cards, in stack order: the expense groups as the Money tab groups them (category or
+ * Uncategorised, A–Z with Uncategorised last). Income isn't a card: it has its own card above the
+ * stack (app.js renderIncomeCard). Each card: { key, name, items (A–Z), total, others:
+ * [{ currency, count }], ranked }. `total` is the cash in the default `currency` for the period,
+ * the same basis as the Money card (so the totals add up to its Cash due; undated items count
  * nowhere). `others` counts the items in other currencies that move cash in the period ("+1 in
  * USD"); they're never converted or added. `ranked` is the items by period cash (default currency
  * first), then price, then name: the front preview and the logo chip use it.
  */
 export function walletGroups(items, { currency, period, year, month }) {
   const groups = [];
-  const income = items.filter(isIncome);
   const cats = new Map();
   for (const s of items) {
     if (isIncome(s)) continue;
@@ -207,7 +211,7 @@ export function walletGroups(items, { currency, period, year, month }) {
     if (!cats.has(k)) cats.set(k, []);
     cats.get(k).push(s);
   }
-  const card = (key, name, list, isInc) => {
+  const card = (key, name, list) => {
     const sorted = list.slice().sort(byName);
     let total = 0;
     const others = new Map();
@@ -221,14 +225,13 @@ export function walletGroups(items, { currency, period, year, month }) {
     const ranked = sorted.slice().sort((a, b) =>
       (b.currency === currency) - (a.currency === currency) || cash.get(b) - cash.get(a) || (b.price || 0) - (a.price || 0) || byName(a, b));
     return {
-      // `name` is the group's key (its category, or Uncategorised / Income); `label` is what shows.
-      key, name, label: isInc ? t('group.income') : groupLabel(name), income: isInc, items: sorted, total, ranked,
+      // `name` is the group's key (its category, or Uncategorised); `label` is what shows.
+      key, name, label: groupLabel(name), items: sorted, total, ranked,
       cash: (s) => cash.get(s) ?? 0,
       others: [...others.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([cur, count]) => ({ currency: cur, count })),
     };
   };
-  if (income.length) groups.push(card('income', 'Income', income, true));
-  [...cats.keys()].sort(byGroupName).forEach((k) => groups.push(card(`g:${k}`, k, cats.get(k), false)));
+  [...cats.keys()].sort(byGroupName).forEach((k) => groups.push(card(`g:${k}`, k, cats.get(k))));
   return groups;
 }
 
@@ -239,28 +242,64 @@ export const GROUP_SORTS = Object.freeze(['az', 'total', 'items']);
 export const groupSortFrom = (pref) => (pref === 'total' || pref === 'items' ? pref : 'az');
 
 /**
- * `groups` (walletGroups' cards, or anything with { name, income, items, total }) in the order
- * `sort` asks for; Income stays first whatever the order. Only the groups move: their items and
- * their colours stay as they are (colours follow the group, see app.js ensureGroupColors).
+ * `groups` (walletGroups' cards, or anything with { name, items, total }) in the order `sort` asks
+ * for. Only the groups move: their items and their colours stay as they are (colours follow the
+ * group, see app.js ensureGroupColors). Income isn't a group here: it has its own card.
  *   'az'     A–Z with Uncategorised last: walletGroups' own order, unchanged.
- *   'total'  the period's cash in `currency` (the strip's basis), high to low. A group whose items
- *            are all in other currencies has no total to compare, so those come after the rest,
- *            most items first. A group with nothing due this period counts as 0.
+ *   'total'  the period's cash in `currency` (the Money card's basis), high to low. A group whose
+ *            items are all in other currencies has no total to compare, so those come after the
+ *            rest, most items first. A group with nothing due this period counts as 0.
  *   'items'  number of items, high to low.
  * Ties break A–Z (Uncategorised last). Returns a new array; `groups` isn't changed.
  */
 export function sortGroups(groups, sort, currency) {
   const mode = groupSortFrom(sort);
-  const income = groups.filter((g) => g.income);
-  const rest = groups.filter((g) => !g.income);
-  if (mode === 'az') return [...income, ...rest.slice().sort((a, b) => byGroupName(a.name, b.name))];
+  if (mode === 'az') return groups.slice().sort((a, b) => byGroupName(a.name, b.name));
   const count = (g) => g.items?.length ?? 0;
   const foreignOnly = (g) => count(g) > 0 && g.items.every((s) => s.currency !== currency);
   const cmp = mode === 'items'
     ? (a, b) => count(b) - count(a)
     : (a, b) => foreignOnly(a) - foreignOnly(b) || (foreignOnly(a) ? count(b) - count(a) : (b.total || 0) - (a.total || 0));
-  return [...income, ...rest.slice().sort((a, b) => cmp(a, b) || byGroupName(a.name, b.name))];
+  return groups.slice().sort((a, b) => cmp(a, b) || byGroupName(a.name, b.name));
 }
+
+/* Income gauge --------------------------------------------------------------------------------- */
+/** A gauge segment needs this contrast with its track (WCAG's 3:1 for graphics); below it, a thin ring. */
+export const GAUGE_CONTRAST = 3;
+/** Whether a segment colour `fill` ([r, g, b]) needs the ring to stand out from the `track`. */
+export const gaugeNeedsRing = (fill, track) => contrast(fill, track) < GAUGE_CONTRAST;
+
+/**
+ * The income card's gauge: how much of the period's income `part` takes. Both are in the default
+ * currency on the Money card's cash basis: `part` is the front Wallet card's total (or, in Grid and
+ * List, all the outgoings), `income` the card's Income. `groups`: whether there are any expense
+ * groups; `foreign`: the group has no amount in the default currency, only in others. Returns
+ * { kind, ratio, pct, tiny }:
+ *   'noIncome'  no income this period (none at all, or none paid in it): no segment
+ *   'empty'     no expense groups: an empty bar
+ *   'foreign'   the group's cash is all in other currencies, which are never compared: no segment
+ *   'share'     ratio, the segment's width (part ÷ income, at most 1, so more than the income is the
+ *               full bar); pct, the true percentage rounded (over 100 when it's more); tiny when
+ *               it's more than 0 but under 1% (the label says "<1%")
+ */
+export function incomeGauge({ part = 0, income = 0, groups = true, foreign = false } = {}) {
+  const none = { ratio: 0, pct: 0, tiny: false };
+  if (!(income > 0)) return { kind: 'noIncome', ...none };
+  if (!groups) return { kind: 'empty', ...none };
+  if (foreign) return { kind: 'foreign', ...none };
+  const share = Math.max(0, part || 0) / income;
+  return { kind: 'share', ratio: clamp(share, 0, 1), pct: Math.round(share * 100), tiny: share > 0 && share < 0.01 };
+}
+
+/** The gauge for the front Wallet card `g` (one of walletGroups' cards, or null when there's none). */
+export const frontGauge = (g, income) => incomeGauge({
+  part: g?.total ?? 0, income, groups: !!g, foreign: !!g && !(g.total > 0) && (g.others?.length ?? 0) > 0,
+});
+
+/** Grid and List (no front card): all the groups' outgoings together. */
+export const totalGauge = (groups, income) => incomeGauge({
+  part: groups.reduce((t, g) => t + (g.total || 0), 0), income, groups: groups.length > 0,
+});
 
 /** "+1 in USD", "+2 in USD · +1 in JPY", or ''. */
 export const othersText = (others) => others.map((o) => t('wallet.others', { count: o.count, currency: o.currency })).join(' · ');
@@ -271,10 +310,12 @@ export const GEOM = Object.freeze({ band: 64, reveal: 88, peek: 30, pile: 30, li
 export const collapsedHeight = (g = GEOM) => g.band + g.reveal + g.lip;
 /**
  * Motion constants. The snap and open springs are critically damped (js/tab-pill.js springStep),
- * so they never overshoot: open/close reaches 95% in about 280 ms and 99% in about 390 ms.
+ * so they never overshoot: open/close reaches 95% in about 280 ms and 99% in about 390 ms. The
+ * income gauge's segment uses the same spring (gaugeOmega), settling once within gaugeRest of its
+ * width (a share of the bar).
  */
 export const MOTION = Object.freeze({
-  snapOmega: 15, openOmega: 17, tau: 0.33, dragPx: 7, rubber: 2, maxVelocity: 60,
+  snapOmega: 15, openOmega: 17, gaugeOmega: 15, gaugeRest: 0.001, tau: 0.33, dragPx: 7, rubber: 2, maxVelocity: 60,
   sampleMs: 90, idleMs: 60, coastHandoverPx: 2, restPx: 0.3, restSpeedPx: 6, openRestPx: 0.4, openRestSpeedPx: 8,
 });
 

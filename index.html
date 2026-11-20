@@ -32,29 +32,22 @@
   <header class="app-header">
     <div class="container header-inner">
       <h1 class="page-title" id="page-title" data-i18n="tab.money">Money</h1>
+      <!-- Money: one View button, for the view (Wallet, Grid, List) and Sort. Its icon is the view in
+           use; it turns the accent colour when the order isn't A to Z. js/app.js bindViewMenu. -->
       <div class="header-actions" id="subs-actions">
         <div class="segmented">
-          <button type="button" class="seg-btn sort-btn" id="sort-btn" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="sort-menu" aria-label="Sort groups: A to Z" title="Sort groups" data-i18n-attr="title:sort.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h5"/></svg>
+          <button type="button" class="seg-btn view-btn" id="view-btn" data-view="wallet" data-sort="az" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu" aria-label="View: Wallet. Sort: A to Z" title="View" data-i18n-attr="title:money.view.label">
+            <svg class="icon" data-icon="wallet" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
+            <svg class="icon" data-icon="grid" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
+            <svg class="icon" data-icon="list" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
           </button>
         </div>
-        <div class="segmented" role="group" aria-label="View" data-i18n-attr="aria-label:money.view.label">
-          <button type="button" class="seg-btn" data-view="wallet" aria-pressed="true" title="Wallet view" data-i18n-attr="title:money.view.wallet.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2.5"/><path d="M5 9V7.5A1.5 1.5 0 0 1 6.5 6h11A1.5 1.5 0 0 1 19 7.5V9M7 6V4.5A1.5 1.5 0 0 1 8.5 3h7A1.5 1.5 0 0 1 17 4.5V6"/></svg>
-            <span class="sr-only" data-i18n="money.view.wallet">Wallet</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="grid" aria-pressed="false" title="Card view" data-i18n-attr="title:money.view.grid.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg>
-            <span class="sr-only" data-i18n="money.view.grid">Cards</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="list" aria-pressed="false" title="List view" data-i18n-attr="title:money.view.list.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/></svg>
-            <span class="sr-only" data-i18n="money.view.list">List</span>
-          </button>
-          <button type="button" class="seg-btn" data-view="calendar" aria-pressed="false" title="Calendar view" data-i18n-attr="title:money.view.calendar.title">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
-            <span class="sr-only" data-i18n="money.view.calendar">Calendar</span>
-          </button>
+      </div>
+      <!-- Insights: Month | Year beside the title (js/app.js renderInsights keeps it in step). -->
+      <div class="header-actions" id="insights-actions" hidden>
+        <div class="segmented" role="group" aria-label="Insights view" data-i18n-attr="aria-label:insights.mode.label">
+          <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="true" data-i18n="insights.mode.month">Month</button>
+          <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="false" data-i18n="insights.mode.year">Year</button>
         </div>
       </div>
     </div>
@@ -63,19 +56,19 @@
   <main class="container" id="main">
     <!-- Money -->
     <section class="tab-panel" id="panel-subs" role="tabpanel" aria-labelledby="tab-subs">
-      <section class="money-summary" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
-      <!-- Due soon: what comes due in the next days (js/due-soon.js); hidden when nothing is. -->
-      <section class="due-banner" id="due-banner" aria-label="Due soon" data-i18n-attr="aria-label:dueSoon.label" hidden>
-        <button type="button" class="due-toggle" id="due-toggle" aria-expanded="false" aria-haspopup="dialog" aria-controls="due-dialog">
-          <svg class="icon due-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-          <span class="due-text" id="due-text"></span>
-          <span class="due-sum" id="due-sum"></span>
-          <svg class="icon due-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <!-- The Money card (js/app.js renderMoneySummary): Cash due, Income and Left over for the period,
+           the Monthly | Annual toggle and the due-soon chip; a tap elsewhere on it opens Insights. -->
+      <section class="money-card" id="money-summary" aria-label="Summary" data-i18n-attr="aria-label:money.summary.label"></section>
+      <!-- Income (js/app.js renderIncomeCard): pinned above the Wallet's stack, first in Grid and List.
+           Its gauge is the front card's share of the income; a tap lists the income items. -->
+      <section class="income-card" id="income-card" aria-label="Income" data-i18n-attr="aria-label:group.income" hidden>
+        <button type="button" class="ic-toggle" id="income-toggle" aria-expanded="false" aria-controls="income-list">
+          <span class="ic-head"><span class="ic-title" data-i18n="group.income">Income</span><svg class="ic-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+          <span class="ic-track" id="income-track" aria-hidden="true"><span class="ic-seg" id="income-seg"></span></span>
+          <span class="ic-label" id="income-label"></span>
         </button>
-        <button type="button" class="icon-btn due-close" id="due-close" aria-label="Hide until tomorrow" title="Hide until tomorrow" data-i18n-attr="aria-label:dueSoon.dismiss; title:dueSoon.dismiss">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-        <p class="due-notes" id="due-notes" hidden><span id="due-extra"></span><button type="button" class="due-undated" id="due-undated" hidden></button></p>
+        <ul class="ic-list" id="income-list" hidden></ul>
+        <p class="sr-only" id="income-live" aria-live="polite"></p>
       </section>
       <div id="subs-list" class="money-groups"></div>
       <div class="empty-state" id="subs-empty" hidden>
@@ -91,9 +84,13 @@
       </div>
     </section>
 
-    <!-- Insights -->
+    <!-- Calendar (js/calendar.js): the month, its cash due, the grid and the selected day's list.
+         js/app.js mounts it here the first time the tab is shown. -->
+    <section class="tab-panel" id="panel-calendar" role="tabpanel" aria-labelledby="tab-calendar" hidden></section>
+
+    <!-- Insights (js/app.js renderInsights): the chart first, filling the first screen, with the
+         month arrows and the currency chips above it; the legend and the yearly card below. -->
     <section class="tab-panel" id="panel-insights" role="tabpanel" aria-labelledby="tab-insights" hidden>
-      <div class="chips" id="currency-chips" role="group" aria-label="Currency" data-i18n-attr="aria-label:insights.currency.label"></div>
       <div id="insights"></div>
     </section>
 
@@ -133,8 +130,8 @@
         <div class="panel">
           <label class="setting-row">
             <span class="setting-label" data-i18n="settings.dueSoon.show">
-              Show due-soon banner
-              <span class="setting-hint" data-i18n="settings.dueSoon.show.hint">A line on the Money tab with what comes due soon. Closing it hides it until tomorrow.</span>
+              Show the due-soon chip
+              <span class="setting-hint" data-i18n="settings.dueSoon.show.hint">A chip on the Money card with how many items come due soon. Tap it for the list.</span>
             </span>
             <input type="checkbox" class="check" id="set-due">
           </label>
@@ -290,13 +287,11 @@
     </section>
   </main>
 
-  <!-- Expense sits at the bottom, nearest the thumb: it's the most-used action. -->
+  <!-- One + on Money and Calendar: the add sheet, Expense first, with an Expense | Income switch.
+       On Calendar it fills in the selected day. Hidden on Insights and Settings. -->
   <div class="fab-stack" id="fab-stack">
-    <button type="button" class="fab fab-sm fab-income" data-action="add-income" aria-label="Add income" data-i18n-attr="aria-label:money.addIncome">
+    <button type="button" class="fab" id="fab" aria-label="Add expense or income" data-i18n-attr="aria-label:money.add">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-    </button>
-    <button type="button" class="fab" data-action="add" id="fab" aria-label="Add expense" data-i18n-attr="aria-label:money.addExpense">
-      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
     </button>
   </div>
 
@@ -304,6 +299,10 @@
     <button type="button" class="tab" role="tab" id="tab-subs" data-tab="subs" aria-controls="panel-subs" aria-selected="true">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>
       <span data-i18n="tab.money">Money</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tab-calendar" data-tab="calendar" aria-controls="panel-calendar" aria-selected="false" tabindex="-1">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
+      <span data-i18n="tab.calendar">Calendar</span>
     </button>
     <button type="button" class="tab" role="tab" id="tab-insights" data-tab="insights" aria-controls="panel-insights" aria-selected="false" tabindex="-1">
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
@@ -316,7 +315,8 @@
   </nav>
 
   <!-- Add / edit form -->
-  <dialog class="sheet" id="sub-dialog" aria-labelledby="sub-dialog-title">
+  <!-- tabindex: the edit sheet takes focus itself on opening (js/app.js openForm), not its close button. -->
+  <dialog class="sheet" id="sub-dialog" aria-labelledby="sub-dialog-title" tabindex="-1">
     <form id="sub-form" method="dialog" novalidate>
       <div class="sheet-head">
         <span id="form-logo"></span>
@@ -326,9 +326,11 @@
         </button>
       </div>
       <div class="sheet-body">
-        <fieldset class="field">
+        <!-- Adding only: an item being edited keeps its type. -->
+        <fieldset class="field" id="field-kind">
           <legend class="sr-only" data-i18n="form.type">Type</legend>
-          <div class="segmented segmented-wide">
+          <!-- The chosen type is tinted (green for income, red for expenses); the words carry it. -->
+          <div class="segmented segmented-wide seg-type">
             <label class="seg-option"><input type="radio" name="kind" value="expense" checked><span data-i18n="form.kind.expense">Expense</span></label>
             <label class="seg-option"><input type="radio" name="kind" value="income"><span data-i18n="form.kind.income">Income</span></label>
           </div>
@@ -337,21 +339,6 @@
           <span class="field-label" data-i18n="form.name">Name</span>
           <input class="input" name="name" list="service-names" autocomplete="off" required maxlength="80" placeholder="e.g. Netflix" data-i18n-attr="placeholder:form.name.placeholder.expense">
           <span class="field-error" data-error-for="name"></span>
-        </label>
-        <div class="field-row">
-          <label class="field field-grow" data-expense-only>
-            <span class="field-label" data-i18n="form.domain">Website domain <span class="optional" data-i18n="form.domain.hint">for logo</span></span>
-            <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com" data-i18n-attr="placeholder:form.domain.placeholder">
-          </label>
-          <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
-          <label class="field">
-            <span class="field-label" data-i18n="form.emoji">Emoji <span class="optional" data-i18n="form.optional">optional</span></span>
-            <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜" data-i18n-attr="placeholder:form.emoji.placeholder">
-          </label>
-        </div>
-        <label class="field" data-expense-only>
-          <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
-          <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
         </label>
         <div class="field-row">
           <label class="field field-grow">
@@ -374,24 +361,48 @@
         </fieldset>
         <div class="field-row" id="field-row-dates">
           <label class="field field-grow" id="field-renewal">
-            <span class="field-label" id="label-renewal" data-i18n="form.renewal.expense">Next renewal</span>
-            <input class="input" name="nextRenewal" type="date">
+            <span class="field-label"><span id="label-renewal" data-i18n="form.renewal.expense">Next renewal</span> <span class="required" data-i18n="form.required">required</span></span>
+            <input class="input" name="nextRenewal" type="date" aria-required="true">
             <span class="field-error" data-error-for="nextRenewal"></span>
           </label>
           <label class="field field-grow" id="field-date" hidden>
-            <span class="field-label" data-i18n="form.date">Date</span>
-            <input class="input" name="date" type="date">
+            <span class="field-label"><span data-i18n="form.date">Date</span> <span class="required" data-i18n="form.required">required</span></span>
+            <input class="input" name="date" type="date" aria-required="true">
             <span class="field-error" data-error-for="date"></span>
           </label>
-          <label class="field field-grow" data-expense-only>
+        </div>
+        <!-- The optional fields, folded away: open by default when an edited item has any of them.
+             Inline (not an overlay), so Android Back still closes the sheet in one press. -->
+        <button type="button" class="disclosure" id="more-toggle" aria-expanded="false" aria-controls="more-details">
+          <span data-i18n="form.more">More details</span>
+          <svg class="disclosure-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="more-details" id="more-details" hidden>
+          <!-- Expenses only (income has no logo, emoji, plan or category in the form). -->
+          <div class="field-row" data-expense-only>
+            <label class="field field-grow">
+              <span class="field-label" data-i18n="form.domain">Website domain <span class="optional" data-i18n="form.domain.hint">for logo</span></span>
+              <input class="input" name="domain" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" maxlength="120" placeholder="e.g. example.com" data-i18n-attr="placeholder:form.domain.placeholder">
+            </label>
+            <!-- A single emoji, typed with the phone's emoji keyboard. Overrides the domain logo. -->
+            <label class="field">
+              <span class="field-label" data-i18n="form.emoji">Emoji <span class="optional" data-i18n="form.optional">optional</span></span>
+              <input class="input input-emoji" name="emoji" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="e.g. 🍜" data-i18n-attr="placeholder:form.emoji.placeholder">
+            </label>
+          </div>
+          <label class="field" data-expense-only>
+            <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
+            <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
+          </label>
+          <label class="field" data-expense-only>
             <span class="field-label" data-i18n="form.category">Category <span class="optional" data-i18n="form.optional">optional</span></span>
             <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music" data-i18n-attr="placeholder:form.category.placeholder">
           </label>
+          <label class="field">
+            <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
+            <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
+          </label>
         </div>
-        <label class="field">
-          <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
-          <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
-        </label>
       </div>
       <div class="sheet-foot">
         <button type="button" class="btn btn-danger-text" id="btn-delete" hidden data-i18n="form.delete">Delete</button>
@@ -403,7 +414,7 @@
   </dialog>
 
   <!-- Sync: start a household, join one with the 12 recovery words, or manage it (js/sync-sheet.js) -->
-  <!-- Due soon: the banner's list. Tapping a row opens it in the edit sheet. -->
+  <!-- Due soon: the chip's list, with its totals at the top. Tapping a row opens it in the edit sheet. -->
   <dialog class="sheet" id="due-dialog" aria-labelledby="due-title">
     <div class="sheet-head">
       <h2 id="due-title" data-i18n="dueSoon.label">Due soon</h2>
@@ -412,6 +423,10 @@
       </button>
     </div>
     <div class="sheet-body due-body">
+      <div class="due-summary">
+        <p class="due-line"><span class="due-text" id="due-text"></span><span class="due-sum" id="due-sum"></span></p>
+        <p class="due-notes" id="due-notes" hidden><span id="due-extra"></span><button type="button" class="due-undated" id="due-undated" hidden></button></p>
+      </div>
       <p class="sync-text" id="due-range"></p>
       <ul class="subs-list due-list" id="due-list"></ul>
       <p class="footnote" data-i18n="dueSoon.hint">Tap an item to edit it.</p>
@@ -698,12 +713,21 @@
     <div class="swatch-grid" id="swatch-grid"></div>
   </div>
 
-  <!-- Money tab: Sort groups (per device). Items: role menuitemradio; js/app.js bindSortMenu. -->
-  <div class="pop menu-pop" id="sort-menu" role="menu" aria-labelledby="sort-menu-title" hidden>
-    <p class="pop-title" id="sort-menu-title" data-i18n="sort.title">Sort groups</p>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1" data-i18n="sort.az">A to Z</button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1" data-i18n="sort.total">Total <span class="menu-hint" data-i18n="sort.total.hint">high to low</span></button>
-    <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1" data-i18n="sort.items">Items <span class="menu-hint" data-i18n="sort.items.hint">most first</span></button>
+  <!-- Money tab: View and Sort groups (both per device), from the header's View button. Two groups
+       of radio items in one menu; js/app.js bindViewMenu. -->
+  <div class="pop menu-pop" id="view-menu" role="menu" aria-label="View and sort" data-i18n-attr="aria-label:money.view.menu" hidden>
+    <div class="menu-group" role="group" aria-labelledby="view-menu-view">
+      <p class="pop-title" id="view-menu-view" data-i18n="money.view.label">View</p>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="wallet" aria-checked="true" tabindex="-1" data-i18n="money.view.wallet">Wallet</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="grid" aria-checked="false" tabindex="-1" data-i18n="money.view.grid">Cards</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-view="list" aria-checked="false" tabindex="-1" data-i18n="money.view.list">List</button>
+    </div>
+    <div class="menu-group" role="group" aria-labelledby="view-menu-sort">
+      <p class="pop-title" id="view-menu-sort" data-i18n="sort.title">Sort groups</p>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="az" aria-checked="true" tabindex="-1" data-i18n="sort.az">A to Z</button>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="total" aria-checked="false" tabindex="-1" data-i18n="sort.total">Total <span class="menu-hint" data-i18n="sort.total.hint">high to low</span></button>
+      <button type="button" class="menu-item" role="menuitemradio" data-sort="items" aria-checked="false" tabindex="-1" data-i18n="sort.items">Items <span class="menu-hint" data-i18n="sort.items.hint">most first</span></button>
+    </div>
   </div>
 
   <datalist id="service-names"></datalist>

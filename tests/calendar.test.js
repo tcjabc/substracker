@@ -1,5 +1,5 @@
-// In-browser tests for the Money tab's calendar view (js/calendar.js, js/calendar-math.js,
-// js/app.js), run by tests/calendar.html with a fixed clock (18 November 2026) against a throwaway
+// In-browser tests for the Calendar tab (js/calendar.js, js/calendar-math.js, js/app.js; a view on
+// the Money tab until 1.20.0), run by tests/calendar.html with a fixed clock (18 November 2026) against a throwaway
 // database. The app runs with index.html's markup. Run the page at 320, 360 and 393px (the layout
 // tests check the width they're given), with and without reduced motion emulated. The tests run
 // in order, as one session in the app.
@@ -70,7 +70,15 @@ const heading = () => text($('#cal-month'));
 const listRows = () => $$('#calendar .cal-list .due-row');
 const subDialog = () => $('#sub-dialog');
 const open = (d) => d.open || d.hasAttribute('open');
-const view = async (v) => { $(`.seg-btn[data-view="${v}"]`).click(); await tick(60); };
+const goTab = async (name) => { $(`#tab-${name}`).click(); await tick(60); };
+/** Show a Money view through the View menu, the way a person does, or the Calendar tab. */
+const view = async (v) => {
+  if (v === 'calendar') { await goTab('calendar'); return; }
+  await goTab('subs');
+  $('#view-btn').click();
+  $(`#view-menu [data-view="${v}"]`).click();
+  await tick(60);
+};
 const comeBack = async () => { document.dispatchEvent(new Event('visibilitychange')); await tick(60); };
 const closeSheets = async () => { for (const d of $$('dialog[open]')) d.close(); await tick(30); };
 const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
@@ -91,59 +99,81 @@ let before = null; // the other views as they were before the calendar was first
 
 /* ---------------------------------------------------------------- tests */
 
-test('the view toggle is Wallet | Grid | List | Calendar; Calendar is saved on this device only', async () => {
-  // The other views first, to compare with after the calendar has been used (the last tests).
+test('Calendar is its own tab: Money | Calendar | Insights | Settings; the tab is saved on this device only', async () => {
+  // The Money views first, to compare with after the calendar has been used (the last tests).
   before = {};
   for (const v of ['wallet', 'grid', 'list']) {
     await view(v);
     before[v] = v === 'wallet' ? $$('#wallet .w-band').map((b) => b.getAttribute('aria-label')) : text($('#subs-list'));
   }
-  eq($$('.seg-btn[data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list', 'calendar'], 'four views, Calendar last');
-  const btn = $('.seg-btn[data-view="calendar"]');
-  eq([text(btn), btn.title], ['Calendar', 'Calendar view'], 'its name and title');
+  eq($$('.tabbar .tab').map((b) => [b.dataset.tab, text(b)]), [['subs', 'Money'], ['calendar', 'Calendar'], ['insights', 'Insights'], ['settings', 'Settings']], 'four tabs, Calendar second');
+  eq($$('#view-menu [data-view]').map((b) => b.dataset.view), ['wallet', 'grid', 'list'], 'Money\'s views: Wallet | Grid | List, no Calendar');
+  const tab = $('#tab-calendar');
+  eq([tab.getAttribute('role'), tab.getAttribute('aria-controls')], ['tab', 'panel-calendar'], 'a tab for its own panel');
   const opsBefore = await storage.pendingCount();
   await view('calendar');
   assert(cal() && $('#calendar .cal-grid'), 'the calendar is shown');
-  eq(btn.getAttribute('aria-pressed'), 'true', 'pressed');
-  eq($$('.seg-btn[data-view][aria-pressed="true"]').length, 1, 'only one view pressed');
-  eq(storage.getPref('view'), 'calendar', 'kept on this device');
+  assert(cal().closest('#panel-calendar') && !$('#panel-calendar').hidden && $('#panel-subs').hidden, 'on its own page, Money\'s hidden');
+  eq([tab.getAttribute('aria-selected'), tab.tabIndex], ['true', 0], 'selected, the tab stop');
+  eq($$('.tab[aria-selected="true"]').length, 1, 'only one tab selected');
+  eq([text($('#page-title')), document.title], ['Calendar', 'Calendar · Peek Budget'], 'the page and document titles');
+  eq(storage.getPref('tab'), 'calendar', 'kept on this device');
+  eq(storage.getPref('view'), 'list', 'Money\'s own view is left as it was');
   const backup = JSON.stringify(await storage.exportAll());
-  assert(!/"view"|calendar|weekStart/i.test(backup), 'not in a backup');
-  assert(!Object.keys(await storage.getSettings()).some((k) => /view|week|calendar/i.test(k)), 'not a shared setting');
+  assert(!/"view"|"tab"|calendar|weekStart/i.test(backup), 'not in a backup');
+  assert(!Object.keys(await storage.getSettings()).some((k) => /view|tab|week|calendar/i.test(k)), 'not a shared setting');
   eq(await storage.pendingCount(), opsBefore, 'no op for sync');
 });
 
-test('the header fits: four views and Sort beside the title, on one line, with no overlap', async () => {
-  const title = $('#page-title').getBoundingClientRect();
+test('the header fits: Calendar\'s title alone, Money\'s title and its View button on one line', async () => {
+  const fits = (where) => {
+    const title = $('#page-title').getBoundingClientRect();
+    const line = parseFloat(getComputedStyle($('#page-title')).lineHeight) || title.height;
+    assert(title.height < line * 1.5, `${where}: the title stays on one line (${title.height}px for a ${line}px line)`);
+    assert(document.documentElement.scrollWidth <= innerWidth + 1, `${where}: no sideways scroll`);
+    return title;
+  };
+  fits('Calendar');
+  assert($('#subs-actions').hidden, 'Calendar: no View button (it has no views or groups)');
+  await goTab('subs');
+  const title = fits('Money');
   const actions = $('#subs-actions').getBoundingClientRect();
-  assert(title.right <= actions.left, `the title (to ${Math.round(title.right)}) is clear of the buttons (from ${Math.round(actions.left)})`);
-  const line = parseFloat(getComputedStyle($('#page-title')).lineHeight) || title.height;
-  assert(title.height < line * 1.5, `the title stays on one line (${title.height}px for a ${line}px line)`);
-  assert(actions.right <= innerWidth, 'the buttons are on screen');
-  for (const b of $$('#subs-actions .seg-btn')) assert(b.getBoundingClientRect().width >= 30, 'each button at least 30px wide');
-  assert(document.documentElement.scrollWidth <= innerWidth + 1, 'no sideways scroll');
+  assert(title.right <= actions.left, `Money: the title (to ${Math.round(title.right)}) is clear of the button (from ${Math.round(actions.left)})`);
+  assert(actions.right <= innerWidth, 'Money: the button is on screen');
+  eq($$('#subs-actions button').length, 1, 'Money: one button');
+  assert($('#view-btn').getBoundingClientRect().width >= 40, 'the View button at least 40px wide');
+  await goTab('calendar');
 });
 
-test('the strip and the due-soon banner stay above it, with nothing overlapping; Sort is off here only', async () => {
-  const strip = $('#money-summary').getBoundingClientRect();
-  const banner = $('#due-banner');
-  assert(!banner.hidden, 'the banner is shown in the Calendar view');
-  const b = banner.getBoundingClientRect();
-  const c = cal().getBoundingClientRect();
-  assert(strip.bottom <= b.top && b.bottom <= c.top, `strip ${Math.round(strip.bottom)} ≤ banner ${Math.round(b.top)}–${Math.round(b.bottom)} ≤ calendar ${Math.round(c.top)}`);
-  assert($('#sort-btn').disabled, 'Sort is disabled: the calendar has no groups to order');
-  await view('grid');
-  assert(!$('#sort-btn').disabled, 'and enabled again in Grid');
-  await view('calendar');
+test('the Calendar page: the month heading, previous, next and Today, the month\'s In, Out and Left over, the grid; no Money card, chip or income card', async () => {
+  for (const sel of ['#money-summary', '#due-chip', '#income-card', '#subs-list', '.wallet']) {
+    const el = $(sel);
+    assert(!el || !el.getClientRects().length, `${sel} is not on this page`);
+  }
+  eq(storage.getPref('dueSoon'), null, 'the due-soon chip is on (its default), shown on Money only');
+  eq($$('#calendar .cal-head > *').map((e) => e.dataset.calStep ?? (e.matches('[data-cal-today]') ? 'today' : e.id)), ['-1', 'cal-month', '1', 'today'], 'previous, the month, next, Today');
+  assert(!$('#calendar .cal-summary'), 'the old one-line summary is gone');
+  const sum = $('#calendar .cal-flow');
+  eq($$('.cal-flow-cell', sum).map((e) => e.className), ['cal-flow-cell cal-flow-in', 'cal-flow-cell cal-flow-out', 'cal-flow-cell cal-flow-left'], 'In, Out and Left over, nothing else');
+  const head = $('#calendar .cal-head').getBoundingClientRect();
+  const s = sum.getBoundingClientRect();
+  const g = $('#calendar .cal-grid').getBoundingClientRect();
+  assert(head.bottom <= s.top && s.bottom <= g.top, `heading ${Math.round(head.bottom)} ≤ cash flow ${Math.round(s.top)}–${Math.round(s.bottom)} ≤ grid ${Math.round(g.top)}`);
+  const tops = $$('.cal-flow-cell', sum).map((e) => Math.round(e.getBoundingClientRect().top));
+  eq(new Set(tops).size, 1, `the three on one row (${tops.join(', ')})`);
+  for (const v of $$('.cal-flow-value', sum)) {
+    const line = parseFloat(getComputedStyle(v).lineHeight) || 24;
+    assert(v.getBoundingClientRect().height < line * 1.6, `"${text(v)}" on one line (${Math.round(v.getBoundingClientRect().height)}px for a ${line}px line)`);
+  }
 });
 
-test('the month summary is the Money strip\'s Outgoings for this month, on the same basis', async () => {
-  eq(text($('#calendar .cal-summary-label')), `Cash due in ${monthName(2026, 10)}`, 'labelled with the month');
-  const strip = $('#money-summary [data-roll="Outgoings"]');
+test('the month\'s Out is the Money card\'s Cash due for this month and In its Income, on the same basis', async () => {
+  eq($$('#calendar .cal-flow-label').map(text), ['In', 'Out', 'Left over'], 'labelled');
+  const strip = $('#money-summary [data-roll="cash"]');
   await tick(1200); // let any roll finish
-  eq(text($('#calendar .cal-summary-value')), text(strip), 'the same figure as the strip');
+  eq(text($('#calendar .cal-flow-amount[data-flow="out"]')), text(strip), 'Out is the Money card\'s Cash due');
+  eq(text($('#calendar .cal-flow-amount[data-flow="in"]')), text($('#money-summary [data-roll="income"]')), 'In is its Income');
   eq(text(strip), T(NOV_DUE), 'and the worked total');
-  eq(text($('#calendar .cal-summary-sub')), `${T(40000)} income · +1 in USD`, 'income apart, other currencies counted');
   const items = (await storage.getAll()).filter((s) => s.currency === 'TWD');
   eq(NOV_DUE, cashDue(items, 2026, 10), "Insights' cashDue");
   eq(40000, incomeDue(items, 2026, 10), "Insights' incomeDue");
@@ -277,7 +307,7 @@ test('a row opens the item in the edit sheet; the need-a-date line opens the und
   assert(!open(subDialog()), 'Back closed it');
   eq(api().state.selected, 20, 'the calendar kept its day');
   const undated = $('#calendar .cal-undated');
-  eq(text(undated), '1 item needs a date', 'the same quiet line as the banner');
+  eq(text(undated), '1 item needs a date', 'the same quiet line as the due-soon sheet');
   undated.click();
   await until(() => open(subDialog()), 'the edit sheet for the undated item');
   eq($('#sub-form').elements.name.value, 'Gym', 'the first undated item');
@@ -295,7 +325,8 @@ test('months: next, previous and Today; the month heading is announced once, in 
   assert(!$('#calendar .cal-list'), 'no day selected in another month');
   const items = (await storage.getAll()).filter((s) => s.currency === 'TWD');
   await tick(1200);
-  eq(text($('#calendar .cal-summary-value')), T(cashDue(items, 2026, 11)), "December's cash due");
+  eq(text($('#calendar .cal-flow-amount[data-flow="out"]')), T(cashDue(items, 2026, 11)), "December's cash due (Out)");
+  eq(text($('#calendar .cal-flow-amount[data-flow="in"]')), T(incomeDue(items, 2026, 11)), "December's income (In)");
   eq($$('#calendar .cal-weeks [role="row"]').length, 5, 'December 2026 is five weeks from Monday');
   eq(day(1).getAttribute('aria-label'), `${longDate(2026, 11, 1)}, 1 payment, ${T(30000)}`, 'Rent on its stored date');
   eq(day(31).getAttribute('aria-label'), `${longDate(2026, 11, 31)}, 1 payment, ${T(250)}`, 'the 31st plan on the 31st again');
@@ -371,7 +402,7 @@ test('swipe: left for the next month, right for the previous; a short drag stays
 test('Reduce motion and effects: the months change at once, with no animations and no animation frames', async () => {
   const mine = () => document.getAnimations().filter((a) => cal().contains(a.effect?.target));
   if (!reduced()) {
-    // With motion: a swipe slides, and the month's figure rolls (only that figure).
+    // With motion: a swipe slides, and the month's In, Out and Left over roll (only those).
     const el = $('#calendar .cal-weeks');
     const r = el.getBoundingClientRect();
     const ev = (type, px) => el.dispatchEvent(new PointerEvent(type, { pointerId: 9, isPrimary: true, pointerType: 'touch', clientX: px, clientY: r.top + 20, bubbles: true }));
@@ -382,7 +413,7 @@ test('Reduce motion and effects: the months change at once, with no animations a
     await tick(20);
     assert(mine().length > 0, 'with motion, the weeks slide');
     await tick(600);
-    assert($('#calendar .cal-summary-value .odo-roll') || mine().length, 'and the month\'s figure rolls');
+    assert($('#calendar .cal-flow .odo-roll') || mine().length, 'and the month\'s figures roll');
     eq($$('#calendar .cal-grid .odo').length, 0, 'the days never roll');
     await tick(1200);
     $('#calendar [data-cal-today]').click();
@@ -390,13 +421,15 @@ test('Reduce motion and effects: the months change at once, with no animations a
     $('#tab-settings').click();
     await tick(20);
     $('#set-motion').click();
-    $('#tab-subs').click();
+    $('#tab-calendar').click();
     await tick(60);
   }
   assert(reduced(), 'Reduce motion and effects is on');
   let frames = 0;
   const raf = window.requestAnimationFrame;
   window.requestAnimationFrame = (fn) => { frames++; return raf.call(window, fn); };
+  // Whatever fails, the tests after this one start as they would have: this month, the setting
+  // back as it was.
   try {
     $('#calendar [data-cal-step="1"]').click();
     eq(heading(), monthName(2026, 11), 'next: at once, in the same task');
@@ -412,12 +445,13 @@ test('Reduce motion and effects: the months change at once, with no animations a
     eq(frames, 0, 'no animation frames asked for');
   } finally {
     window.requestAnimationFrame = raf;
-  }
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    $('#tab-settings').click();
-    await tick(20);
-    $('#set-motion').click();
-    $('#tab-subs').click();
+    if (heading() !== monthName(2026, 10) || api().state.selected !== 18) $('#calendar [data-cal-today]').click();
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && reduced()) {
+      $('#tab-settings').click();
+      await tick(20);
+      $('#set-motion').click();
+    }
+    $('#tab-calendar').click();
     await tick(60);
   }
 });
@@ -433,7 +467,7 @@ test('Settings → Week starts on: Automatic (the region\'s day), Monday or Sund
   const opsBefore = await storage.pendingCount();
   await setSelect('#set-week-start', 'sun');
   eq(storage.getPref('weekStart'), 'sun', 'kept on this device');
-  $('#tab-subs').click();
+  $('#tab-calendar').click();
   await tick(60);
   eq($('#calendar [role="columnheader"]').getAttribute('aria-label'), weekday(0), 'Sunday first');
   eq($$('#calendar .cal-weeks [role="row"]').length, 5, 'November 2026 is five weeks from Sunday');
@@ -447,14 +481,14 @@ test('Settings → Week starts on: Automatic (the region\'s day), Monday or Sund
   $('#tab-settings').click();
   await tick(20);
   await setSelect('#set-week-start', 'mon');
-  $('#tab-subs').click();
+  $('#tab-calendar').click();
   await tick(60);
   eq($('#calendar [role="columnheader"]').getAttribute('aria-label'), weekday(1), 'Monday first');
   $('#tab-settings').click();
   await tick(20);
   await setSelect('#set-week-start', 'auto');
   eq(storage.getPref('weekStart'), 'auto', 'Automatic again');
-  $('#tab-subs').click();
+  $('#tab-calendar').click();
   await tick(60);
   eq($('#calendar [role="columnheader"]').getAttribute('aria-label'), weekday(auto), 'the region\'s day first');
 });
@@ -472,7 +506,8 @@ test('an empty month: the grid is still there, with a quiet "Nothing due in …"
     c.show(2026, 11);
     eq($$('.cal-day', host).length, 31, 'December\'s grid, every day');
     eq(text($('.cal-empty', host)), `Nothing due in ${monthName(2026, 11)}`, 'the quiet line');
-    eq(text($('.cal-summary-value', host)), T(0), 'and a zero, labelled');
+    eq($$('.cal-flow-amount', host).map(text), [T(0), T(0), T(0)], 'and zeros, labelled');
+    assert(!$('.cal-flow-arrow', host), 'with no arrow');
     eq($$('.cal-dot', host).length, 0, 'no dots');
     c.destroy();
   } finally {
@@ -499,7 +534,7 @@ test(`fits this ${innerWidth}px screen: a six-week month, weekday names, the hea
   const g = $('#calendar .cal-grid').getBoundingClientRect();
   assert(g.left >= 0 && g.right <= innerWidth, `the grid is on screen (${Math.round(g.left)}–${Math.round(g.right)})`);
   assert(document.documentElement.scrollWidth <= innerWidth + 1, 'the page doesn\'t scroll sideways');
-  // With the list open, it clears the + / - buttons once scrolled to the end.
+  // With the list open, it clears the + button once scrolled to the end (the page's bottom room).
   window.scrollTo(0, document.documentElement.scrollHeight);
   await tick(60);
   const last = $('#calendar .cal-list').getBoundingClientRect();
@@ -512,8 +547,8 @@ test(`fits this ${innerWidth}px screen: a six-week month, weekday names, the hea
 test('Wallet, Grid and List are as they were', async () => {
   for (const v of ['wallet', 'grid', 'list']) {
     await view(v);
-    assert(!cal()?.isConnected, `${v}: the calendar is gone`);
-    assert(!$('#sort-btn').disabled, `${v}: Sort works`);
+    assert($('#panel-calendar').hidden && !cal().getClientRects().length, `${v}: the calendar is out of sight`);
+    eq($('#view-btn').dataset.view, v, `${v}: the View button shows it`);
     const now = v === 'wallet' ? $$('#wallet .w-band').map((b) => b.getAttribute('aria-label')) : text($('#subs-list'));
     // House's colour changed in the dots test; only its dot's name may differ.
     eq(JSON.stringify(now).replace(/Steel blue|Colour for House: [A-Za-z ]+/g, ''), JSON.stringify(before[v]).replace(/Steel blue|Colour for House: [A-Za-z ]+/g, ''), `${v}: unchanged`);

@@ -177,76 +177,95 @@ function overflowAt(key) {
   return out;
 }
 const dialogShown = (id) => { const d = $(`#${id}`); return d.open || d.hasAttribute('open'); };
+/** A Money view from the header's View menu (js/app.js bindViewMenu). */
+const pickView = (v) => { $('#view-btn').click(); $(`#view-menu [data-view="${v}"]`).click(); };
 
 async function walk() {
   // The header, tabs and Money tab (Wallet).
   $('#tab-subs').click();
   await until(() => $('#wallet .w-band'), 'wallet drawn');
   put('doc', [document.title, `lang=${document.documentElement.lang}`]);
-  // The Calendar view's toggle button is new in 1.19.0: English records it on its own key.
-  put('header', grab($('.app-header'), { skip: MODE === 'en' ? ['.seg-btn[data-view="calendar"]'] : [] }));
-  put('tabbar', grab($('.tabbar')));
-  put('fab', grab($('#fab-stack')));
-  put('money.strip.monthly', grab($('#money-summary')));
-  // The due-soon banner (new in 1.18.0) and its sheet: recorded on their own keys.
-  put('money.banner', grab($('#due-banner')));
-  $('#due-toggle').click();
+  // 1.20.0: Money's header is the title and one View button, and there's one + (both on new keys);
+  // the Calendar tab is new, so English records the tab bar without it and the tab on its own key.
+  // Insights' Month | Year is in the header too, hidden here: it's recorded with the Insights screens.
+  put('header.money', grab($('.app-header'), { skip: ['#insights-actions'] }));
+  put('tabbar', grab($('.tabbar'), { skip: MODE === 'en' ? ['#tab-calendar'] : [] }));
+  put('tab.calendar', grab($('#tab-calendar')));
+  put('fab.add', grab($('#fab-stack')));
+  // 1.21.0: the Money card replaces the strip, the due-soon chip on it the banner (its totals moved
+  // into the sheet), and income has its own card above the stack. All on new keys; the strip's and
+  // the banner's are gone. The open-card announcement is on a new key too: the first card used to
+  // be Income.
+  put('money.card.monthly', grab($('#money-summary')));
+  put('money.chip', [$('#due-chip').getAttribute('aria-label')]);
+  $('#due-chip').click();
   await until(() => dialogShown('due-dialog'), 'due-soon sheet');
-  put('money.banner.sheet', grab($('#due-dialog')));
+  put('money.due.sheet', grab($('#due-dialog')));
   pressBack();
   await tick(20);
+  put('money.income', grab($('#income-card'), { skip: ['#income-list'] }));
+  $('#income-toggle').click();
+  await tick(20);
+  put('money.income.open', grab($('#income-card'), { skip: ['.logo'] }));
+  $('#income-toggle').click();
+  await tick(20);
   put('wallet.host', [$('#wallet').getAttribute('aria-label')]);
-  $$('#wallet .w-band').forEach((b, i) => put(`wallet.card.${i}`, grab(b.closest('.w-card') ?? b.parentElement, { skip: ['.w-logos'] })));
+  // The expense cards keep their keys from before 1.21.0 (Income was card 0 then).
+  $$('#wallet .w-band').forEach((b, i) => put(`wallet.card.${i + 1}`, grab(b.closest('.w-card') ?? b.parentElement, { skip: ['.w-logos'] })));
   const firstBand = $('#wallet .w-band');
   firstBand.click();
   await tick(120);
-  put('wallet.announce.open', [$('#wallet > p.sr-only')?.textContent]);
+  put('wallet.announce.open.group', [$('#wallet > p.sr-only')?.textContent]);
   pressBack();
   await tick(120);
-  put('wallet.announce.close', [$('#wallet > p.sr-only')?.textContent]);
+  put('wallet.announce.close.group', [$('#wallet > p.sr-only')?.textContent]);
 
   $('#money-summary [data-period="annual"]').click();
   await tick(20);
-  put('money.strip.annual', grab($('#money-summary')));
+  put('money.card.annual', grab($('#money-summary')));
   // (In the pseudo-locale, without the logo initials, which are the items' own first letters.)
-  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i}`, [b.getAttribute('aria-label'),
+  $$('#wallet .w-band').forEach((b, i) => put(`wallet.annual.band.${i + 1}`, [b.getAttribute('aria-label'),
     MODE === 'pseudo' ? grab(b, { skip: ['.w-logos'] })[0] : norm(b.textContent)]));
+  put('money.income.annual', [norm($('#income-label').textContent)]);
   $('#money-summary [data-period="monthly"]').click();
 
-  // Sort.
-  put('sort.button', [$('#sort-btn').getAttribute('aria-label'), $('#sort-btn').title]);
-  $('#sort-btn').click();
+  // The View button and its menu (1.20.0: the view and Sort in one menu; the Sort button's keys are gone).
+  put('view.button', [$('#view-btn').getAttribute('aria-label'), $('#view-btn').title]);
+  $('#view-btn').click();
   await tick(20);
-  put('sort.menu', grab($('#sort-menu')));
-  $('#sort-menu [data-sort="total"]').click();
+  put('view.menu', grab($('#view-menu')));
+  $('#view-menu [data-sort="total"]').click();
   await tick(20);
-  put('sort.total', [$('#sort-btn').getAttribute('aria-label')]);
-  $('#sort-btn').click();
-  $('#sort-menu [data-sort="items"]').click();
+  put('view.sort.total', [$('#view-btn').getAttribute('aria-label')]);
+  $('#view-btn').click();
+  $('#view-menu [data-sort="items"]').click();
   await tick(20);
-  put('sort.items', [$('#sort-btn').getAttribute('aria-label')]);
-  $('#sort-btn').click();
-  $('#sort-menu [data-sort="az"]').click();
+  put('view.sort.items', [$('#view-btn').getAttribute('aria-label')]);
+  $('#view-btn').click();
+  $('#view-menu [data-sort="az"]').click();
   await tick(20);
 
-  // Grid and List.
-  $('.seg-btn[data-view="grid"]').click();
+  // Grid and List (1.21.0: on new keys, without the Income section, and the gauge's words for all
+  // the outgoings).
+  pickView('grid');
   await tick(20);
-  put('money.grid', grab($('#subs-list')));
+  put('money.grid.groups', grab($('#subs-list')));
+  put('money.income.grid', [norm($('#income-label').textContent)]);
   $('.group-dot').click();
   await tick(20);
   put('money.swatches', grab($('#swatch-pop')));
   pressBack();
-  $('.seg-btn[data-view="list"]').click();
+  pickView('list');
   await tick(20);
-  put('money.list', grab($('#subs-list')));
+  put('money.list.groups', grab($('#subs-list')));
 
-  // The calendar view (new in 1.19.0), recorded on its own keys: its toggle button, this month
-  // with today's list, a day with income, the next month, and an empty day.
-  put('money.calendar.toggle', grab($('.seg-btn[data-view="calendar"]')));
-  $('.seg-btn[data-view="calendar"]').click();
+  // The calendar (new in 1.19.0), recorded on its own keys: this month with today's list, a day
+  // with income, an empty day and the next month. Its own tab since 1.20.0, with one summary line:
+  // the month and the next month are on new keys.
+  $('#tab-calendar').click();
   await until(() => $('#calendar .cal-grid'), 'calendar drawn');
-  put('money.calendar', grab($('#calendar')));
+  put('doc.calendar', [document.title, $('#page-title').textContent]);
+  put('calendar.month', grab($('#calendar')));
   $('#calendar .cal-day[data-day="25"]').click();
   await tick(20);
   put('money.calendar.day', grab($('#calendar .cal-list')));
@@ -255,9 +274,9 @@ async function walk() {
   put('money.calendar.empty', grab($('#calendar .cal-list')));
   $('#calendar [data-cal-step="1"]').click();
   await tick(20);
-  put('money.calendar.next', grab($('#calendar')));
+  put('calendar.next', grab($('#calendar')));
   $('#calendar [data-cal-today]').click();
-  $('.seg-btn[data-view="list"]').click();
+  $('#tab-subs').click();
   await tick(20);
 
   // The add / edit sheet.
@@ -288,37 +307,39 @@ async function walk() {
   await tick(20);
   $('#sub-dialog [data-close]').click();
   await tick(20);
-  $('.seg-btn[data-view="wallet"]').click();
+  pickView('wallet');
   await tick(20);
 
   // Insights, month: the flat donut standing in for the Ring (Reduce motion is on), Donut, List.
   $('#tab-insights').click();
-  await until(() => $('#insights .stat-primary'), 'Insights drawn');
+  await until(() => $('#insights .ins-hero'), 'Insights drawn');
   put('doc.insights', [document.title, $('#page-title').textContent]);
   put('insights.chips', grab($('#currency-chips')));
-  put('insights.month.ring', grab($('#insights')));
+  // Month | Year sits in the header since 1.22.0: each Insights screen takes it in, as before.
+  const insightsScreen = (el) => grab($('#insights-actions')).concat(grab(el));
+  put('insights.month.ring', insightsScreen($('#insights')));
   $('#insights [data-catview="donut"]').click();
   await tick(20);
-  put('insights.month.donut', grab($('#insights')));
+  put('insights.month.donut', insightsScreen($('#insights')));
   $('#insights [data-catview="list"]').click();
   await tick(20);
-  put('insights.month.list', grab($('#insights')));
+  put('insights.month.list', insightsScreen($('#insights')));
   $('#insights [data-month-step="-1"]').click();
   await tick(20);
-  put('insights.month.previous', grab($('#insights .headline')).concat(grab($('#insights .stats'))));
+  put('insights.month.previous', grab($('#insights .ins-pct')).concat(grab($('#insights .stats'))));
   $('#insights [data-month-step="1"]').click();
   await tick(20);
   $('#currency-chips [data-currency="USD"]').click();
   await tick(20);
-  put('insights.month.usd', grab($('#insights .headline')).concat(grab($('#insights .stats'))));
+  put('insights.month.usd', grab($('#insights .ins-pct')).concat(grab($('#insights .stats'))));
   $('#currency-chips [data-currency="TWD"]').click();
   await tick(20);
 
   // Insights, year: the chart, its key, and the yearly card.
-  $('#insights [data-insights-mode="year"]').click();
+  $('#insights-actions [data-insights-mode="year"]').click();
   await until(() => $('#year-chart svg'), 'year chart drawn');
   await tick(50);
-  put('insights.year', grab($('#insights')));
+  put('insights.year', insightsScreen($('#insights')));
   $('#year-chart .yc-keybtn').click();
   await tick(20);
   put('insights.year.key', grab($('#year-chart .yc-keybox')));
@@ -329,7 +350,7 @@ async function walk() {
   put('insights.year.income', grab($('#year-chart')));
   $('#insights [data-year-income]').click();
   await tick(20);
-  $('#insights [data-insights-mode="month"]').click();
+  $('#insights-actions [data-insights-mode="month"]').click();
   await tick(20);
 
   // Settings (not the developer screen, not the version line).
@@ -450,7 +471,7 @@ if (MODE === 'en') {
   });
 
   test('Settings → Due soon in English: the three settings, with their defaults', async () => {
-    eq(dueSettingsEn, ['Due soon Show due-soon banner A line on the Money tab with what comes due soon. Closing it hides it until tomorrow. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
+    eq(dueSettingsEn, ['Due soon Show the due-soon chip A chip on the Money card with how many items come due soon. Tap it for the list. Look ahead 3 days7 days14 days Include upcoming income Also list income with a payment date coming up.'], 'the words');
   });
 
   test('Settings → Groups in English: Tidy up groups and its button', async () => {

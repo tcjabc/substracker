@@ -71,6 +71,10 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | Total, high to low | 依總額，由高到低 | |
 | Items, most first | 依項目數，由多到少 | |
 | Summary | 摘要 | |
+| Money card (the Money tab's summary card) | 摘要卡 | ⚠ 1.21.0; only in the due-soon setting's hint |
+| due-soon chip | 即將到期標籤 | ⚠ 1.21.0; "3 due" on the chip → 3 筆到期 |
+| {pct}% of income (the income card's gauge) | 占收入 {pct}% | ⚠ 1.21.0; "under 1%" → 不到 1%; "No income this month" → 本月沒有收入 |
+| Open Insights | 開啟分析 | 1.21.0; the Money card's button label for screen readers |
 | Month / Year (Insights) | 月 / 年 | |
 | 3D ring | 3D 環形圖 | |
 | donut chart | 圓環圖 | |
@@ -134,6 +138,8 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | website domain | 網站網域 | |
 | logo | 標誌 | ⚠ Many Taiwanese apps just write Logo |
 | optional | 選填 | |
+| required | 必填 | 1.21.1; beside the date in the add sheet (the counterpart of 選填) |
+| More details (the add sheet's folded fields) | 更多資料 | ⚠ 1.21.1; alternatives 更多欄位, 其他資訊 |
 
 ## Default groups
 

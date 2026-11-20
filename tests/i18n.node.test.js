@@ -423,9 +423,9 @@ test('group names: the device\'s order in English, Zhuyin (Taiwan\'s order) in z
     // ㄅ 保, ㄈ 房, ㄉ 電 訂, ㄐ 交, ㄕ 書, ㄘ 餐, ㄧ 醫, ㄩ 娛; then Latin letters, A to Z.
     assert.deepEqual(names.slice().sort(byGroupName), ['保險', '房租', '電信', '訂閱', '交通', '書籍', '餐飲', '醫療', '娛樂', 'apple', 'Netflix', 'Zoo', UNCATEGORISED]);
     assert.equal(i18n.compareNames('apple', 'APPLE'), 0, 'case is ignored');
-    const groups = names.map((name, i) => ({ name, income: false, items: Array(i % 3 + 1).fill({ currency: 'TWD' }), total: i }));
-    const az = sortGroups([{ name: 'Income', income: true, items: [], total: 0 }, ...groups], 'az', 'TWD').map((g) => g.name);
-    assert.deepEqual(az, ['Income', '保險', '房租', '電信', '訂閱', '交通', '書籍', '餐飲', '醫療', '娛樂', 'apple', 'Netflix', 'Zoo', UNCATEGORISED], 'Sort: by name');
+    const groups = names.map((name, i) => ({ name, items: Array(i % 3 + 1).fill({ currency: 'TWD' }), total: i }));
+    const az = sortGroups(groups, 'az', 'TWD').map((g) => g.name);
+    assert.deepEqual(az, ['保險', '房租', '電信', '訂閱', '交通', '書籍', '餐飲', '醫療', '娛樂', 'apple', 'Netflix', 'Zoo', UNCATEGORISED], 'Sort: by name');
     // Items, most first: the four groups with 3 items tie, and break the tie by name.
     assert.deepEqual(sortGroups(groups, 'items', 'TWD').slice(0, 4).map((g) => g.name), ['保險', '電信', 'Netflix', 'Zoo']);
   } finally {

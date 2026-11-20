@@ -7,7 +7,11 @@ import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
-import { walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, WALLET_KEYS, sortGroups, groupSortFrom, othersText } from './wallet-math.js';
+import {
+  walletGroups, assignAutoColours, isWalletKey, WALLET_NAMES, WALLET_KEYS, sortGroups, groupSortFrom, othersText,
+  frontGauge, totalGauge, gaugeNeedsRing, parseColour, MOTION,
+} from './wallet-math.js';
+import { springStep } from './tab-pill.js';
 import { createSyncEngine } from './sync.js';
 import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
@@ -16,7 +20,7 @@ import { createTabPill } from './tab-pill.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
 import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays, dateWords, compareNames } from './i18n.js';
-import { dueSoon, WINDOWS, windowFrom, bannerOnFrom, includeIncomeFrom, dismissKey, isDismissed } from './due-soon.js';
+import { dueSoon, WINDOWS, windowFrom, chipOnFrom, includeIncomeFrom } from './due-soon.js';
 import { createCalendar } from './calendar.js';
 import { WEEK_STARTS, weekStartFrom, resolveWeekStart, localeWeekStart } from './calendar-math.js';
 import { createKeyVault } from './secure-key.js';
@@ -29,11 +33,11 @@ import {
   chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom,
 } from './util.js';
 import {
-  groupOf, byGroupName, breakdown, monthlyAverage, undatedRecurring, incomeDue, undatedIncome, yearSummary,
+  groupOf, byGroupName, breakdown, undatedRecurring, incomeDue, undatedIncome, yearSummary,
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.22.1';
 
 // The old picked colours, g1 … g10 (--group-1 … --group-10 in app.css): still read and drawn exactly
 // as they were picked, but no longer offered. New picks are palette slots (WALLET_KEYS, w1 … w15),
@@ -60,7 +64,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   subs: [],
   settings: { defaultCurrency: localeCurrency('TWD'), groupColors: {} }, // groupColors: category name → swatch key
-  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List | Calendar, per device
+  view: viewFrom(storage.getPref('view')), // Money: Wallet (default) | Grid | List, per device (a saved Calendar is Wallet now)
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups with a colour in the household's record: picked, or a shared slot (left alone by this device's automatic colours)
   settingsRecord: null, // the shared settings record, read for group slots (js/group-slots.js); null before settings are shared
@@ -68,8 +72,8 @@ const state = {
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
   donutActive: null, // highlighted donut slice key (the Ring's front slice), or null
-  tab: ['subs', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
-  period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // Money summary strip
+  tab: ['subs', 'calendar', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
+  period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // the Money card's Monthly | Annual
   insightsCurrency: null,
   insightsMonth: startOfMonth(new Date()),
   insightsMode: storage.getPref('insightsMode') === 'year' ? 'year' : 'month', // Insights Month | Year
@@ -194,7 +198,6 @@ async function init() {
   applyI18n();
   initLogoHandling();
   bindTabs();
-  bindViewToggle();
   bindForm();
   bindSettings();
   bindGroupMerge();
@@ -206,23 +209,28 @@ async function init() {
     },
   });
   bindEditTaps();
-  bindDueBanner();
+  bindDue();
+  bindMoneyCard();
+  bindInsightsMode();
+  // The header's height, for Insights' first screen (app.css .ins-hero-fill): it grows when the
+  // system bar is tall or a long title wraps.
+  const header = $('.app-header');
+  new ResizeObserver(() => document.documentElement.style.setProperty('--header-now', `${header.offsetHeight}px`)).observe(header);
+  bindIncomeCard();
   bindGroupColors();
-  bindSortMenu();
+  bindViewMenu();
   // For tests, like the wallet's host.wallet: the rolling totals, and reading the data again.
   $('#money-summary').roller = roller;
   $('#money-summary').reload = () => reloadData();
+  $('#income-card').gauge = gauge;
+  $('#income-card').gaugeRing = (colour) => gaugeRing(colour);
   bindDialogFormFallback();
   bindBackButton();
   $$('[data-action="add"]').forEach((b) => b.addEventListener('click', () => openForm()));
   $$('[data-action="add-income"]').forEach((b) => b.addEventListener('click', () => openForm(null, 'income')));
-  $('#money-summary').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-period]');
-    if (!b) return;
-    state.period = b.dataset.period;
-    storage.setPref('period', state.period);
-    renderSubs();
-  });
+  // The one +: an expense to start with (the sheet switches to income), on the Calendar tab on the
+  // selected day.
+  $('#fab').addEventListener('click', () => openForm(null, 'expense', { date: state.tab === 'calendar' ? calendarDay() : '' }));
 
   storage.setBlockedHandler(() => toast(t('toast.blocked'), {
     label: t('common.dismiss'), sticky: true, run: () => {},
@@ -241,7 +249,7 @@ async function init() {
     }
     state.subs = subs;
     // Before 1.2.1 the default was always TWD and only stored once changed. Existing data keeps TWD so the
-    // summary strip doesn't switch currency; a fresh install takes the device's locale. Either way it's
+    // Money card doesn't switch currency; a fresh install takes the device's locale. Either way it's
     // kept as this device's own pick: it isn't synced, and a currency the household chose replaces it.
     if (!settings.defaultCurrency) {
       settings.defaultCurrency = subs.length ? 'TWD' : localeCurrency('TWD');
@@ -323,7 +331,9 @@ async function reloadData({ remote = false } = {}) {
    Tabs
    -------------------------------------------------------------------------- */
 // The first tab keeps its internal id `subs` so a saved tab choice still restores.
-const TAB_TITLES = { subs: 'tab.money', insights: 'tab.insights', settings: 'tab.settings' };
+const TAB_TITLES = { subs: 'tab.money', calendar: 'tab.calendar', insights: 'tab.insights', settings: 'tab.settings' };
+/** The tabs with the + button: the ones that list items. */
+const FAB_TABS = new Set(['subs', 'calendar']);
 
 // The pill behind the active tab (js/tab-pill.js): it slides with every tab change, Back included.
 let tabPill = null;
@@ -353,30 +363,26 @@ function setTab(tab, { focus = true } = {}) {
   tabPill?.moveTo($(`.tab[data-tab="${tab}"]`));
   $('#panel-subs').hidden = tab !== 'subs';
   document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
+  $('#panel-calendar').hidden = tab !== 'calendar';
   $('#panel-insights').hidden = tab !== 'insights';
   $('#panel-settings').hidden = tab !== 'settings';
   $('#subs-actions').hidden = tab !== 'subs';
-  $('#fab-stack').hidden = tab === 'settings';
+  syncInsightsActions();
+  $('#fab-stack').hidden = !FAB_TABS.has(tab);
+  // Insights has no + button, so it keeps its own bottom room (app.css .insights-view), not the
+  // Money and Calendar tabs' room for the button.
+  document.body.classList.toggle('insights-view', tab === 'insights');
   $('#page-title').textContent = t(TAB_TITLES[tab]);
   document.title = tab === 'subs' ? t('app.name') : t('app.title', { tab: t(TAB_TITLES[tab]), app: t('app.name') });
   if (focus) window.scrollTo({ top: 0 });
   if (tab === 'insights') { if (was !== 'insights') roller.replay(); renderInsights(); }
-  // Coming to the Money tab plays the rolling totals again (the strip here, the cards in relayout).
-  // The banner too: the day may have changed while another tab was showing.
-  if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); renderDueBanner(); }
+  // Coming to the Calendar tab plays the month's figure again, like the Money card.
+  if (tab === 'calendar') { if (was !== 'calendar') roller.replay(); renderCalendar(); }
+  // Coming to the Money tab plays the rolling totals again (the Money card here, the Wallet cards in
+  // relayout). The chip too: the day may have changed while another tab was showing.
+  if (tab === 'subs' && was !== 'subs') { roller.replay(); renderMoneySummary(); renderDue(); }
   // The stack is sized from where it sits on screen, which it can't know while its tab is hidden.
   if (walletShown()) wallet?.relayout();
-}
-
-function bindViewToggle() {
-  $$('.seg-btn[data-view]').forEach((b) =>
-    b.addEventListener('click', () => {
-      state.view = viewFrom(b.dataset.view);
-      storage.setPref('view', state.view);
-      if (state.view === 'wallet') window.scrollTo({ top: 0 });
-      renderSubs();
-    })
-  );
 }
 
 /* --------------------------------------------------------------------------
@@ -385,6 +391,7 @@ function bindViewToggle() {
 function render() {
   ensureGroupColors();
   renderSubs();
+  if (state.tab === 'calendar') renderCalendar();
   if (state.tab === 'insights') renderInsights();
   fillCategoryList();
 }
@@ -522,47 +529,53 @@ function bindGroupColors() {
   window.addEventListener('resize', () => close(false));
 }
 
-/* Sort groups --------------------------------------------------------------- */
+/* View and Sort groups ------------------------------------------------------- */
 const SORT_NAMES = { az: 'sort.name.az', total: 'sort.name.total', items: 'sort.name.items' };
+const VIEW_NAMES = { wallet: 'money.view.wallet', grid: 'money.view.grid', list: 'money.view.list' };
 
-/** The Sort button shows the order in use (its label, and its colour when it isn't A–Z). */
-function renderSortButton() {
-  const btn = $('#sort-btn');
-  // Sort orders groups; the calendar has none, so there the button stays in place, disabled.
-  btn.disabled = state.view === 'calendar';
+/**
+ * The View button shows what's in use: its icon is the view, its label names the view and the
+ * order, and it turns the accent colour when the order isn't A–Z.
+ */
+function renderViewButton() {
+  const btn = $('#view-btn');
+  btn.dataset.view = state.view;
   btn.dataset.sort = state.groupSort;
-  btn.setAttribute('aria-label', t('sort.button', { order: t(SORT_NAMES[state.groupSort]) }));
-  $$('#sort-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
+  btn.setAttribute('aria-label', t('money.view.button', { view: t(VIEW_NAMES[state.view]), order: t(SORT_NAMES[state.groupSort]) }));
+  $$('#view-menu [data-view]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.view === state.view)));
+  $$('#view-menu [data-sort]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.sort === state.groupSort)));
 }
 
-// The Sort menu: opened from the header's Sort button on the Money tab. A menu of three radio items
-// (arrow keys, Home, End, Enter or Space; Escape, Tab or Back close it). On the overlay stack, so
-// Android Back closes it. The choice is this device's own (localStorage); never synced or exported.
-function bindSortMenu() {
-  const btn = $('#sort-btn');
-  const menu = $('#sort-menu');
+// The View menu: opened from the header's View button on the Money tab. One menu, two groups of
+// radio items, View (Wallet, Grid, List) then Sort groups (arrow keys, Home, End, Enter or Space;
+// Escape, Tab or Back close it). On the overlay stack, so Android Back closes it, and focus goes
+// back to the button. Both choices are this device's own (localStorage); never synced or exported.
+function bindViewMenu() {
+  const btn = $('#view-btn');
+  const menu = $('#view-menu');
   const items = () => $$('.menu-item', menu);
 
   const close = (refocus) => {
-    overlays.remove('sort-menu');
+    overlays.remove('view-menu');
     if (menu.hidden) return;
     menu.hidden = true;
     btn.setAttribute('aria-expanded', 'false');
     if (refocus) btn.focus();
   };
   const open = () => {
-    renderSortButton();
+    renderViewButton();
     menu.hidden = false;
     btn.setAttribute('aria-expanded', 'true');
-    overlays.open('sort-menu', { close: () => close(true), isOpen: () => !menu.hidden, isShown: () => state.tab === 'subs' });
+    overlays.open('view-menu', { close: () => close(true), isOpen: () => !menu.hidden, isShown: () => state.tab === 'subs' });
     // Under the button, right edges lined up, inside the side gutter.
     const r = btn.getBoundingClientRect();
     const gutter = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     menu.style.top = `${r.bottom + gutter / 4}px`;
     menu.style.left = `${Math.max(gutter, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - gutter))}px`;
+    // Focus on the view in use (the first checked item).
     (items().find((b) => b.getAttribute('aria-checked') === 'true') ?? items()[0]).focus();
   };
-  const choose = (sort) => {
+  const chooseSort = (sort) => {
     close(true);
     const next = groupSortFrom(sort);
     if (next === state.groupSort) return;
@@ -570,11 +583,21 @@ function bindSortMenu() {
     storage.setPref('groupSort', next);
     renderSubs({ reorder: true });
   };
+  const chooseView = (view) => {
+    close(true);
+    const next = viewFrom(view);
+    if (next === state.view) return;
+    state.view = next;
+    storage.setPref('view', next);
+    if (next === 'wallet') window.scrollTo({ top: 0 });
+    renderSubs();
+  };
 
   btn.addEventListener('click', () => { if (menu.hidden) open(); else close(true); });
   menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-sort]');
-    if (b) choose(b.dataset.sort);
+    const b = e.target.closest('.menu-item');
+    if (b?.dataset.sort) chooseSort(b.dataset.sort);
+    else if (b?.dataset.view) chooseView(b.dataset.view);
   });
   menu.addEventListener('keydown', (e) => {
     const list = items();
@@ -597,7 +620,7 @@ function bindSortMenu() {
     if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) close(false);
   });
   window.addEventListener('resize', () => close(false));
-  renderSortButton();
+  renderViewButton();
 }
 
 function renewalTag(sub) {
@@ -613,46 +636,45 @@ const oneOffTag = () => `<span class="tag tag-once">${esc(t('money.oneOff'))}</s
 let wallet = null;
 let walletHost = null;
 
-/* Due-soon banner ------------------------------------------------------------ */
+/* Due soon: the chip on the Money card and its sheet ------------------------------------------- */
 /**
- * A slim line under the Money strip with what comes due in the next N days (js/due-soon.js):
- * "3 due in the next 7 days · NT$889 due · +1 in USD". Tapping it opens the list in a sheet (on
- * the overlay stack, so Android Back closes it); a row opens the item's edit sheet. Not shown at
- * all when nothing is due, when it's turned off in Settings, or for the rest of the day after its
- * close button (a local date, per device). Plain text: its figures don't roll. Its settings are
- * per-device preferences, never synced or exported.
+ * A small "3 due" chip on the Money card (js/due-soon.js): how many items come due in the next N
+ * days. Tapping it opens the list in a sheet (on the overlay stack, so Android Back closes it),
+ * with the totals at the top ("3 due in the next 7 days", the default currency's total, income
+ * coming in, other currencies counted, undated items) and a row per item that opens its edit
+ * sheet. The chip isn't there at all when nothing is due or when it's turned off in Settings.
+ * Plain text: its figures don't roll. Its settings are per-device preferences, never synced or
+ * exported.
  */
 const dueSettings = () => ({
-  on: bannerOnFrom(storage.getPref('dueSoon')),
+  on: chipOnFrom(storage.getPref('dueSoon')),
   windowDays: windowFrom(storage.getPref('dueSoonDays')),
   includeIncome: includeIncomeFrom(storage.getPref('dueSoonIncome')),
 });
-let dueNow = null; // what the banner shows now (dueSoon()'s result), or null when it's hidden
+let dueNow = null; // what the chip counts now (dueSoon()'s result), or null when it's hidden
 
 /** "Today", "Tomorrow", "In 3 days" within the week, else the date; `inline` for a sentence. */
 const dueWhen = (r, { inline = false } = {}) => (r.days < 7 ? relativeDays(r.days, undefined, { capital: !inline }) : shortDate(r.date));
 
-function renderDueBanner() {
-  const banner = $('#due-banner');
+function renderDue() {
+  const chip = $('#due-chip');
   const set = dueSettings();
   const cur = state.settings.defaultCurrency;
-  const now = new Date();
-  const res = dueSoon(state.subs, now, { windowDays: set.windowDays, includeIncome: set.includeIncome, currency: cur });
-  const show = state.subs.length > 0 && set.on && res.count > 0 && !isDismissed(storage.getPref('dueSoonDismissed'), now);
+  const res = dueSoon(state.subs, new Date(), { windowDays: set.windowDays, includeIncome: set.includeIncome, currency: cur });
+  const show = state.subs.length > 0 && set.on && res.count > 0;
   dueNow = show ? res : null;
-  banner.hidden = !show;
+  if (chip) chip.hidden = !show;
   if (!show) {
     if (dialogOpen($('#due-dialog'))) closeDialog($('#due-dialog'));
     return;
   }
-  // Line 1: how many, and the default currency's total due (never cut short; the sentence gives way
-  // first). Line 2, quiet: income coming in, other currencies (not in any total), undated items.
+  // The sheet's top: how many and the default currency's total due; then, quiet, income coming in,
+  // other currencies (not in any total) and undated items.
   const hasDue = res.rows.some((r) => r.currency === cur && !r.income);
   const summary = t('dueSoon.summary', { count: res.count, days: res.windowDays });
   const extra = [res.hasIncome ? t('dueSoon.income', { amount: money(res.incomeTotal, cur) }) : '', othersText(res.others)].filter(Boolean);
   $('#due-text').textContent = summary;
-  $('#due-sum').textContent = hasDue ? money(res.total, cur) : '';
-  $('#due-toggle').setAttribute('aria-label', [summary, hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '', ...extra].filter(Boolean).join(' · '));
+  $('#due-sum').textContent = hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '';
   $('#due-extra').textContent = extra.join(' · ');
   const undated = $('#due-undated');
   undated.hidden = !res.undated.length;
@@ -662,6 +684,9 @@ function renderDueBanner() {
   }
   $('#due-notes').hidden = !extra.length && !res.undated.length;
   $('#due-notes').classList.toggle('has-both', extra.length > 0 && res.undated.length > 0);
+  // The chip: "3 due", read out with the totals.
+  $('#due-chip-text').textContent = t('dueSoon.chip', { count: res.count });
+  chip.setAttribute('aria-label', [summary, hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '', ...extra].filter(Boolean).join(' · '));
   if (dialogOpen($('#due-dialog'))) fillDueList();
 }
 
@@ -687,17 +712,17 @@ function fillDueList() {
   }).join('');
 }
 
-function bindDueBanner() {
+function bindDue() {
   const dlg = $('#due-dialog');
-  const toggle = $('#due-toggle');
-  toggle.addEventListener('click', () => {
-    if (!dueNow) return;
+  // The chip is drawn again with the Money card, so its tap is caught on the card.
+  $('#money-summary').addEventListener('click', (e) => {
+    if (!e.target.closest('#due-chip') || !dueNow) return;
     fillDueList();
     openDialog(dlg);
-    toggle.setAttribute('aria-expanded', 'true');
+    $('#due-chip')?.setAttribute('aria-expanded', 'true');
   });
   dlg.addEventListener('close', () => {
-    toggle.setAttribute('aria-expanded', 'false');
+    $('#due-chip')?.setAttribute('aria-expanded', 'false');
     // The edit sheet, opened from a row, may be open by now: it keeps the buttons hidden.
     if (!$$('dialog.sheet').some(dialogOpen)) document.body.classList.remove('sheet-open');
   });
@@ -710,19 +735,9 @@ function bindDueBanner() {
     closeDialog(dlg);
     openForm(sub);
   });
-  $('#due-undated').addEventListener('click', (e) => {
-    const sub = state.subs.find((s) => s.id === e.currentTarget.dataset.id);
-    if (sub) openForm(sub);
-  });
-  // Close: hidden for the rest of today on this device; back tomorrow, or when the window changes.
-  $('#due-close').addEventListener('click', () => {
-    storage.setPref('dueSoonDismissed', dismissKey());
-    renderSubs(); // the Wallet measures its space again, without the banner
-    $('.seg-btn[data-view][aria-pressed="true"]')?.focus();
-  });
 }
 
-/** Settings → Due soon: show the banner, how many days ahead, and whether income is listed. */
+/** Settings → Due soon: show the chip, how many days ahead, and whether income is listed. */
 function bindDueSettings() {
   const show = $('#set-due');
   const days = $('#set-due-days');
@@ -733,11 +748,7 @@ function bindDueSettings() {
   days.value = String(set.windowDays);
   income.checked = set.includeIncome;
   show.addEventListener('change', () => { storage.setPref('dueSoon', show.checked ? 'on' : 'off'); renderSubs(); });
-  days.addEventListener('change', () => {
-    storage.setPref('dueSoonDays', days.value);
-    storage.setPref('dueSoonDismissed', ''); // a new window shows the banner again at once
-    renderSubs();
-  });
+  days.addEventListener('change', () => { storage.setPref('dueSoonDays', days.value); renderSubs(); });
   income.addEventListener('change', () => { storage.setPref('dueSoonIncome', income.checked ? 'on' : 'off'); renderSubs(); });
 }
 
@@ -745,9 +756,10 @@ function bindDueSettings() {
 const walletShown = () => state.tab === 'subs' && state.view === 'wallet' && state.subs.length > 0;
 
 /**
- * The stack's height: from its top down to the tab bar, so the page itself doesn't scroll; and
- * `inset`, the strip at its bottom covered by the floating buttons, which the last card clears
- * once the stack is scrolled to its end.
+ * The stack's height: from its top (under the header, the Money card and the income card, so it's
+ * measured again whenever one of those changes height) down to the tab bar, so the page itself
+ * doesn't scroll; and `inset`, the strip at its bottom covered by the one + button, which the last
+ * card clears once the stack is scrolled to its end.
  */
 function walletViewport() {
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -772,22 +784,188 @@ function renderWallet(list, { reorder = false } = {}) {
       loadLogos: loadDeferredLogos,
       // A card's total rolls when it changes (js/count-anim.js); only cards on or near the screen.
       total: (el, g, near) => roller.show(g.total > 0 ? el : null, `wallet:${g.key}`, g.total, state.settings.defaultCurrency, { visible: near && moneyOnScreen() }),
+      // The income card's gauge follows the front card, and names it once the stack stops.
+      onFront: (g, { settled }) => onWalletFront(g, settled),
     });
     walletHost.wallet = wallet; // for tests, like the year chart's host.yearChart
   }
   if (walletHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(walletHost); }
   const cur = state.settings.defaultCurrency;
   const now = new Date();
-  const groups = moneyGroups().map((g) => ({ ...g, fillVar: g.income ? '--wallet-income' : swatchVarName(groupSwatch(g.name)) }));
+  // Expense groups only: Income has its own card above the stack, never a Wallet card.
+  const groups = moneyGroups().map((g) => ({ ...g, fillVar: swatchVarName(groupSwatch(g.name)) }));
   // A stronger divider between neighbours whose colours are close, in every sort (A–Z looks as
   // before unless two neighbours are close).
   const dividers = true;
   wallet.update({ groups, currency: cur, period: state.period, year: now.getFullYear(), month: now.getMonth(), dividers }, { reorder });
 }
 
-/* Calendar view (js/calendar.js, js/calendar-math.js) ------------------------------------------- */
+/* Income card and its gauge ------------------------------------------------------------------ */
+/**
+ * Income has its own compact card above the stack (pinned in the Wallet, where the stack scrolls
+ * beneath it; first in Grid and List, scrolling with them), never part of the stack or of Sort.
+ * Collapsed it shows its title and a gauge: how much of the period's income the front Wallet card
+ * takes (in Grid and List, all the outgoings), in the default currency on the Money card's cash
+ * basis (js/wallet-math.js incomeGauge). No income total: the Money card shows it. A tap opens the
+ * income items (name and amount; a tap on one opens its edit sheet). Open or closed isn't saved.
+ * The segment moves with the critically damped spring the stack uses (springStep), and jumps with
+ * Reduce motion and effects; a segment colour under 3:1 against the track gets a thin ring.
+ */
+const gauge = { x: 0, v: 0, target: 0, raf: 0, last: 0, frames: 0 }; // frames: for tests
+let incomeOpen = false;
+let gaugeAnnounced; // the front card last announced; undefined until the stack first settles
+let ringCache = new Map();
+
+const yearlyPeriod = () => state.period === 'annual';
+
+/** The Money card's figures for the period, in the default currency (stripSummary). */
+function moneySummary() {
+  const now = new Date();
+  const cur = state.settings.defaultCurrency;
+  return stripSummary(state.subs.filter((s) => s.currency === cur), state.period, now.getFullYear(), now.getMonth());
+}
+
+/** What the gauge shows now: { gauge, colour (a CSS colour), label }. */
+function gaugeNow() {
+  const income = moneySummary().income;
+  // The Wallet: the open card, else the card in the front slot (js/wallet.js front()). With no front
+  // card (Reduce motion and effects with every card closed, or no cards) it's the totals, as in Grid
+  // and List.
+  const g = state.view !== 'wallet' ? null
+    : wallet && walletHost?.isConnected ? wallet.front() : reduceEffects() ? null : moneyGroups()[0] ?? null;
+  if (g) {
+    const k = frontGauge(g, income);
+    return { gauge: k, colour: swatchVar(groupSwatch(g.name)), label: gaugeLabel(k, g.label) };
+  }
+  const k = totalGauge(moneyGroups(), income);
+  return { gauge: k, colour: 'var(--accent)', label: gaugeLabel(k, null) };
+}
+
+/** The gauge's words: "House · 75% of income", "Outgoings · <1% of income", "No income this month"… */
+function gaugeLabel(k, group) {
+  if (k.kind === 'noIncome') return t(yearlyPeriod() ? 'income.gauge.noIncome.year' : 'income.gauge.noIncome.month');
+  if (k.kind === 'empty') return t(yearlyPeriod() ? 'wallet.nothingDue.year' : 'wallet.nothingDue.month');
+  if (k.kind === 'foreign') return t('income.gauge.foreign', { group });
+  if (group === null) return k.tiny ? t('income.gauge.outgoingsTiny') : t('income.gauge.outgoings', { pct: k.pct });
+  return k.tiny ? t('income.gauge.shareTiny', { group }) : t('income.gauge.share', { group, pct: k.pct });
+}
+
+/** Whether `colour` needs the ring against the gauge's track, in the theme in use (probed once a draw). */
+function gaugeRing(colour) {
+  if (!ringCache.has(colour)) {
+    const probe = document.createElement('span');
+    probe.style.color = colour;
+    $('#income-card').append(probe);
+    const fg = parseColour(getComputedStyle(probe).color);
+    probe.remove();
+    const back = parseColour(getComputedStyle($('#income-track')).backgroundColor);
+    ringCache.set(colour, !!fg && !!back && gaugeNeedsRing(fg, back));
+  }
+  return ringCache.get(colour);
+}
+
+function setGaugeWidth(x) { $('#income-seg').style.width = `${(Math.max(0, Math.min(1, x)) * 100).toFixed(3)}%`; }
+function gaugeTick(now) {
+  gauge.raf = 0;
+  const dt = gauge.last ? Math.min((now - gauge.last) / 1000, 1 / 30) : 1 / 60;
+  gauge.last = now;
+  [gauge.x, gauge.v] = springStep(gauge.x, gauge.v, gauge.target, MOTION.gaugeOmega, dt);
+  if (Math.abs(gauge.x - gauge.target) < MOTION.gaugeRest && Math.abs(gauge.v) < MOTION.gaugeRest * 10) { gauge.x = gauge.target; gauge.v = 0; }
+  setGaugeWidth(gauge.x);
+  gauge.frames++;
+  if (gauge.x !== gauge.target) gauge.raf = requestAnimationFrame(gaugeTick); else gauge.last = 0;
+}
+/** Move the segment to `ratio`: on the spring, or at once with Reduce motion and effects. */
+function moveGauge(ratio) {
+  gauge.target = ratio;
+  if (reduceEffects() || !moneyOnScreen()) {
+    if (gauge.raf) cancelAnimationFrame(gauge.raf);
+    gauge.raf = 0; gauge.last = 0; gauge.x = ratio; gauge.v = 0;
+    setGaugeWidth(ratio);
+    return;
+  }
+  if (gauge.x !== ratio && !gauge.raf) gauge.raf = requestAnimationFrame(gaugeTick);
+}
+
+/** Draw the gauge for the front card (or the totals in Grid and List). */
+function updateGauge() {
+  const card = $('#income-card');
+  if (card.hidden) return;
+  const { gauge: k, colour, label } = gaugeNow();
+  const seg = $('#income-seg');
+  seg.hidden = k.kind !== 'share';
+  seg.style.setProperty('--gauge-fill', colour);
+  seg.classList.toggle('ic-seg-ring', k.kind === 'share' && gaugeRing(colour));
+  $('#income-label').textContent = label;
+  card.dataset.gauge = k.kind;
+  moveGauge(k.kind === 'share' ? k.ratio : 0);
+}
+
+/** The stack moved to another front card, or stopped: the gauge follows, and names it once settled. */
+function onWalletFront(g, settled) {
+  if (!walletShown() || $('#income-card').hidden) return;
+  updateGauge();
+  if (!settled) return;
+  const key = g?.key ?? null;
+  if (gaugeAnnounced === undefined) { gaugeAnnounced = key; return; } // the first draw isn't news
+  if (key === gaugeAnnounced) return;
+  gaugeAnnounced = key;
+  const live = $('#income-live');
+  live.textContent = '';
+  setTimeout(() => { live.textContent = $('#income-label').textContent; }, 30);
+}
+
+function renderIncomeCard() {
+  const card = $('#income-card');
+  const cur = state.settings.defaultCurrency;
+  card.hidden = state.subs.length === 0;
+  if (card.hidden) return;
+  ringCache = new Map();
+  const items = state.subs.filter(isIncome).sort(byName);
+  const toggle = $('#income-toggle');
+  toggle.setAttribute('aria-expanded', String(incomeOpen));
+  card.classList.toggle('is-open', incomeOpen);
+  const list = $('#income-list');
+  list.hidden = !incomeOpen;
+  list.innerHTML = items.length
+    ? items.map((s) => `<li><button type="button" class="sub-row ic-row" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
+      ${logoHTML(s, 'sm')}
+      <span class="sub-text"><span class="sub-name">${esc(s.name)}</span></span>
+      <span class="sub-row-price"><span class="amount">${esc(money(s.price, s.currency))}</span>${s.currency === cur ? '' : `<span class="cycle">${esc(t('wallet.notInTotals', { currency: cur }))}</span>`}</span>
+    </button></li>`).join('')
+    : `<li><button type="button" class="sub-row ic-row ic-add" data-add-income>${esc(t('money.addIncome'))}</button></li>`;
+  if (incomeOpen) loadDeferredLogos(list);
+}
+
+function bindIncomeCard() {
+  const card = $('#income-card');
+  $('#income-toggle').addEventListener('click', () => {
+    incomeOpen = !incomeOpen;
+    renderIncomeCard();
+    // The stack sits below the card: it measures its room again.
+    if (walletShown()) wallet?.resize();
+  });
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('[data-add-income]')) { openForm(null, 'income'); return; }
+    const row = e.target.closest('[data-id]');
+    const sub = row && state.subs.find((s) => s.id === row.dataset.id);
+    if (sub) openForm(sub);
+  });
+}
+
+/* Calendar tab (js/calendar.js, js/calendar-math.js) -------------------------------------------- */
 let calendar = null;
 let calendarHost = null;
+
+/** Whether the Calendar tab is what's on screen (its month figure may roll). */
+const calendarOnScreen = () => state.tab === 'calendar' && document.visibilityState === 'visible';
+/** The calendar's selected day as YYYY-MM-DD (for the + button), or '' when no day is selected. */
+function calendarDay() {
+  const s = calendar?.state;
+  if (!s?.selected) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${s.year}-${pad(s.month + 1)}-${pad(s.selected)}`;
+}
 
 /** Settings → Calendar → Week starts on: 'auto' (the default), 'mon' or 'sun'. Per device. */
 const weekStartPref = () => weekStartFrom(storage.getPref('weekStart'));
@@ -795,10 +973,12 @@ const weekStartPref = () => weekStartFrom(storage.getPref('weekStart'));
 const weekLocale = () => formatLocale() ?? new Intl.DateTimeFormat().resolvedOptions().locale;
 const weekStart = () => resolveWeekStart(weekStartPref(), weekLocale());
 
-function renderCalendar(list) {
+function renderCalendar() {
   if (!calendarHost) {
     calendarHost = document.createElement('div');
     calendarHost.id = 'calendar';
+    // In the page before the first draw: the dots' rings are measured against the real styles.
+    $('#panel-calendar').append(calendarHost);
     calendar = createCalendar(calendarHost, {
       items: () => state.subs,
       currency: () => state.settings.defaultCurrency,
@@ -807,12 +987,13 @@ function renderCalendar(list) {
       dotColour: (group) => swatchVar(groupSwatch(group)),
       logo: (s) => logoHTML(s, 'sm'),
       onEdit: (s) => openForm(s),
-      // Only the month's figure rolls (from the old month's to the new one's); the days are text.
-      rollSummary: (el, value, cur) => roller.show(value > 0 ? el : null, 'calendar:due', value, cur, { visible: moneyOnScreen() }),
+      // Only the month's In, Out and Left over roll (from the old month's to the new one's); the
+      // days are text. Left over rolls its size: it shows no sign.
+      roll: (el, key, value, cur) => roller.show(value > 0 ? el : null, `calendar:${key}`, value, cur, { visible: calendarOnScreen() }),
     });
     calendarHost.calendar = calendar; // for tests, like the wallet's host.wallet
+    return; // createCalendar has drawn it
   }
-  if (calendarHost.parentElement !== list || list.children.length !== 1) { list.textContent = ''; list.append(calendarHost); }
   calendar.update();
 }
 
@@ -830,14 +1011,14 @@ function bindWeekStart() {
   select.value = weekStartPref();
   select.addEventListener('change', () => {
     storage.setPref('weekStart', weekStartFrom(select.value));
-    if (state.view === 'calendar') renderSubs();
+    calendar?.update();
   });
 }
 
 /**
- * The Money tab's groups in the order Sort asks for (Income first, then the expense groups), on
- * the strip's cash basis for the period: js/wallet-math.js walletGroups and sortGroups. The
- * Wallet, Grid and List all draw from this, so they always agree.
+ * The Money tab's expense groups in the order Sort asks for, on the Money card's cash basis for the
+ * period: js/wallet-math.js walletGroups and sortGroups. The Wallet, Grid and List all draw from
+ * this, so they always agree. Income isn't one of them: it has its own card (renderIncomeCard).
  */
 function moneyGroups() {
   const now = new Date();
@@ -850,82 +1031,116 @@ function renderSubs({ reorder = false } = {}) {
   const list = $('#subs-list');
   const all = state.subs;
 
-  $$('.seg-btn[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === state.view));
-  renderSortButton();
+  renderViewButton();
   $('#subs-empty').hidden = all.length > 0;
   list.hidden = all.length === 0;
   $('#money-summary').hidden = all.length === 0;
   renderMoneySummary();
-  renderDueBanner(); // before the Wallet, which sizes itself from where it sits below the banner
+  renderDue();         // the chip on the Money card
+  renderIncomeCard();  // before the Wallet, which sizes itself from where it sits below the income card
   document.body.classList.toggle('wallet-view', walletShown() && !reduceEffects());
   if (state.view === 'wallet') {
     if (all.length) renderWallet(list, { reorder }); else { wallet?.close(); list.textContent = ''; }
+    updateGauge();
     return;
   }
   wallet?.close();
-  if (state.view === 'calendar') {
-    if (all.length) renderCalendar(list); else list.textContent = '';
-    return;
-  }
+  gaugeAnnounced = undefined; // back in the Wallet, its first front card isn't news
 
-  // Income first (an implicit section, no categories), then expenses grouped by category, in the
-  // order Sort asks for (items A–Z within each group).
-  const groups = moneyGroups().map((g) => ({ name: g.name, label: g.label, items: g.items, colour: !g.income }));
+  // The expense groups by category, in the order Sort asks for (items A–Z within each group).
+  // Income has its own card above them.
+  const groups = moneyGroups();
 
   const isList = state.view === 'list';
   list.innerHTML = groups.map((g, i) => {
-    const key = g.colour ? groupSwatch(g.name) : null;
-    const dot = key ? `<button type="button" class="group-dot" data-group="${esc(g.name)}" style="--swatch: ${swatchVar(key)}"
-      aria-label="${esc(t('money.colour.dot', { group: g.label, colour: swatchName(key) }))}" aria-haspopup="dialog" aria-expanded="false"></button>` : '';
+    const key = groupSwatch(g.name);
+    const dot = `<button type="button" class="group-dot" data-group="${esc(g.name)}" style="--swatch: ${swatchVar(key)}"
+      aria-label="${esc(t('money.colour.dot', { group: g.label, colour: swatchName(key) }))}" aria-haspopup="dialog" aria-expanded="false"></button>`;
     return `
     <section class="money-group" aria-labelledby="group-${i}">
-      <h2 class="section-title${dot ? ' group-head' : ''}" id="group-${i}">${dot}<span>${esc(g.label)} <span class="optional">${g.items.length}</span></span></h2>
+      <h2 class="section-title group-head" id="group-${i}">${dot}<span>${esc(g.label)} <span class="optional">${g.items.length}</span></span></h2>
       <div class="${isList ? 'subs-list' : 'subs-grid'}">${g.items.map(isList ? rowHTML : cardHTML).join('')}</div>
     </section>`;
   }).join('');
+  updateGauge();
 }
 
+/**
+ * The Money card: the period (this month, or this year in Annual), its Cash due as the big figure,
+ * and Income and Left over, all from stripSummary(), so they are the Insights headline and yearly
+ * card by construction. The Monthly | Annual toggle (it drives the Wallet totals too) and the
+ * due-soon chip are their own controls; a tap anywhere else on the card opens Insights. Undated
+ * items are left out and counted on one line that opens the first of them.
+ */
 function renderMoneySummary() {
+  const host = $('#money-summary');
   const cur = state.settings.defaultCurrency;
   const inCur = state.subs.filter((s) => s.currency === cur);
   const others = state.subs.length - inCur.length;
   const now = new Date();
-  // This month or year on the same cash basis as Insights (see stripSummary); undated items are
-  // left out and counted on one line that opens the first of them.
   const sum = stripSummary(inCur, state.period, now.getFullYear(), now.getMonth());
   const undated = undatedItems(inCur);
-  const when = state.period === 'annual'
+  const yearly = yearlyPeriod();
+  const when = yearly
     ? t('common.year', { year: now.getFullYear() })
     : now.toLocaleDateString(formatLocale(), { month: 'long', year: 'numeric' });
-  // `id` names the figure for the rolling totals (stable in every language); `label` is shown.
-  const cell = (id, label, value, cls = '', sub = '') => `
-    <div class="summary-cell${cls}">
-      <div class="stat-label">${esc(label)}</div>
-      <div class="summary-value" data-roll="${id}" data-value="${value}">${esc(money(value, cur))}</div>
-      ${sub ? `<div class="stat-sub">${esc(sub)}</div>` : ''}
-    </div>`;
-
-  $('#money-summary').innerHTML = `
-    <div class="summary-head">
-      <span class="summary-when">${esc(when)}</span>
-      <div class="segmented" role="group" aria-label="${esc(t('money.period.label'))}">
-        <button type="button" class="seg-btn seg-btn-text" data-period="monthly" aria-pressed="${state.period === 'monthly'}">${esc(t('money.period.monthly'))}</button>
-        <button type="button" class="seg-btn seg-btn-text" data-period="annual" aria-pressed="${state.period === 'annual'}">${esc(t('money.period.annual'))}</button>
+  const short = sum.leftOver < 0;
+  // The control that had focus keeps it through the redraw (a period button, the chip, the card).
+  const focusKey = document.activeElement?.closest?.('#money-summary [data-focus]')?.dataset.focus;
+  // `data-roll` names the figure for the rolling totals (stable in every language).
+  host.innerHTML = `
+    <button type="button" class="mc-open" data-focus="open" aria-label="${esc(t(yearly ? 'money.card.open.year' : 'money.card.open.month', { amount: money(sum.outgoings, cur) }))}"></button>
+    <div class="mc-head">
+      <span class="mc-when">${esc(when)}</span>
+      <div class="segmented mc-period" role="group" aria-label="${esc(t('money.period.label'))}">
+        <button type="button" class="seg-btn seg-btn-text" data-period="monthly" data-focus="monthly" aria-pressed="${!yearly}">${esc(t('money.period.monthly'))}</button>
+        <button type="button" class="seg-btn seg-btn-text" data-period="annual" data-focus="annual" aria-pressed="${yearly}">${esc(t('money.period.annual'))}</button>
       </div>
     </div>
-    <div class="summary-cells">
-      ${cell('Income', t('money.income'), sum.income, ' summary-income')}
-      ${cell('Outgoings', t('money.outgoings'), sum.outgoings, '', state.period === 'annual' ? '' : t('common.avgPerMonth', { amount: money(sum.average, cur) }))}
-      ${cell('Left over', t('money.leftOver'), sum.leftOver, sum.leftOver < 0 ? ' summary-short' : '', sum.leftOver < 0 ? t('common.moreOutThanIn') : '')}
+    <div class="mc-due">
+      <span class="mc-label">${esc(t('money.card.cashDue'))}</span>
+      <button type="button" class="mc-chip" id="due-chip" data-focus="chip" aria-haspopup="dialog" aria-expanded="false" aria-controls="due-dialog" hidden>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <span id="due-chip-text"></span>
+      </button>
     </div>
-    ${undated.length ? `<button type="button" class="summary-note summary-note-action" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
-    ${others ? `<p class="summary-note">${esc(t('money.otherCurrencies', { currency: cur, count: others }))}</p>` : ''}`;
+    <div class="mc-value" data-roll="cash" data-value="${sum.outgoings}">${esc(money(sum.outgoings, cur))}</div>
+    <dl class="mc-cells">
+      <div class="mc-cell"><dt>${esc(t('money.income'))}</dt><dd data-roll="income" data-value="${sum.income}">${esc(money(sum.income, cur))}</dd></div>
+      <div class="mc-cell${short ? ' mc-short' : ''}"><dt>${esc(t('money.leftOver'))}</dt><dd data-roll="left" data-value="${sum.leftOver}">${esc(money(sum.leftOver, cur))}</dd>${short ? `<dd class="mc-note">${esc(t('common.moreOutThanIn'))}</dd>` : ''}</div>
+    </dl>
+    ${undated.length ? `<button type="button" class="mc-undated" data-focus="undated" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
+    ${others ? `<p class="mc-note">${esc(t('money.otherCurrencies', { currency: cur, count: others }))}</p>` : ''}`;
+  if (focusKey) $(`#money-summary [data-focus="${focusKey}"]`)?.focus({ preventScroll: true });
   // The three figures roll when they change, when the tab comes to the front and when the app comes back.
-  $$('#money-summary [data-roll]').forEach((el) => roller.show(el, `strip:${el.dataset.roll}`, Number(el.dataset.value), cur, { visible: moneyOnScreen() }));
+  $$('#money-summary [data-roll]').forEach((el) => roller.show(el, `card:${el.dataset.roll}`, Number(el.dataset.value), cur, { visible: moneyOnScreen() }));
+}
+
+/** The Money card: the period toggle, and a tap anywhere else (bar the chip and the undated line) opens Insights. */
+function bindMoneyCard() {
+  $('#money-summary').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-period]');
+    if (b) {
+      state.period = b.dataset.period;
+      storage.setPref('period', state.period);
+      renderSubs();
+      return;
+    }
+    if (e.target.closest('.mc-open')) openInsights();
+  });
+}
+
+/** Insights on this month in the default currency: the figures the Money card shows. */
+function openInsights() {
+  state.insightsMonth = startOfMonth(new Date());
+  state.insightsCurrency = null;
+  state.donutActive = null;
+  setTab('insights');
+  $('#tab-insights').focus();
 }
 
 /* Rolling totals (js/count-anim.js) ------------------------------------------ */
-// Up to 10 at once: the strip's three and the cards on screen. Never with Reduce motion and effects.
+// Up to 10 at once: the Money card's three and the Wallet cards on screen. Never with Reduce motion and effects.
 const roller = createRoller({ reduced: () => reduceEffects(), parts: moneyParts, text: money, cap: 10, locale: formatLocale });
 /** Whether the Money tab is what's on screen (so a total that changes can be seen to change). */
 const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState === 'visible';
@@ -933,6 +1148,7 @@ const moneyOnScreen = () => state.tab === 'subs' && document.visibilityState ===
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !state.subs.length) return;
   if (state.tab === 'subs') { roller.replay(); renderSubs(); }
+  if (state.tab === 'calendar') { roller.replay(); renderCalendar(); }
   // Insights rolls its figures where they are, without drawing the tab again (the Ring stays put).
   if (state.tab === 'insights') { roller.replay(); rollInsights(); }
 });
@@ -1016,14 +1232,37 @@ function currenciesInUse() {
   );
 }
 
+/** Month | Year in the header: shown on the Insights tab once there is something to analyse. */
+function syncInsightsActions() {
+  const box = $('#insights-actions');
+  box.hidden = state.tab !== 'insights' || !state.subs.length;
+  $$('[data-insights-mode]', box).forEach((b) => b.setAttribute('aria-pressed', String(state.insightsMode === b.dataset.insightsMode)));
+}
+
+function bindInsightsMode() {
+  $('#insights-actions').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-insights-mode]');
+    if (!b || state.insightsMode === b.dataset.insightsMode) return;
+    state.insightsMode = b.dataset.insightsMode;
+    storage.setPref('insightsMode', state.insightsMode);
+    renderInsights();
+  });
+}
+
+/**
+ * Insights. Month: the month arrows, one line with the month's outgoings as a share of its income,
+ * then the chart with the month total in it: the Ring or flat donut in a card capped at about 40% of
+ * the screen and pinned under the header while the legend (with the month's plan counts) scrolls
+ * beneath it, or the List. Then the notices, the yearly card and the most expensive items. Year: the year chart first (renderYearView). Every figure is on a cash basis
+ * from js/insights-calc.js.
+ */
 function renderInsights() {
   detachRing();
+  syncInsightsActions();
   const root = $('#insights');
-  const chips = $('#currency-chips');
   const currencies = currenciesInUse();
 
   if (!state.subs.length) {
-    chips.innerHTML = '';
     root.innerHTML = `
       <div class="empty-state">
         <div class="empty-mark" aria-hidden="true"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
@@ -1035,34 +1274,22 @@ function renderInsights() {
 
   if (!currencies.includes(state.insightsCurrency)) state.insightsCurrency = currencies[0];
   const cur = state.insightsCurrency;
-
-  chips.innerHTML = currencies.length > 1
-    ? currencies.map((c) => `<button type="button" class="chip" data-currency="${esc(c)}" aria-pressed="${c === cur}">${esc(c)}</button>`).join('')
-    : '';
-  $$('.chip', chips).forEach((c) => c.addEventListener('click', () => {
+  const chipsHTML = currencies.length > 1 ? `
+    <div class="chips" id="currency-chips" role="group" aria-label="${esc(t('insights.currency.label'))}">
+      ${currencies.map((c) => `<button type="button" class="chip" data-currency="${esc(c)}" aria-pressed="${c === cur}">${esc(c)}</button>`).join('')}
+    </div>` : '';
+  const currencyNotice = currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : '';
+  const bindChips = () => $$('#currency-chips .chip', root).forEach((c) => c.addEventListener('click', () => {
     state.insightsCurrency = c.dataset.currency;
     state.donutActive = null;
     renderInsights();
   }));
 
   const inCur = state.subs.filter((s) => s.currency === cur);
-  const modeHTML = `
-    <div class="insights-mode">
-      <div class="segmented" role="group" aria-label="${esc(t('insights.mode.label'))}">
-        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="month" aria-pressed="${state.insightsMode === 'month'}">${esc(t('insights.mode.month'))}</button>
-        <button type="button" class="seg-btn seg-btn-text" data-insights-mode="year" aria-pressed="${state.insightsMode === 'year'}">${esc(t('insights.mode.year'))}</button>
-      </div>
-    </div>`;
-  const bindMode = () => $$('[data-insights-mode]', root).forEach((b) => b.addEventListener('click', () => {
-    if (state.insightsMode === b.dataset.insightsMode) return;
-    state.insightsMode = b.dataset.insightsMode;
-    storage.setPref('insightsMode', state.insightsMode);
-    renderInsights();
-  }));
   if (state.insightsMode === 'year') {
-    renderYearView(root, { inCur, cur, currencies, modeHTML });
+    renderYearView(root, { inCur, cur, chipsHTML, currencyNotice });
+    bindChips();
     rollInsights();
-    bindMode();
     return;
   }
   stopYearChart();
@@ -1080,13 +1307,9 @@ function renderInsights() {
   const due = breakdown(subs, y, m);
   const monthly = due.total;
   // The year of the viewed month from its twelve cash months; undated items are left out, as in
-  // the month figures. Avg keeps its own definition (the yearly total ÷ 12, see monthlyAverage).
+  // the month figures.
   const year = yearSummary(inCur, y);
-  const avg = monthlyAverage(subs, y);
   const countOf = (key) => due.byType.find((t) => t.key === key)?.names.length ?? 0;
-  const nMonthly = countOf('monthly');
-  const nAnnual = countOf('annual');
-  const nOnce = countOf('once');
   const inMonth = due.byCategory.flatMap((c) => c.items); // each with its `due` amount
   const undated = undatedRecurring(subs);
   const undatedTotal = undated.reduce((t, s) => t + s.price, 0);
@@ -1101,6 +1324,7 @@ function renderInsights() {
   // The Ring, unless something rules it out; then the flat donut stands in, saying why.
   const ringWhy = state.catView === 'ring' && slices.length ? ringBlocker() : '';
   const showRing = state.catView === 'ring' && slices.length && !ringWhy;
+  const isList = state.catView === 'list';
   const catViewBtn = (view, title, icon) => `
           <button type="button" class="seg-btn" data-catview="${view}" aria-pressed="${state.catView === view}" title="${esc(title)}">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>
@@ -1109,70 +1333,22 @@ function renderInsights() {
 
   const ranked = [...inMonth].sort((a, b) => b.due - a.due || byName(a, b));
 
+  // The month's outgoings as a share of its income (the figure the old headline card showed). No
+  // percentage without income this month: the line says whether there's none at all or none paid now.
   const pct = incomeMonth ? Math.round((monthly / incomeMonth) * 100) : 0;
-  const headline = incomeMonth
-    ? tHTML('insights.headline.incomeHtml', { spent: money(monthly, cur), income: money(incomeMonth, cur), pct })
-    // No percentage without income this month: say whether there's none at all or none paid now.
-    : tHTML('insights.headline.noIncomeHtml', {
-      spent: money(monthly, cur),
-      why: incomeItems.length
-        ? t('insights.headline.noIncomePaid', { currency: cur, month: monthName })
-        : t('insights.headline.noIncomeRecorded', { currency: cur }),
-    });
+  const pctLine = incomeMonth
+    ? t('insights.pctOfIncome', { pct })
+    : incomeItems.length
+      ? t('insights.headline.noIncomePaid', { currency: cur, month: monthName })
+      : t('insights.headline.noIncomeRecorded', { currency: cur });
+  // How many of the month's outgoings are monthly, annual and one-off: under the legend (or the list).
+  const countsHTML = inMonth.length
+    ? `<p class="legend-foot">${esc(t('insights.stat.counts', { monthly: countOf('monthly'), annual: countOf('annual'), once: countOf('once') }))}</p>` : '';
+  const totalHTML = `<span class="ins-total" data-roll="month-due" data-value="${monthly}" data-cur="${esc(cur)}">${esc(money(monthly, cur))}</span>`;
 
-  root.innerHTML = `${modeHTML}
-    <div class="month-nav">
-      <button type="button" class="icon-btn" data-month-step="-1" aria-label="${esc(t('insights.month.previous'))}">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
-      </button>
-      <span class="month-label" aria-live="polite">${esc(monthName)}</span>
-      <button type="button" class="icon-btn" data-month-step="1" aria-label="${esc(t('insights.month.next'))}">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    </div>
-
-    <div class="headline">
-      <p class="headline-text">${headline}</p>
-      ${incomeMonth ? `<div class="bar" role="img" aria-label="${esc(t('insights.bar.label', { pct }))}"><div class="bar-fill${pct > 100 ? ' bar-fill-over' : ''}" style="width:${Math.min(100, Math.max(2, pct))}%"></div></div>` : ''}
-    </div>
-
-    ${currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : ''}
-    ${undated.length ? `
-    <button type="button" class="notice-action" data-notice="plans" data-id="${esc(undated[0].id)}">
-      ${esc(t('insights.notice.plans', { count: undated.length, amount: money(undatedTotal, cur) }))}
-    </button>` : ''}
-    ${undatedIn.length ? `
-    <button type="button" class="notice-action" data-notice="income" data-id="${esc(undatedIn[0].id)}">
-      ${esc(t('insights.notice.income', { count: undatedIn.length, amount: money(undatedInTotal, cur) }))}
-    </button>` : ''}
-    <div class="stats">
-      <div class="stat stat-primary">
-        <div class="stat-label">${esc(monthName)}</div>
-        <div class="stat-value" data-roll="month-due" data-value="${monthly}" data-cur="${esc(cur)}">${esc(money(monthly, cur))}</div>
-        <div class="stat-sub">${esc(t('insights.stat.cashDue'))}</div>
-        <div class="stat-sub">${tHTML('common.avgPerMonth', null, { amount: `<span data-roll="month-avg" data-value="${avg}" data-cur="${esc(cur)}">${esc(money(avg, cur))}</span>` })}</div>
-      </div>
-      ${yearCardHTML(year, y, cur, nUndated)}
-      <div class="stat">
-        <div class="stat-label">${esc(t('insights.outgoings'))}</div>
-        <div class="stat-value">${inMonth.length}</div>
-        <div class="stat-sub">${esc(t('insights.stat.counts', { monthly: nMonthly, annual: nAnnual, once: nOnce }))}</div>
-      </div>
-    </div>
-
-    <section class="section" aria-labelledby="cat-title">
-      <div class="section-head">
-        <h2 class="section-title" id="cat-title">${esc(t('insights.byCategory'))} <span class="optional">${esc(monthName)}</span></h2>
-        <div class="segmented" role="group" aria-label="${esc(t('insights.catView.label'))}">
-          ${catViewBtn('ring', t('insights.catView.ring'), '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
-          ${catViewBtn('donut', t('insights.catView.donut'), '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
-          ${catViewBtn('list', t('insights.catView.list'), '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
-        </div>
-      </div>
-      ${showRing ? ringHTML(slices, monthly, cur, monthName)
-        : state.catView === 'ring' ? (slices.length ? donutHTML(slices, monthly, cur, monthName, { note: ringWhy, keys: true }) : emptyDonutHTML(cur, monthName))
-        : state.catView === 'donut' ? donutHTML(slices, monthly, cur, monthName) : `
-      <div class="panel">
+  const listHTML = `
+      <div class="panel ins-chart ins-list">
+        <div class="ins-list-head">${totalHTML}<span class="donut-label">${esc(monthName)}</span></div>
         ${catList.length ? catList.map((c) => {
           const share = monthly ? Math.round((c.total / monthly) * 100) : 0;
           return `
@@ -1184,8 +1360,56 @@ function renderInsights() {
             <div class="bar" role="img" aria-label="${esc(t('insights.catBar.label', { name: c.label, pct: share, month: monthName }))}"><div class="bar-fill" style="width:${Math.max(2, (c.total / maxCat) * 100).toFixed(1)}%"></div></div>
           </div>`;
         }).join('') : `<p class="panel-empty">${esc(t('insights.list.empty', { currency: cur, month: monthName }))}</p>`}
-      </div>`}
-    </section>
+        ${countsHTML}
+      </div>`;
+  const chartHTML = isList ? listHTML
+    : !slices.length ? emptyDonutHTML(cur, monthName)
+    : showRing ? ringHTML(monthly, cur, monthName)
+    : donutHTML(slices, monthly, cur, monthName, state.catView === 'ring' ? { note: ringWhy, keys: true } : {});
+  // Ring and Donut: the chart card is capped in height and pinned under the header while the legend
+  // scrolls beneath it (app.css .ins-pinned), so a row's slice turns or lights up right above it.
+  const pinned = !isList && slices.length > 0;
+  const legend = pinned ? `
+    <section class="panel ins-legend" aria-label="${esc(t('insights.byCategory'))}">
+      ${legendHTML(slices, monthly, cur)}
+      ${countsHTML}
+    </section>` : '';
+
+  root.innerHTML = `
+    <div class="ins-hero${isList ? '' : ' ins-month-chart'}${pinned ? ' ins-pinned' : ''}">
+      <div class="month-nav">
+        <button type="button" class="icon-btn" data-month-step="-1" aria-label="${esc(t('insights.month.previous'))}">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <span class="month-label" aria-live="polite">${esc(monthName)}</span>
+        <button type="button" class="icon-btn" data-month-step="1" aria-label="${esc(t('insights.month.next'))}">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <p class="ins-pct${incomeMonth ? '' : ' ins-pct-none'}">${esc(pctLine)}</p>
+      ${chipsHTML}
+      <div class="section-head ins-chart-head">
+        <h2 class="section-title" id="cat-title">${esc(t('insights.byCategory'))}</h2>
+        <div class="segmented" role="group" aria-label="${esc(t('insights.catView.label'))}">
+          ${catViewBtn('ring', t('insights.catView.ring'), '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
+          ${catViewBtn('donut', t('insights.catView.donut'), '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
+          ${catViewBtn('list', t('insights.catView.list'), '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
+        </div>
+      </div>
+      ${chartHTML}
+      ${legend}
+    </div>
+
+    ${currencyNotice}
+    ${undated.length ? `
+    <button type="button" class="notice-action" data-notice="plans" data-id="${esc(undated[0].id)}">
+      ${esc(t('insights.notice.plans', { count: undated.length, amount: money(undatedTotal, cur) }))}
+    </button>` : ''}
+    ${undatedIn.length ? `
+    <button type="button" class="notice-action" data-notice="income" data-id="${esc(undatedIn[0].id)}">
+      ${esc(t('insights.notice.income', { count: undatedIn.length, amount: money(undatedInTotal, cur) }))}
+    </button>` : ''}
+    <div class="stats ins-stats">${yearCardHTML(year, y, cur, nUndated)}</div>
 
     ${ranked.length ? `
     <section class="section" aria-labelledby="rank-title">
@@ -1208,7 +1432,7 @@ function renderInsights() {
     </section>` : ''}`;
 
   rollInsights();
-  bindMode();
+  bindChips();
   $$('[data-month-step]', root).forEach((b) => b.addEventListener('click', () => {
     state.insightsMonth = new Date(y, m + Number(b.dataset.monthStep), 1);
     state.donutActive = null;
@@ -1280,20 +1504,24 @@ function keyStep(e, i, n) {
   return i < 0 ? 0 : (i + d + n) % n;
 }
 
-function ringHTML(slices, total, cur, monthName) {
+/**
+ * The Ring's stage, sized to the room its panel has (.ins-fit). The month total sits in the ring's
+ * hole: js/donut-3d.js measures where that is (--ring-cx, --ring-cy, --ring-hole-w on the stage);
+ * one caption line under the ring names the front slice, its amount and share. The legend is apart,
+ * under the card.
+ */
+function ringHTML(total, cur, monthName) {
   return `
-    <div class="panel">
-      <div class="ring-stage" tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
-        aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
-        <div class="ring-caption" aria-hidden="true">
-          <span class="ring-name"></span>
-          <span class="ring-amount"></span>
-          <span class="ring-share"></span>
+    <div class="panel ins-chart">
+      <div class="ins-fit">
+        <div class="ring-stage" tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
+          aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
+          <div class="ring-total"><span class="ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span></div>
+          <div class="ring-caption" aria-hidden="true"><span class="ring-name"></span><span class="ring-amount"></span><span class="ring-share"></span></div>
         </div>
       </div>
       <p class="sr-only" id="ring-help">${esc(t('donut.ring.help'))}</p>
       <p class="sr-only" id="ring-live" aria-live="polite" aria-atomic="true"></p>
-      ${legendHTML(slices, total, cur)}
     </div>`;
 }
 
@@ -1309,7 +1537,7 @@ async function mountRing(root, slices, total, cur, monthName) {
     state.donutActive = s.key;
     $('.ring-name', stage).textContent = s.name;
     $('.ring-amount', stage).textContent = money(s.total, cur);
-    $('.ring-share', stage).textContent = t('donut.ring.share', { share: shareText(s.total, total), month: monthName });
+    $('.ring-share', stage).textContent = shareText(s.total, total);
     stage.setAttribute('aria-label', t('donut.ring.labelFront', { month: monthName, front: describe(s) }));
     rows.forEach((r, k) => r.setAttribute('aria-pressed', String(k === i)));
   };
@@ -1390,18 +1618,20 @@ function stopYearChart() {
 }
 
 /**
- * Insights → Year: the range and stack controls, the year chart (js/year-chart.js) for the
- * months shown, one line for undated items, and the yearly card for the current calendar year.
- * Figures come from the calculation layer through chartMonths (monthSeries and breakdown).
+ * Insights → Year: the range and stack controls and the year chart (js/year-chart.js) for the
+ * months shown, filling the first screen; under them one line for undated items and the yearly
+ * card for the current calendar year. Figures come from the calculation layer through chartMonths
+ * (monthSeries and breakdown).
  */
-function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
+function renderYearView(root, { inCur, cur, chipsHTML, currencyNotice }) {
   const now = new Date();
   const fadeIn = !!state.yearFadeIn;
   state.yearFadeIn = false;
   const undated = undatedItems(inCur);
   const pressed = (on) => `aria-pressed="${on}"`;
-  root.innerHTML = `${modeHTML}
-    ${currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : ''}
+  root.innerHTML = `
+    <div class="ins-hero ins-hero-fill">
+    ${chipsHTML}
     <div class="yc-controls">
       <div class="segmented" role="group" aria-label="${esc(t('insights.range.label'))}">
         <button type="button" class="seg-btn seg-btn-text" data-year-range="year" ${pressed(state.yearRange === 'year')}>${esc(t('insights.range.year'))}</button>
@@ -1413,7 +1643,9 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
       </div>
       <button type="button" class="chip" data-year-income ${pressed(state.yearIncome)}>${esc(t('insights.showIncome'))}</button>
     </div>
-    <div id="year-chart"></div>
+    <div class="yc-fit"><div id="year-chart"></div></div>
+    </div>
+    ${currencyNotice}
     ${undated.length ? `<button type="button" class="summary-note summary-note-action yc-undated" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
     <div class="stats yc-year-stats">${yearCardHTML(yearSummary(inCur, now.getFullYear()), now.getFullYear(), cur, 0)}</div>`;
 
@@ -1451,6 +1683,15 @@ function renderYearView(root, { inCur, cur, currencies, modeHTML }) {
 /* --------------------------------------------------------------------------
    Add / edit form
    -------------------------------------------------------------------------- */
+// What was used last: 'key', or a pointer's type ('mouse', 'touch', 'pen'). The add sheet starts at
+// Name only when a hardware keyboard is likely: a key was the last thing pressed, or the device has a
+// fine pointer that hovers (a mouse) and wasn't just touched.
+let lastInput = '';
+document.addEventListener('keydown', () => { lastInput = 'key'; }, { capture: true });
+document.addEventListener('pointerdown', (e) => { lastInput = e.pointerType || 'mouse'; }, { capture: true });
+const keyboardLikely = () => lastInput === 'key'
+  || (lastInput !== 'touch' && lastInput !== 'pen' && matchMedia('(hover: hover) and (pointer: fine)').matches);
+
 const dialog = $('#sub-dialog');
 const form = $('#sub-form');
 // Tracks whether domain/category still hold auto-suggested values (safe to overwrite).
@@ -1491,7 +1732,13 @@ function fillCategoryList() {
   $('#category-names').innerHTML = all.map((c) => `<option value="${esc(c)}">`).join('');
 }
 
-function openForm(sub = null, type = 'expense') {
+/**
+ * Open the add sheet (no `sub`; `type` is where its Expense | Income switch starts) or the edit
+ * sheet for `sub`, which keeps its type: the switch is only there when adding. `date`
+ * (YYYY-MM-DD, from the Calendar tab's selected day) fills in a new item's date; the date rules
+ * are the usual ones.
+ */
+function openForm(sub = null, type = 'expense', { date = '' } = {}) {
   try {
     state.editingId = sub?.id ?? null;
     formBase = sub ? { ...sub } : null;
@@ -1512,16 +1759,29 @@ function openForm(sub = null, type = 'expense') {
       f.date.value = sub.date || '';
       f.category.value = sub.category || '';
       f.notes.value = sub.notes || '';
+    } else if (isDay(date)) {
+      // Both date fields, so the day stays whichever cycle is picked.
+      f.nextRenewal.value = date;
+      f.date.value = date;
     }
     auto.domain = !f.domain.value;
     auto.category = !f.category.value;
 
     f.kind.value = state.formType;
+    $('#field-kind').hidden = !!sub;
     $('#btn-delete').hidden = !sub;
+    // More details: folded when adding; open when the edited item has a value in one of the fields it
+    // shows (income: only Notes). Open or closed isn't saved.
+    const shownMore = state.formType === 'income' ? ['notes'] : MORE_FIELDS;
+    setMoreDetails(!!sub && shownMore.some((k) => String(sub[k] ?? '').trim() !== ''));
     syncFormMode();
     updateFormLogo();
     openDialog(dialog);
-    if (!sub && !matchMedia('(pointer: coarse)').matches) f.name.focus();
+    // showModal() focuses the first focusable control, the close button, so it would open with a
+    // focus ring there. Adding starts at Name when a hardware keyboard is likely; otherwise (a touch
+    // screen) and when editing, at the sheet itself (it has tabindex="-1"), so a phone's keyboard
+    // doesn't open with the sheet. A tap on Name opens it as usual.
+    if (!sub && keyboardLikely()) f.name.focus({ preventScroll: true }); else dialog.focus({ preventScroll: true });
   } catch (err) {
     console.error(err);
     reportError(t('form.error.open'), err);
@@ -1553,11 +1813,27 @@ function syncFormMode() {
   $('#label-cycle').textContent = t(income ? 'form.cycle.income' : 'form.cycle.expense');
 }
 
+/** The fields under More details. */
+const MORE_FIELDS = ['domain', 'emoji', 'plan', 'category', 'notes'];
+function setMoreDetails(open) {
+  $('#more-toggle').setAttribute('aria-expanded', String(open));
+  $('#more-details').hidden = !open;
+}
+
+/**
+ * The header tile: the item's logo, emoji or initial. Income has no logo or emoji fields in the
+ * form, so a new income item's tile doesn't use what was typed there as an expense; an edited one
+ * shows what it holds. Before there's anything to show, the "?" tile takes the type's tint.
+ */
 function updateFormLogo() {
   const f = form.elements;
-  $('#form-logo').innerHTML = logoHTML({
-    name: f.name.value || '?', domain: cleanDomain(f.domain.value), emoji: firstEmoji(f.emoji.value),
-  }, 'md');
+  const income = state.formType === 'income';
+  const hide = income && !state.editingId;
+  const shown = { name: f.name.value.trim(), domain: hide ? '' : cleanDomain(f.domain.value), emoji: hide ? '' : firstEmoji(f.emoji.value) };
+  const host = $('#form-logo');
+  host.innerHTML = logoHTML({ ...shown, name: shown.name || '?' }, 'md');
+  if (!shown.name && !shown.domain && !shown.emoji) host.dataset.placeholder = state.formType;
+  else delete host.dataset.placeholder;
 }
 
 let logoTimer;
@@ -1595,14 +1871,15 @@ function bindForm() {
   f.date.addEventListener('input', () => clearErrors('date'));
   f.nextRenewal.addEventListener('input', () => clearErrors('nextRenewal'));
   $$('input[name="cycle"]', form).forEach((r) => r.addEventListener('change', syncFormMode));
-  // Expense | Income toggle: swaps the type-specific fields and keeps everything typed so far.
-  // Saving an existing item with the other type selected converts it (readForm uses formType).
+  // Expense | Income switch (adding only): swaps the type-specific fields and keeps everything
+  // typed so far. readForm uses formType.
   $$('input[name="kind"]', form).forEach((r) => r.addEventListener('change', () => {
     state.formType = f.kind.value === 'income' ? 'income' : 'expense';
     clearErrors('nextRenewal'); // its message names a renewal or a payment
     syncFormMode();
     suggestFromName();
   }));
+  $('#more-toggle').addEventListener('click', () => setMoreDetails($('#more-toggle').getAttribute('aria-expanded') !== 'true'));
   dialog.addEventListener('close', () => document.body.classList.remove('sheet-open'));
 
   $$('[data-close]', dialog).forEach((b) => b.addEventListener('click', () => closeDialog(dialog)));
@@ -1682,20 +1959,23 @@ function readForm() {
 
   const existing = state.subs.find((s) => s.id === state.editingId);
   const now = new Date().toISOString();
+  // The form hides domain, emoji, plan and category for income. A new income item gets none of them
+  // (whatever was typed while it was an expense stays out); an edited one keeps what it holds, so
+  // saving never clears a field the form didn't show (mergeFormEdit then sees it unchanged).
+  const hidden = (k, v) => (income ? (formBase?.[k] ?? '') : v);
   return {
     id: existing?.id ?? uid(),
     type: income ? 'income' : 'expense',
     name,
-    // Income streams don't use domain, plan or category.
-    domain: income ? '' : cleanDomain(f.domain.value),
-    emoji: firstEmoji(f.emoji.value),
-    plan: income ? '' : f.plan.value.trim(),
+    domain: hidden('domain', cleanDomain(f.domain.value)),
+    emoji: hidden('emoji', firstEmoji(f.emoji.value)),
+    plan: hidden('plan', f.plan.value.trim()),
     price: Math.round(price * 100) / 100,
     currency: f.currency.value || state.settings.defaultCurrency,
     cycle,
     nextRenewal: cycle === 'once' ? '' : f.nextRenewal.value || '',
     date: cycle === 'once' ? f.date.value : '',
-    category: income ? '' : f.category.value.trim(),
+    category: hidden('category', f.category.value.trim()),
     notes: f.notes.value.trim(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -1874,7 +2154,7 @@ function applyMotion() {
   document.documentElement.classList.toggle('reduce-motion', on);
   $('#set-motion').checked = on;
   if (motionApplied !== null && motionApplied !== on && state.tab === 'insights') renderInsights();
-  if (motionApplied !== null && motionApplied !== on) { wallet?.relayout(); document.body.classList.toggle('wallet-view', walletShown() && !on); }
+  if (motionApplied !== null && motionApplied !== on) { wallet?.relayout(); document.body.classList.toggle('wallet-view', walletShown() && !on); updateGauge(); }
   motionApplied = on;
 }
 
@@ -1895,6 +2175,8 @@ function applyTheme(mode) {
     });
     ring?.theme(); // the Ring reads its colours from the theme tokens
     wallet?.recolour(); // so does the Wallet (and refits each card's text colour)
+    ringCache = new Map(); // and the income gauge's rings, measured against the theme's track
+    updateGauge();
   });
 }
 
