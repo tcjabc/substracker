@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.node.test.js relay/test/*.test.js",
+    "serve": "node scripts/serve.mjs",
     "copy:web": "node scripts/copy-web.mjs",
     "sync:web": "node scripts/copy-web.mjs && cap sync",
     "assets": "capacitor-assets generate --android --iconBackgroundColor #4f46e5 --iconBackgroundColorDark #4f46e5 --splashBackgroundColor #f6f6f9 --splashBackgroundColorDark #111216"
