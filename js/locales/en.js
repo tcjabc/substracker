@@ -758,6 +758,7 @@ export default {
   'settings.version': '{app} {version}',
   'settings.currency.set': 'Default currency set to {currency}',
   'settings.export.done': 'Exported {items}',
+  'settings.export.doneOlder': 'Exported {items} in the older backup format. All your items are in it; group colours may come back a little different.',
   'settings.export.failed': 'Export failed.',
   'settings.export.dialogTitle': 'Save or send the backup',
   'settings.csv.dialogTitle': 'Save or send the CSV file',

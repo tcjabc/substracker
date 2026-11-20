@@ -735,6 +735,7 @@ export default {
   'settings.version': '{app} {version}',
   'settings.currency.set': '預設幣別已設為 {currency}',
   'settings.export.done': '已匯出 {items}',
+  'settings.export.doneOlder': '已用舊版備份格式匯出 {items}。所有項目都在檔案裡，但還原後群組顏色可能略有不同。',
   'settings.export.failed': '匯出失敗。',
   'settings.export.dialogTitle': '儲存或傳送備份',
   'settings.csv.dialogTitle': '儲存或傳送 CSV 檔',
