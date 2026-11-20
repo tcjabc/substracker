@@ -31,7 +31,7 @@ test('good JSON: every row is ok and included', () => {
   assert.deepEqual(rows.map((r) => [r.n, r.status, r.include]), [[1, 'ok', true], [2, 'ok', true]]);
   assert.deepEqual(rows[0].fields, {
     name: 'Example Streaming', amount: 390, currency: 'TWD', cycle: 'monthly', cycleText: 'monthly',
-    nextDate: '2026-12-05', category: 'Entertainment', type: 'expense',
+    nextDate: '2026-12-05', category: 'Entertainment', type: 'expense', notes: '',
   });
 });
 

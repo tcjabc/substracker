@@ -225,6 +225,7 @@ tests/add-sheet.html  In-browser tests for the add and edit sheet, the gauge wit
 tests/insights-layout.html  In-browser tests for the Insights layout: the chart first, the share line, below the fold, the year chart's wrap and readout
 tests/insights-chart.html  In-browser tests for the capped, pinned Ring and Donut card, and the add sheet's focus on touch and keyboard
 tests/calendar-header.html  In-browser tests for the Calendar's In, Out and Left over, with a fixed clock
+tests/import-notes.html  In-browser tests for notes in Import with AI: the note under each row, a shortened note, More details
 tests/*.node.test.js  Node tests: sync core, crypto, recovery words, join choices, the sync engine (with an in-memory relay), the pure parts of js/storage.js
 
 Native app only (the web version ignores these):

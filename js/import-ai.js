@@ -4,7 +4,8 @@
 // network, no storage access; also used by the Node tests.
 //
 // The import schema is separate from the backup format and simpler:
-//   { "version": 1, "rows": [ { name, amount, currency, cycle, nextDate, category, type } ] }
+//   { "version": 1, "rows": [ { name, amount, currency, cycle, nextDate, category, type, notes? } ] }
+// "notes" came in 1.22.2 and is optional, so the version stays 1 and replies without it still read.
 // Rows are checked one by one, so a reply with a few bad rows still shows the good ones. A row
 // becomes an item only through a normal backup (format 4, without settings), which goes through
 // storage.parseBackup and the existing Merge / Replace import, so ids, field stamps, types and
@@ -20,6 +21,8 @@ export const MAX_AI_CHARS = 500_000;
 export const MAX_AI_ROWS = 500;
 export const NAME_MAX = 80;
 export const CATEGORY_MAX = 40;
+/** In characters (code points), so a note never grows past the item's own 1,000-unit notes limit. */
+export const NOTES_MAX = 500;
 const AMOUNT_MAX = 1e12;
 
 /** The cycles the schema accepts, and the app's own name for each. Anything else is flagged, never guessed. */
@@ -245,7 +248,7 @@ function tidyRow(raw, knownCategories) {
   for (const [k, val] of Object.entries(row)) {
     if (typeof val !== 'string') continue;
     const v = val.replace(INVISIBLE_IN_TEXT_ALL, '');
-    row[k] = k === 'name' ? unwrapName(v) : k === 'category' ? unwrapCategory(v, knownCategories) : unwrapText(v, false);
+    row[k] = k === 'name' || k === 'notes' ? unwrapName(v) : k === 'category' ? unwrapCategory(v, knownCategories) : unwrapText(v, false);
   }
   return row;
 }
@@ -321,22 +324,45 @@ export function parseAiImport(input) {
    -------------------------------------------------------------------------- */
 // Problem codes. "error" covers fields that are missing or the wrong type; "date" and "cycle" get
 // their own codes so the review screen can offer a date picker or a cycle choice to fix them.
-export const PROBLEM = { error: 'error', date: 'date', cycle: 'cycle', duplicate: 'duplicate' };
+// "note" only flags a note that was shortened: the row is still imported, like a duplicate it
+// isn't an error for the AI.
+export const PROBLEM = { error: 'error', date: 'date', cycle: 'cycle', duplicate: 'duplicate', note: 'note' };
+const NOT_BLOCKING = new Set([PROBLEM.duplicate, PROBLEM.note]);
+
+/**
+ * `text` cut to at most `max` code points, at the end of a whole character (an emoji with a skin
+ * tone or a joiner stays whole or goes whole), with any space left at the cut trimmed.
+ */
+export function clipText(text, max) {
+  if ([...text].length <= max) return text;
+  let out = '';
+  let count = 0;
+  const parts = typeof Intl?.Segmenter === 'function'
+    ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment)
+    : [...text];
+  for (const part of parts) {
+    const size = [...part].length;
+    if (count + size > max) break;
+    out += part;
+    count += size;
+  }
+  return out.trimEnd();
+}
 
 /** Which date this row has, for the wording: a one-off's date, a payment or a renewal. */
 const dateKind = (type, cycle) => (cycle === 'once' ? 'once' : type === 'income' ? 'payment' : 'renewal');
 
 /**
  * Check one row. Returns { n, fields, problems } where `fields` holds the clean values
- * ({ name, amount, currency, cycle (the app's name), cycleText, nextDate, category, type }, each
- * null when unusable) and `problems` is a list of { code, message } with messages like
+ * ({ name, amount, currency, cycle (the app's name), cycleText, nextDate, category, type, notes },
+ * each null when unusable; category and notes are '' when there are none) and `problems` is a list of { code, message } with messages like
  * "Row 3: currency is missing; add …", each saying how to fix it. Any `id` in the row is ignored (every row gets a new id), and a row
  * asking for the reserved id is rejected.
  */
 export function checkRow(raw, n) {
   const problems = [];
   const add = (code, key, params) => problems.push({ code, message: t('ai.row.problem', { n, problem: t(key, params) }) });
-  const fields = { name: null, amount: null, currency: null, cycle: null, cycleText: null, nextDate: null, category: '', type: null };
+  const fields = { name: null, amount: null, currency: null, cycle: null, cycleText: null, nextDate: null, category: '', type: null, notes: '' };
   if (!isObj(raw)) {
     add(PROBLEM.error, 'ai.row.notObject');
     return { n, fields, problems };
@@ -392,6 +418,15 @@ export function checkRow(raw, n) {
   else fields.category = raw.category.trim();
   if (fields.type === 'income') fields.category = ''; // income has no categories in the app
 
+  // Optional, for income too. Too long is shortened and flagged, never a reason to leave the row out.
+  if (raw.notes === undefined || raw.notes === null) fields.notes = '';
+  else if (typeof raw.notes !== 'string') add(PROBLEM.error, 'ai.row.notes.text');
+  else {
+    const note = raw.notes.trim();
+    fields.notes = clipText(note, NOTES_MAX);
+    if (fields.notes !== note) add(PROBLEM.note, 'ai.row.notes.long', { max: NOTES_MAX });
+  }
+
   return { n, fields, problems };
 }
 
@@ -412,9 +447,10 @@ const keyOfItem = (s) => duplicateKey({ name: s.name, amount: s.price, currency:
  * Check every row and mark duplicates: a row that matches an earlier row of the reply, or an item
  * already in the list (`existing`, plain items). Returns the review rows, in order:
  * { n, raw, fields, problems, status, duplicateOf, importable, include }.
- *   status       'ok', or the first problem's code: 'error', 'cycle', 'date' or 'duplicate'.
+ *   status       'ok', or the first problem's code: 'error', 'cycle', 'date', 'duplicate' or 'note'.
  *   duplicateOf  { row: n } or { existing: true } for a duplicate, else null.
- *   importable   no blocking problem (a duplicate can still be imported on purpose).
+ *   importable   no blocking problem (a duplicate can still be imported on purpose; a shortened
+ *                note is imported as it is shown).
  *   include      the starting choice: importable and not a duplicate.
  */
 export function reviewRows(rawRows, existing = []) {
@@ -439,9 +475,9 @@ export function reviewRows(rawRows, existing = []) {
         });
       }
     }
-    const order = [PROBLEM.error, PROBLEM.cycle, PROBLEM.date, PROBLEM.duplicate];
+    const order = [PROBLEM.error, PROBLEM.cycle, PROBLEM.date, PROBLEM.duplicate, PROBLEM.note];
     const status = order.find((c) => problems.some((p) => p.code === c)) ?? 'ok';
-    const importable = problems.every((p) => p.code === PROBLEM.duplicate);
+    const importable = problems.every((p) => NOT_BLOCKING.has(p.code));
     return { n, raw, fields, problems, status, duplicateOf, importable, include: importable && !duplicateOf };
   });
 }
@@ -472,7 +508,7 @@ export function itemFromFields(f, now = new Date().toISOString(), newId = uid) {
     nextRenewal: once ? '' : f.nextDate,
     date: once ? f.nextDate : '',
     category: f.type === 'income' ? '' : f.category,
-    notes: '',
+    notes: f.notes ?? '',
     createdAt: now,
     updatedAt: now,
   };
@@ -526,14 +562,14 @@ export const TOTAL_LABELS = Object.freeze({
 /**
  * The text "Copy error for your AI" copies: what's wrong, row by row, and a request for corrected
  * JSON. `problem` is either an AiImportError message (the reply as a whole) or a list of review rows.
- * Duplicates aren't errors and aren't listed. The lines around the problems are written for the
+ * Duplicates and shortened notes aren't errors and aren't listed. The lines around the problems are written for the
  * AI, like the prompt (js/import-ai-prompt.js), so they stay in English; the problems themselves
  * are the ones the review screen shows, in the app's language.
  */
 export function errorReport(problem) {
   const lines = typeof problem === 'string'
     ? [problem]
-    : problem.flatMap((r) => r.problems.filter((p) => p.code !== PROBLEM.duplicate).map((p) => p.message));
+    : problem.flatMap((r) => r.problems.filter((p) => !NOT_BLOCKING.has(p.code)).map((p) => p.message));
   if (!lines.length) return '';
   return [
     'Peek Budget could not import some of your JSON:',

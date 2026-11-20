@@ -15,7 +15,7 @@ Before you start:
 
 Privacy rules:
 - Leave out account numbers, card numbers, IBANs, reference numbers and any person's name (mine or anyone else's).
-- Use only the merchant or payer name, the amount and the date. For a payment to or from a person, use a general name such as "Rent" or "Transfer".
+- Use only the merchant or payer name, the amount and the date, plus a few words of context in "notes" as described below. For a payment to or from a person, use a general name such as "Rent" or "Transfer".
 
 When everything is clear, reply with only the JSON, nothing else: no explanation before or after it and no code fences. Use exactly this shape:
 
@@ -29,12 +29,13 @@ When everything is clear, reply with only the JSON, nothing else: no explanation
       "cycle": "monthly",
       "nextDate": "2026-12-05",
       "category": "Entertainment",
-      "type": "expense"
+      "type": "expense",
+      "notes": "Family plan"
     }
   ]
 }
 
-Fields (every field must be present on every row; category may be ''):
+Fields (every field must be present on every row; category may be ''; notes is optional):
 - "name": the merchant or payer, as short text (at most 80 characters).
 - "amount": a positive number with a dot for decimals and no currency symbol or thousands separator, e.g. 1290.5.
 - "currency": one of ${CURRENCIES.join(', ')}. Use the currency shown on the document. For a currency not in this list, ask me, and leave that item out unless I tell you which currency to use.
@@ -42,5 +43,6 @@ Fields (every field must be present on every row; category may be ''):
 - "nextDate": a date as YYYY-MM-DD. For "monthly" and "annual", the next payment date if the document shows it, otherwise the date of the most recent payment (the app works out the next one). For "one-off", the date it happened.
 - "category": a short category such as ${DEFAULT_CATEGORIES.filter((c) => c !== 'Other').join(', ')}; use "" if none fits. Use "" for income.
 - "type": "expense" for money going out, "income" for money coming in. Amounts are always positive; the type says which way the money goes.
+- "notes" (optional): a few words of extra context that help me recognise the item, as text of at most 500 characters, e.g. an account nickname ("Joint account") or the words of a payment reference ("Annual membership"). Income rows may have notes too. Never put account numbers, card numbers, IBANs or reference numbers in notes, nor any person's name; the privacy rules above apply here too. Use "" or leave it out when there's nothing to add.
 
 List each item once. If the same subscription appears on several statements, give one row for it with its latest date.`;

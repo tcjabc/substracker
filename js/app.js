@@ -37,7 +37,7 @@ import {
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.22.1';
+const APP_VERSION = '1.22.2';
 
 // The old picked colours, g1 … g10 (--group-1 … --group-10 in app.css): still read and drawn exactly
 // as they were picked, but no longer offered. New picks are palette slots (WALLET_KEYS, w1 … w15),
