@@ -1641,6 +1641,15 @@ function renderYearView(root, { inCur, cur, chipsHTML, currencyNotice }) {
 /* --------------------------------------------------------------------------
    Add / edit form
    -------------------------------------------------------------------------- */
+// What was used last: 'key', or a pointer's type ('mouse', 'touch', 'pen'). The add sheet starts at
+// Name only when a hardware keyboard is likely: a key was the last thing pressed, or the device has a
+// fine pointer that hovers (a mouse) and wasn't just touched.
+let lastInput = '';
+document.addEventListener('keydown', () => { lastInput = 'key'; }, { capture: true });
+document.addEventListener('pointerdown', (e) => { lastInput = e.pointerType || 'mouse'; }, { capture: true });
+const keyboardLikely = () => lastInput === 'key'
+  || (lastInput !== 'touch' && lastInput !== 'pen' && matchMedia('(hover: hover) and (pointer: fine)').matches);
+
 const dialog = $('#sub-dialog');
 const form = $('#sub-form');
 // Tracks whether domain/category still hold auto-suggested values (safe to overwrite).
@@ -1725,8 +1734,10 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
     updateFormLogo();
     openDialog(dialog);
     // showModal() focuses the first focusable control, the close button, so it would open with a
-    // focus ring there. Adding starts at Name; editing at the sheet itself (it has tabindex="-1").
-    if (sub) dialog.focus({ preventScroll: true }); else f.name.focus({ preventScroll: true });
+    // focus ring there. Adding starts at Name when a hardware keyboard is likely; otherwise (a touch
+    // screen) and when editing, at the sheet itself (it has tabindex="-1"), so a phone's keyboard
+    // doesn't open with the sheet. A tap on Name opens it as usual.
+    if (!sub && keyboardLikely()) f.name.focus({ preventScroll: true }); else dialog.focus({ preventScroll: true });
   } catch (err) {
     console.error(err);
     reportError(t('form.error.open'), err);
