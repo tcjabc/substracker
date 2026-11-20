@@ -1209,9 +1209,9 @@ function bindInsightsMode() {
 
 /**
  * Insights. Month: the month arrows, one line with the month's outgoings as a share of its income,
- * then the chart (Ring, flat donut or List) with the month total in it, filling the first screen;
- * below it the legend (with the month's plan counts), the notices, the yearly card and the most
- * expensive items. Year: the year chart first (renderYearView). Every figure is on a cash basis
+ * then the chart with the month total in it: the Ring or flat donut in a card capped at about 40% of
+ * the screen and pinned under the header while the legend (with the month's plan counts) scrolls
+ * beneath it, or the List. Then the notices, the yearly card and the most expensive items. Year: the year chart first (renderYearView). Every figure is on a cash basis
  * from js/insights-calc.js.
  */
 function renderInsights() {
@@ -1324,14 +1324,17 @@ function renderInsights() {
     : !slices.length ? emptyDonutHTML(cur, monthName)
     : showRing ? ringHTML(monthly, cur, monthName)
     : donutHTML(slices, monthly, cur, monthName, state.catView === 'ring' ? { note: ringWhy, keys: true } : {});
-  const legend = !isList && slices.length ? `
+  // Ring and Donut: the chart card is capped in height and pinned under the header while the legend
+  // scrolls beneath it (app.css .ins-pinned), so a row's slice turns or lights up right above it.
+  const pinned = !isList && slices.length > 0;
+  const legend = pinned ? `
     <section class="panel ins-legend" aria-label="${esc(t('insights.byCategory'))}">
       ${legendHTML(slices, monthly, cur)}
       ${countsHTML}
     </section>` : '';
 
   root.innerHTML = `
-    <div class="ins-hero${isList ? '' : ' ins-hero-fill'}">
+    <div class="ins-hero${isList ? '' : ' ins-month-chart'}${pinned ? ' ins-pinned' : ''}">
       <div class="month-nav">
         <button type="button" class="icon-btn" data-month-step="-1" aria-label="${esc(t('insights.month.previous'))}">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
@@ -1352,9 +1355,9 @@ function renderInsights() {
         </div>
       </div>
       ${chartHTML}
+      ${legend}
     </div>
 
-    ${legend}
     ${currencyNotice}
     ${undated.length ? `
     <button type="button" class="notice-action" data-notice="plans" data-id="${esc(undated[0].id)}">
@@ -1462,7 +1465,8 @@ function keyStep(e, i, n) {
 /**
  * The Ring's stage, sized to the room its panel has (.ins-fit). The month total sits in the ring's
  * hole: js/donut-3d.js measures where that is (--ring-cx, --ring-cy, --ring-hole-w on the stage);
- * the caption under the ring names the front slice. The legend is apart, under the panel.
+ * one caption line under the ring names the front slice, its amount and share. The legend is apart,
+ * under the card.
  */
 function ringHTML(total, cur, monthName) {
   return `
@@ -1471,11 +1475,7 @@ function ringHTML(total, cur, monthName) {
         <div class="ring-stage" tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
           aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
           <div class="ring-total"><span class="ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span></div>
-          <div class="ring-caption" aria-hidden="true">
-            <span class="ring-name"></span>
-            <span class="ring-amount"></span>
-            <span class="ring-share"></span>
-          </div>
+          <div class="ring-caption" aria-hidden="true"><span class="ring-name"></span><span class="ring-amount"></span><span class="ring-share"></span></div>
         </div>
       </div>
       <p class="sr-only" id="ring-help">${esc(t('donut.ring.help'))}</p>
@@ -1495,7 +1495,7 @@ async function mountRing(root, slices, total, cur, monthName) {
     state.donutActive = s.key;
     $('.ring-name', stage).textContent = s.name;
     $('.ring-amount', stage).textContent = money(s.total, cur);
-    $('.ring-share', stage).textContent = t('donut.ring.share', { share: shareText(s.total, total), month: monthName });
+    $('.ring-share', stage).textContent = shareText(s.total, total);
     stage.setAttribute('aria-label', t('donut.ring.labelFront', { month: monthName, front: describe(s) }));
     rows.forEach((r, k) => r.setAttribute('aria-pressed', String(k === i)));
   };

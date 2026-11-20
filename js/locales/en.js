@@ -400,7 +400,6 @@ export default {
   'donut.ring.labelFront': 'Outgoings by category for {month}. Front: {front}',
   'donut.ring.help': 'Drag to spin. Left and right arrow keys bring the previous or next category to the front. Amounts are listed below.',
   'donut.ring.describe': '{name}, {amount}, {share}',
-  'donut.ring.share': '{share} of {month}',
   'donut.slice.title': '{name}: {amount} ({share})',
 
   // Insights year chart (js/year-chart.js)

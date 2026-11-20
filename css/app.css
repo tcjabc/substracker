@@ -165,6 +165,9 @@
   --chart-min: 13rem;    /* the least room the chart keeps on a short screen */
   --donut-max: 20rem;    /* the flat donut at its largest */
   --ring-max: 30rem;     /* the Ring's stage at its widest */
+  /* Month view's Ring and Donut card (.ins-pinned): about 40% of the visible screen on a tall phone
+     (39% at 852px), less on a short one, so the legend's first rows show under it on landing. */
+  --ins-chart-h: clamp(10rem, 60dvh - 11rem, 22rem);
   --year-chart-max: 32rem;
   --year-chart-ratio: 0.766; /* the year chart's width per unit of height (its 360 × 470 SVG) */
   --donut-stroke: 28px; /* SVG user units: ring thickness in the 200 × 200 viewBox */
@@ -1045,11 +1048,42 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ins-chart-head .section-title { font-size: var(--text-base); }
 .ins-chart { flex: 1 0 auto; display: flex; flex-direction: column; }
 .ins-hero:not(.ins-hero-fill) .ins-chart { flex: none; }
+/* Ring and Donut (Month): the card is --ins-chart-h tall and stays pinned under the header while the
+   legend under it scrolls (position: sticky, inside .ins-pinned, which ends with the legend: after
+   the list the card scrolls away with it). The page's scroll padding keeps a focused row clear of it.
+   On a screen too short to keep both in view (a phone on its side) it scrolls like the rest. */
+.ins-pinned { container-type: inline-size; }
+.ins-pinned > .ins-chart {
+  position: sticky; z-index: 5; top: var(--header-now, calc(var(--header-h) + var(--safe-top)));
+  /* No taller than the tilted ring needs at this width (about three quarters of it), so there's no
+     empty box round it. */
+  height: min(var(--ins-chart-h), 75cqw);
+}
+.ins-pinned > .ins-chart .ins-fit { flex: 1 1 0; min-height: 0; padding: var(--space-2); }
+.ins-pinned > .ins-legend { margin: var(--space-2) 0 0; }
+:root:has(body.insights-view .ins-pinned) {
+  /* The card's own height: the smaller of the cap and three quarters of the page's content width. */
+  scroll-padding-top: calc(var(--header-now, calc(var(--header-h) + var(--safe-top))) + min(var(--ins-chart-h), 0.75 * (min(100vw, var(--container)) - 2 * var(--gutter))) + var(--space-2));
+  scroll-padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+}
+@media (max-height: 30rem) {
+  .ins-pinned > .ins-chart { position: static; }
+  :root:has(body.insights-view .ins-pinned) { scroll-padding-top: var(--header-now, var(--header-h)); }
+}
+@supports not (height: 1dvh) {
+  :root { --ins-chart-h: clamp(10rem, 60vh - 11rem, 22rem); }
+}
 .ins-fit { flex: 1 0 var(--chart-min); container-type: size; display: grid; place-items: center; padding: var(--space-3); }
 .ins-fit .donut { width: min(100cqw, 100cqh, var(--donut-max)); }
-.ins-fit .donut-total { font-size: var(--text-xl); }
+.ins-fit .donut-total { font-size: var(--text-xl); white-space: nowrap; }
+/* The pinned card's donut can be small (a short screen, or the note above it): its total, on one line,
+   takes its size from the donut's width so it fits the hole; the month is in the arrows above it. */
+.ins-pinned .ins-fit .donut { container-type: inline-size; }
+.ins-pinned .ins-fit .donut-total { font-size: clamp(var(--text-xs), 9cqw, var(--text-xl)); }
+.ins-pinned .ins-fit .donut-label { display: none; }
 /* Tall enough that the ring (framed by js/donut-3d.js to fit both ways) fills the width. */
 .ins-fit .ring-stage { width: min(100cqw, var(--ring-max)); height: min(100cqh, min(100cqw, var(--ring-max)) * 1.05); aspect-ratio: auto; }
+.ins-pinned .ins-fit .ring-stage { width: min(100cqw, var(--ring-max), 100cqh * 1.3); height: 100cqh; }
 .donut-empty.ins-chart { justify-content: center; }
 /* The month total: in the donut's or the Ring's centre, at the top of the List. */
 .ins-total { font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: var(--leading-tight); overflow-wrap: anywhere; }
@@ -1148,10 +1182,13 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ring-stage:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .ring-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .ring-stage.is-dragging .ring-canvas { cursor: grabbing; }
+/* One line under the ring: the front slice's name, its amount and its share. */
 .ring-caption {
-  position: absolute; left: 0; right: 0; bottom: 4%; display: grid; justify-items: center; gap: 2px;
-  text-align: center; pointer-events: none; line-height: var(--leading-tight);
+  position: absolute; left: 0; right: 0; bottom: 2%; display: flex; justify-content: center; align-items: baseline;
+  column-gap: var(--space-2); padding-inline: var(--space-2); white-space: nowrap;
+  font-size: var(--text-sm); pointer-events: none; line-height: var(--leading-tight);
 }
+.ring-caption > span + span::before { content: "·"; margin-right: var(--space-2); color: var(--text-muted); font-weight: 400; }
 /* The month total in the ring's hole: js/donut-3d.js sets where (--ring-cx, --ring-cy) and how wide
    it is; until the ring is drawn (or if it can't be) these defaults stand. */
 .ring-total {
@@ -1161,9 +1198,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   background: color-mix(in srgb, var(--surface) 80%, transparent);
   font-size: clamp(var(--text-sm), calc(var(--ring-hole-w, 8rem) * 0.15), var(--text-lg));
 }
-.ring-name { font-size: var(--text-sm); color: var(--text-muted); }
-.ring-amount { font-size: var(--text-xl); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.ring-share { font-size: var(--text-xs); color: var(--text-muted); }
+.ring-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.ring-amount { flex: none; font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
+.ring-share { flex: none; color: var(--text-muted); }
 .ring-note { font-size: var(--text-xs); color: var(--text-muted); padding: var(--space-3) var(--space-4) 0; text-align: center; }
 
 .donut-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-6) var(--space-4); text-align: center; }

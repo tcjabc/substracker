@@ -390,7 +390,6 @@ export default {
   'donut.ring.labelFront': '{month}各類別支出。前方：{front}',
   'donut.ring.help': '拖曳即可旋轉。用左右方向鍵把上一個或下一個類別轉到前方。金額列在下方。',
   'donut.ring.describe': '{name}，{amount}，{share}',
-  'donut.ring.share': '佔{month}的 {share}',
   'donut.slice.title': '{name}：{amount}（{share}）',
 
   // Insights year chart (js/year-chart.js)
