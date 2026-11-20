@@ -428,8 +428,9 @@ function ensureGroupColors() {
     for (const n of names) {
       if (shared.has(n)) continue;
       if (picks.has(n)) held.set(n, null); // an old g pick: holds no slot
-      // This device's own automatic colour, kept only until the format 5 step has shared them.
-      else if (!state.formatMigrated && isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1);
+      // Once the format 5 step has shared this device's own automatic colours, none is kept here alone.
+      else if (state.formatMigrated) continue;
+      else if (isWalletKey(map[n])) held.set(n, Number(map[n].slice(1)) - 1); // this device's own automatic colour
     }
     const plan = planSlots({ live: names, shared: new Map([...shared].filter(([n]) => names.includes(n))), held });
     const writes = [...plan.assign, ...plan.moves];
