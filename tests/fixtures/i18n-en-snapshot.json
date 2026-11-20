@@ -198,13 +198,14 @@
       "Calendar"
     ],
     "calendar.month": [
-      "November 2026 Today Cash due in November 2026 NT$32,389 MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
+      "November 2026 Today In NT$40,000 Out NT$32,389 Left over NT$7,611 +1 in USD MonTueWedThuFriSatSun 262728293031123456789101112131415161718192021222324252627282930123456 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date Wednesday 18 November NT$390 due 🎬 StreamingEntertainment NT$390",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",
       "aria-label=Next month",
       "title=Next month",
       "title=Go to this month",
+      "aria-label=In NT$40,000. Out NT$32,389. Left over NT$7,611",
       "aria-label=Monday",
       "aria-label=Tuesday",
       "aria-label=Wednesday",
@@ -255,13 +256,14 @@
       "aria-label=Due on 19 November 2026"
     ],
     "calendar.next": [
-      "December 2026 Today Cash due in December 2026 NT$30,889 MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
+      "December 2026 Today In NT$40,000 Out NT$30,889 Left over NT$9,111 +1 in USD MonTueWedThuFriSatSun 3012345678910111213141516171819202122232425262728293031123 Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day. 1 item needs a date December 2026",
       "aria-label=Calendar",
       "aria-label=Previous month",
       "title=Previous month",
       "aria-label=Next month",
       "title=Next month",
       "title=Go to this month",
+      "aria-label=In NT$40,000. Out NT$30,889. Left over NT$9,111",
       "aria-label=Monday",
       "aria-label=Tuesday",
       "aria-label=Wednesday",
@@ -362,43 +364,48 @@
       "aria-label=Currency"
     ],
     "insights.month.ring": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view Showing the flat donut: Reduce motion and effects is on in Settings. House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 Left and right arrow keys highlight the previous or next category. House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view Showing the flat donut: Reduce motion and effects is on in Settings. House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 Left and right arrow keys highlight the previous or next category. House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
       "title=List view",
       "aria-label=Donut chart of outgoings by category for November 2026. Amounts are listed below.",
+      "aria-label=By category",
       "aria-label=Edit Rent",
       "aria-label=Edit Concert",
       "aria-label=Edit Phone",
       "aria-label=Edit Streaming"
     ],
     "insights.month.donut": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view House: NT$30,000 (93%)Entertainment: NT$1,890 (6%)Utilities: NT$499 (2%) NT$32,389 November 2026 House 1 item NT$30,00093% Entertainment 2 items NT$1,8906% Utilities 1 item NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
       "title=List view",
       "aria-label=Donut chart of outgoings by category for November 2026. Amounts are listed below.",
+      "aria-label=By category",
       "aria-label=Edit Rent",
       "aria-label=Edit Concert",
       "aria-label=Edit Phone",
       "aria-label=Edit Streaming"
     ],
     "insights.month.list": [
-      "Month Year November 2026 Outgoings NT$32,389 of NT$40,000 income (81%) Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown November 2026 NT$32,389 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 4 3 monthly · 0 annual · 1 one-off By category November 2026 3D ring Donut chart List view House 1 NT$30,00093% Entertainment 2 NT$1,8906% Utilities 1 NT$4992% Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
+      "Month Year",
       "aria-label=Insights view",
+      "November 2026 81% of income TWDUSD By category 3D ring Donut chart List view NT$32,389November 2026 House 1 NT$30,00093% Entertainment 2 NT$1,8906% Utilities 1 NT$4992% 3 monthly · 0 annual · 1 one-off Totals are per currency — amounts in other currencies aren't converted. 1 plan needs a renewal date, NT$900 not shown 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Most expensive November 2026 1 R Rent NT$30,000 / mo NT$30,000 / mo 2 C Concert One-off · 28 Nov NT$1,500 one-off 3 P Phone NT$499 / mo · Unlimited NT$499 / mo 4 🎬 Streaming NT$390 / mo NT$390 / mo",
       "aria-label=Previous month",
       "aria-label=Next month",
-      "aria-label=Outgoings are 81% of income",
+      "aria-label=Currency",
       "aria-label=Category view",
       "title=3D ring",
       "title=Donut chart",
@@ -412,17 +419,18 @@
       "aria-label=Edit Streaming"
     ],
     "insights.month.previous": [
-      "Outgoings NT$30,889 of NT$40,000 income (77%)",
-      "aria-label=Outgoings are 77% of income",
-      "October 2026 NT$30,889 Cash due this month Avg NT$32,014/mo 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item Outgoings 3 3 monthly · 0 annual · 0 one-off"
+      "77% of income",
+      "2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632 Excludes 1 undated item"
     ],
     "insights.month.usd": [
-      "Outgoings US$10 · no USD income recorded",
-      "November 2026 US$10 Cash due this month Avg US$10/mo 2026 OutgoingsUS$120 No income dated in 2026 Outgoings 1 1 monthly · 0 annual · 0 one-off"
+      "No USD income recorded",
+      "2026 OutgoingsUS$120 No income dated in 2026"
     ],
     "insights.year": [
-      "Month Year Totals are per currency — amounts in other currencies aren't converted. This year Rolling ±6 months By type By category Show income November 2026 · nowNT$32,389NT$1,288 above the averageAll months10k20k30k40kMay 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000June 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000July 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000August 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000September 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000October 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000November 2026NT$32,389NT$1,288 above the averageOne-offsNT$1,500ConcertMonthly plansNT$30,889Phone, Rent, StreamingUtilitiesNT$499EntertainmentNT$1,890HouseNT$30,000December 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000January 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000February 2027NT$30,949About the averageOne-offsNT$60StampsMonthly plansNT$30,889Phone, Rent, StreamingUncategorisedNT$60EntertainmentNT$390UtilitiesNT$499HouseNT$30,000March 2027NT$32,089NT$988 above the averageAnnual renewalsNT$1,200CloudMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$1,699HouseNT$30,000April 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000May 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000Ma'26Ju'26Ju'26Aug'26Sep'26Oct'26Nov'26Dec'26Jan'27Feb'27Ma'27Ap'27Ma'27HouseUtilitiesEntertainmentUncategorisedAverage of these months NT$31,101Show keyJump to now Excludes 1 undated item 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632",
+      "Month Year",
       "aria-label=Insights view",
+      "TWDUSD This year Rolling ±6 months By type By category Show income November 2026 · nowNT$32,389NT$1,288 above the averageAll months10k20k30k40kMay 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000June 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000July 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000August 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000September 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000October 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000November 2026NT$32,389NT$1,288 above the averageOne-offsNT$1,500ConcertMonthly plansNT$30,889Phone, Rent, StreamingUtilitiesNT$499EntertainmentNT$1,890HouseNT$30,000December 2026NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000January 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000February 2027NT$30,949About the averageOne-offsNT$60StampsMonthly plansNT$30,889Phone, Rent, StreamingUncategorisedNT$60EntertainmentNT$390UtilitiesNT$499HouseNT$30,000March 2027NT$32,089NT$988 above the averageAnnual renewalsNT$1,200CloudMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$1,699HouseNT$30,000April 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000May 2027NT$30,889About the averageMonthly plansNT$30,889Phone, Rent, StreamingEntertainmentNT$390UtilitiesNT$499HouseNT$30,000Ma'26Ju'26Ju'26Aug'26Sep'26Oct'26Nov'26Dec'26Jan'27Feb'27Ma'27Ap'27Ma'27HouseUtilitiesEntertainmentUncategorisedAverage of these months NT$31,101Show keyJump to now Totals are per currency — amounts in other currencies aren't converted. Excludes 1 undated item 2026 IncomeNT$492,000 OutgoingsNT$373,368 Left overNT$118,632",
+      "aria-label=Currency",
       "aria-label=Months shown",
       "aria-label=Colour the bars by",
       "aria-label=Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.",
