@@ -1,0 +1,58 @@
+Here’s your JSON:
+
+{
+  "version": 1,
+  "rows": [
+    {
+      "name": "Example Streaming",
+      "amount": 390,
+      "currency": "TWD",
+      "cycle": "monthly",
+      "nextDate": "2026-12-05",
+      "category": "Entertainment",
+      "type": "expense",
+      "notes": "Family plan, shared with “the flat” 🎬"
+    },
+    {
+      "name": "Sample Gym",
+      "amount": 1200,
+      "currency": "TWD",
+      "cycle": "monthly",
+      "nextDate": "2026-12-01",
+      "category": "Fitness",
+      "type": "expense",
+      "notes": "  Paid from the ‘Joint account’  "
+    },
+    {
+      "name": "Sample Salary",
+      "amount": 52000,
+      "currency": "TWD",
+      "cycle": "monthly",
+      "nextDate": "2026-12-05",
+      "category": "",
+      "type": "income",
+      "notes": "After tax, “Main job” 💼 👨‍👩‍👧"
+    },
+    {
+      "name": "Cloud Notes",
+      "amount": 30,
+      "currency": "USD",
+      "cycle": "annual",
+      "nextDate": "2027-03-​14",
+      "category": "Software",
+      "type": "expense"
+    },
+    {
+      "name": "Concert",
+      "amount": 1500,
+      "currency": "TWD",
+      "cycle": "one-off",
+      "nextDate": "2026-11-28",
+      "category": "Entertainment",
+      "type": "expense",
+      "notes": ""
+    }
+  ]
+}
+
+Want me to add anything else?
