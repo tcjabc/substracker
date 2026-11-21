@@ -1898,7 +1898,8 @@ function bindForm() {
   // time; the field is next in Tab order then).
   let categoryKeyed = false;
   const STEP_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
-  f.category.addEventListener('keydown', (e) => { categoryKeyed = STEP_KEYS.has(e.key); });
+  // Alt+Down opens the picker (Windows), so it isn't a step; a pick in the open picker moves focus.
+  f.category.addEventListener('keydown', (e) => { categoryKeyed = STEP_KEYS.has(e.key) && !e.altKey; });
   f.category.addEventListener('pointerdown', () => { categoryKeyed = false; });
   const pickCategory = () => {
     auto.category = !f.category.value;
