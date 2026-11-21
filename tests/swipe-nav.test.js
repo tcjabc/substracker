@@ -496,14 +496,24 @@ test('a swipe starting on an input, a range, a select or a checkbox, or with two
 test('audit: every sideways scroller in every view is an island, and the page never scrolls sideways', async () => {
   const found = new Map();
   const unmarked = [];
+  // Whether a finger can pan `el` sideways: its touch-action and every ancestor's allow it.
+  const panX = (el) => {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const ta = getComputedStyle(n).touchAction;
+      if (ta !== 'auto' && ta !== 'manipulation' && !/pan-(x|left|right)/.test(ta)) return false;
+    }
+    return true;
+  };
   const look = (where) => {
     for (const el of $$('#app-host *')) {
       if (!el.getClientRects().length) continue;
       const ox = getComputedStyle(el).overflowX;
       if ((ox === 'auto' || ox === 'scroll') && el.scrollWidth > el.clientWidth + 1) {
         const key = describe(el);
-        found.set(key, { where, island: !!el.closest('[data-no-page-swipe]') });
-        if (!el.closest('[data-no-page-swipe]')) unmarked.push(`${where}: ${key}`);
+        const touch = panX(el);
+        found.set(key, { where, island: !!el.closest('[data-no-page-swipe]'), panX: touch });
+        // One a finger can't pan sideways (touch-action pan-y or none) can't take a sideways swipe.
+        if (touch && !el.closest('[data-no-page-swipe]')) unmarked.push(`${where}: ${key}`);
       }
     }
     const sx = document.scrollingElement.scrollWidth;
