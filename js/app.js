@@ -307,7 +307,7 @@ async function startSync(unavailable) {
     engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
   }
   let sheet = null;
-  const dev = initSyncScreen({ engine, vault, unavailable, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
+  const dev = initSyncScreen({ engine, vault, unavailable, store: storage, ui: { toast, confirmDialog, setTab, onConfigChanged: () => sheet?.refresh() } });
   sheet = initSyncSheet({
     engine, storage, vault, unavailable,
     ui: { toast, confirmDialog, openDialog, closeDialog, exportData, overlays, onConfigChanged: () => dev.reload() },

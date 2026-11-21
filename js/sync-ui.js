@@ -27,9 +27,9 @@ function when(ms) {
 /**
  * Wire up the screen. `engine` is the sync engine, or null when sync can't run on this device
  * (for example while storage is on a fallback copy). `ui` provides the app's toast, confirmDialog
- * and setTab helpers.
+ * and setTab helpers. `store` is js/storage.js, read only, for the format 5 step's line.
  */
-export function initSyncScreen({ engine, vault, ui, unavailable = '' }) {
+export function initSyncScreen({ engine, vault, ui, unavailable = '', store = null }) {
   const section = $('#dev-sync');
   const relay = $('#dev-relay');
   const key = $('#dev-key');
@@ -58,6 +58,26 @@ export function initSyncScreen({ engine, vault, ui, unavailable = '' }) {
     $('#dev-pending').textContent = String(s.pendingCount ?? 0);
     $('#dev-last').textContent = when(s.lastSyncedAt);
   };
+
+  // Format 5's first-launch step, read-only: the schema version, whether the step is verified, how
+  // many items its stepper check skipped, and this device's version note in the settings record.
+  const showFormat = async () => {
+    const out = $('#dev-format');
+    if (!store || !out) return;
+    try {
+      const st = await store.status();
+      const fm = st.formatMigration;
+      const verified = fm?.verified ? 'yes' : fm ? `no (${fm.step ?? 'not verified'})` : 'no (not run)';
+      const sync = await store.syncState();
+      const rec = await store.getSettingsRecord();
+      const note = sync && rec ? rec.fields?.[store.versionNoteField(sync.deviceId)] : null;
+      const noteText = note ? `${note.v}, fmt ${note.fmt}, ${note.at}` : 'none';
+      out.textContent = `schemaVersion ${st.schemaVersion ?? '?'} · verified: ${verified} · skipped: ${fm?.stepper?.skipped ?? '-'} · note: ${noteText}`;
+    } catch (err) {
+      out.textContent = `Could not read: ${err.message}`;
+    }
+  };
+  showFormat();
 
   if (!engine) {
     $('#dev-status').textContent = unavailable || 'Sync is not available on this device.';
