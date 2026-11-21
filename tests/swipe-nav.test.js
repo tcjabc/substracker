@@ -298,14 +298,16 @@ test('the 24px strips at both edges never start a swipe', async () => {
     await swipeAt(x, y, 120);
     eq(appTab(), 'calendar', `from x=${x}, to the right`);
   }
-  for (const x of [innerWidth - 2, innerWidth - 10, innerWidth - 23]) {
+  // The page's own width, as js/swipe-nav.js measures it (a desktop runner's scrollbar isn't page).
+  const W = document.documentElement.clientWidth;
+  for (const x of [W - 2, W - 10, W - 23]) {
     await swipeAt(x, y, -120);
     eq(appTab(), 'calendar', `from x=${Math.round(x)} (right edge), to the left`);
   }
   await swipeAt(25, y, 120);
   eq(appTab(), 'subs', 'just inside the left strip, it switches');
   await goTab('calendar');
-  await swipeAt(innerWidth - 25, y, -120);
+  await swipeAt(W - 25, y, -120);
   eq(appTab(), 'insights', 'just inside the right strip, it switches');
 });
 

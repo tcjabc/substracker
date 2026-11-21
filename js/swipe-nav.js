@@ -70,7 +70,9 @@ export function bindSwipeNav({ order, current, go, blocked, win = window }) {
     downBlocked = false;
     if (e.touches.length !== 1) { g = null; return; } // a second finger cancels the swipe
     const t = e.changedTouches[0];
-    if (wasBlocked || blocked() || !startsSwipe(e.target, t.clientX, win.innerWidth)) { g = null; return; }
+    // The page's own width: a desktop's classic scrollbar isn't part of it (a phone's overlays it).
+    const width = doc.documentElement?.clientWidth || win.innerWidth;
+    if (wasBlocked || blocked() || !startsSwipe(e.target, t.clientX, width)) { g = null; return; }
     g = { id: t.identifier, x: t.clientX, y: t.clientY, dyMax: 0 };
   };
   const onMove = (e) => {
