@@ -1,9 +1,10 @@
 // In-browser tests for swiping between the tabs (js/swipe-nav.js, wired in js/app.js bindTabs): a
 // mostly sideways swipe on a page goes to the next tab (to the left) or the previous one (to the
 // right), through the same setTab as a tap, with no wrap-around; never from an island
-// (data-no-page-swipe: the Ring, the flat donut, the year chart, the currency chips, the Wallet
-// stack, the Calendar grid), the 24px edge strips, a form control, a second finger, or while an
-// overlay is open; never from a scroll. Run by tests/swipe-nav.html with a fixed clock (18 November
+// (data-no-page-swipe: the Ring, the flat donut, the year chart, the currency chips, the Calendar
+// grid), the 24px edge strips, a form control, a second finger, or while an overlay is open; never
+// from a scroll. A Wallet card isn't an island: a swipe there changes the tab and leaves the stack
+// alone, while its own up-and-down drag and a tap still work. Run by tests/swipe-nav.html with a fixed clock (18 November
 // 2026) against a throwaway database, with index.html's markup. The touches are made in the page,
 // as a phone sends them: pointer events (pointerType touch) first, then touch events, all to the
 // element the touch started on. Run it at 320, 360 and 393px, with reduced motion emulated too, and
@@ -231,15 +232,79 @@ test('islands on Insights: the Ring, the flat donut, the year chart and the curr
   eq(appTab(), 'settings', 'from the month label, it switches');
 });
 
-test('the Wallet stack is an island', async () => {
-  await goTab('subs');
-  await setView('wallet');
+// The Wallet: where each card sits in the stack, and how many are open.
+const wCards = () => $$('#wallet .w-card');
+const wBand = (i = 0) => wCards()[i]?.querySelector('.w-band');
+const stackPose = () => {
+  const top = $('#wallet').getBoundingClientRect().top;
+  return wCards().map((c) => Math.round(c.getBoundingClientRect().top - top));
+};
+const openCards = () => wCards().filter((c) => c.classList.contains('is-open')).length;
+const toWallet = async () => { await goTab('subs'); await setView('wallet'); await tick(300); };
+
+test('a sideways swipe from a Wallet card changes the tab; the stack stays where it was and no card opens', async () => {
+  await toWallet();
   const w = $('#wallet');
-  assert(w?.hasAttribute('data-no-page-swipe'), 'the Wallet host is an island');
-  await swipeOn(w.querySelector('.w-band') ?? w, -120);
-  eq(appTab(), 'subs', 'left on the stack');
+  assert(!w.closest('[data-no-page-swipe]'), 'the Wallet is not an island');
+  eq(w.classList.contains('is-reduced'), reduced(), 'a plain list exactly when motion is reduced');
+  const pose = stackPose();
+  // Left from the front card's band, with the few pixels of up-and-down drift a thumb makes.
+  const drift = [2, 4, 5, 4, 3, 2].map((dy, i) => [-20 * (i + 1), dy]);
+  await swipeOn(wBand(0), 0, 0, { path: drift });
+  eq(appTab(), 'calendar', 'left from a card: the next tab');
+  await toWallet();
+  eq(stackPose(), pose, 'the stack did not move');
+  eq(openCards(), 0, 'no card opened');
+  // From the middle of the stack too.
   await swipeOn(w, -120);
-  eq(appTab(), 'subs', 'left on the middle of the stack');
+  eq(appTab(), 'calendar', 'left from the middle of the stack');
+  await toWallet();
+  // Right on Money: no wrap-around, and still nothing moves or opens.
+  await swipeOn(wBand(0), 120);
+  eq(appTab(), 'subs', 'right from a card on Money: no wrap');
+  await tick(300);
+  eq(stackPose(), pose, 'the stack still did not move');
+  eq(openCards(), 0, 'and no card opened');
+});
+
+test('a vertical drag on the Wallet stack moves the stack, not the tab', async () => {
+  await toWallet();
+  const pose = stackPose();
+  await swipeOn(wBand(0), 4, -150);
+  eq(appTab(), 'subs', 'up: still Money');
+  if (!reduced()) { // the plain list scrolls with the page, which a made-up touch doesn't move
+    await until(() => JSON.stringify(stackPose()) !== JSON.stringify(pose), 'the stack moved', 1500);
+    await tick(900);
+    eq(openCards(), 0, 'no card opened');
+    await swipeOn($('#wallet'), -4, 400);
+    eq(appTab(), 'subs', 'down: still Money');
+    await until(() => JSON.stringify(stackPose()) === JSON.stringify(pose), 'back at the top', 2500);
+  }
+  eq(openCards(), 0, 'no card open');
+});
+
+test('a tap on a Wallet card still opens it, with or without a small sideways wobble', async () => {
+  await toWallet();
+  const pose = stackPose();
+  // A sideways drag under the 64px: no tab change, the stack stays (and the browser sends no click).
+  await swipeOn(wBand(0), -40, 2);
+  eq(appTab(), 'subs', 'under the threshold: still Money');
+  await tick(300);
+  eq(stackPose(), pose, 'the stack did not move');
+  for (const path of [[[0, 0]], [[3, 1], [6, 2], [5, 1]]]) {
+    const card = wCards()[0];
+    const band = wBand(0);
+    await swipeOn(band, 0, 0, { path });
+    band.click(); // the browser's click for a tap
+    await until(() => card.classList.contains('is-open'), `the card opens (${path.length > 1 ? 'a wobble' : 'a plain tap'})`);
+    eq(band.getAttribute('aria-expanded'), 'true', 'expanded');
+    eq(appTab(), 'subs', 'still Money');
+    await tick(600);
+    band.click();
+    await until(() => !card.classList.contains('is-open'), 'a second tap closes it');
+    await tick(700);
+  }
+  eq(openCards(), 0, 'all closed');
 });
 
 test('the Calendar grid: a swipe changes the month, not the tab', async () => {

@@ -5,9 +5,10 @@
 // exactly as for a tap on a tab. No wrap-around, no page following the finger, no new animation.
 //
 // Never from: an open overlay (js/overlays.js), a second finger (it cancels the swipe), a form
-// control, a region marked data-no-page-swipe (the Ring and flat donut, the year chart, the Wallet
-// stack, the Calendar grid and the currency chips: each has its own drag or scroll), or a strip
-// at either side of the screen (the phone's own Back gesture). The check is where the touch STARTS.
+// control, a region marked data-no-page-swipe (the Ring and flat donut, the year chart, the
+// Calendar grid and the currency chips: each has its own sideways drag or scroll), or a strip at
+// either side of the screen (the phone's own Back gesture). The check is where the touch STARTS.
+// The Wallet stack isn't an island: its own drag is up and down only (js/wallet.js).
 // Touch events, passive, never preventDefault: scrolling is never held up, and a scroll the browser
 // takes over still ends with touchend (pointer events would end in pointercancel instead).
 // The decisions are plain functions, so Node tests cover them (tests/swipe-nav.node.test.js).

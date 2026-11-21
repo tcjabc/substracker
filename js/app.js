@@ -794,7 +794,6 @@ function renderWallet(list, { reorder = false } = {}) {
   if (!walletHost) {
     walletHost = document.createElement('div');
     walletHost.id = 'wallet';
-    walletHost.dataset.noPageSwipe = ''; // the stack's own drag (js/swipe-nav.js)
     wallet = createWallet(walletHost, {
       overlays,
       isShown: walletShown,
