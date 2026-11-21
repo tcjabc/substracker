@@ -36,6 +36,7 @@ const SHELL = [
   './js/services.js',
   './js/group-merge.js',
   './js/group-slots.js',
+  './js/category-select.js',
   './js/format-migration.js',
   './js/legacy-step.js',
   './js/logos.js',

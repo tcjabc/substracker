@@ -397,9 +397,16 @@
             <span class="field-label" data-i18n="form.plan">Plan <span class="optional" data-i18n="form.optional">optional</span></span>
             <input class="input" name="plan" autocomplete="off" maxlength="80" placeholder="e.g. Premium" data-i18n-attr="placeholder:form.plan.placeholder">
           </label>
+          <!-- A native drop-down (js/category-select.js): Uncategorised, the default groups, the household's
+               own, then "New group…", which shows the name field under it (inline, not an overlay). -->
           <label class="field" data-expense-only>
             <span class="field-label" data-i18n="form.category">Category <span class="optional" data-i18n="form.optional">optional</span></span>
-            <input class="input" name="category" list="category-names" autocomplete="off" maxlength="40" placeholder="e.g. Music" data-i18n-attr="placeholder:form.category.placeholder">
+            <select class="input" name="category"></select>
+          </label>
+          <label class="field" id="field-new-group" hidden>
+            <span class="field-label" data-i18n="form.newGroup">New group name</span>
+            <input class="input" name="newGroup" autocomplete="off" enterkeyhint="done" placeholder="e.g. Music" data-i18n-attr="placeholder:form.newGroup.placeholder">
+            <span class="field-error" data-error-for="newGroup"></span>
           </label>
           <label class="field">
             <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
@@ -734,7 +741,6 @@
   </div>
 
   <datalist id="service-names"></datalist>
-  <datalist id="category-names"></datalist>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span id="toast-text"></span>

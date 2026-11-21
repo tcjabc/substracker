@@ -51,7 +51,9 @@ export default {
 
   // Add / edit sheet
   'form.category': '類別',
-  'form.category.placeholder': '例如：音樂',
+  'form.category.new': '新增群組…',
+  'form.newGroup': '新群組名稱',
+  'form.newGroup.placeholder': '例如：音樂',
   'form.currency': '幣別',
   'form.cycle.annual': '每年',
   'form.cycle.expense': '計費週期',
@@ -354,6 +356,7 @@ export default {
   'form.error.date': '請選擇發生的日期。',
   'form.error.renewal.expense': '請選擇續訂日期。',
   'form.error.renewal.income': '請選擇入帳日期。',
+  'form.error.groupLong': '請將名稱縮短為 {max} 個字元以內。',
   'form.delete.title': '要刪除「{name}」嗎？',
   'form.delete.message': '這會在這台裝置，以及所有與你同步的裝置上刪除這個項目。如果之後可能還需要，請先匯出備份。',
   'form.toast.saved': '已儲存「{name}」',

@@ -4,7 +4,7 @@ import en from './locales/en.js';
 
 /*
  * Default groups (docs/plan-intervals-groups.md, section 3 L and 5.2): eleven suggestions, shown in
- * the language in use, in the item sheet's group list and as Import with AI's category examples.
+ * the language in use, in the item sheet's Category drop-down (js/category-select.js) and as Import with AI's category examples.
  * They are never forced: no group is created, renamed or deleted for anyone. Choosing one simply
  * writes its name as text, in the language of the moment, and from then on it is the person's own
  * group like any other (the group-name hash, colorField, sees only that text). Names are in

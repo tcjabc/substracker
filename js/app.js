@@ -5,6 +5,8 @@ import { overlays, createBackHandler, setBackHandler, pressBack } from './overla
 import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
+import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
+import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
 import {
@@ -409,7 +411,6 @@ function render() {
   renderSubs();
   if (state.tab === 'calendar') renderCalendar();
   if (state.tab === 'insights') renderInsights();
-  fillCategoryList();
 }
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -1743,12 +1744,23 @@ function fillCurrencySelect(select, selected) {
     .map((c) => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
 }
 
-function fillCategoryList() {
-  const used = state.subs.filter((s) => !isIncome(s)).map((s) => s.category).filter(Boolean);
-  // The household's own groups first, then the default groups in the language in use, as suggestions
-  // only (choosing one writes its name as plain text; nothing is renamed or added by itself).
-  const all = [...new Set([...used, ...DEFAULT_GROUPS.map((g) => t(g.key))])];
-  $('#category-names').innerHTML = all.map((c) => `<option value="${esc(c)}">`).join('');
+/**
+ * The Category drop-down's options (js/category-select.js), built each time the sheet opens, with
+ * `current` (the edited item's category, trimmed as the form saves it) selected. Choosing a default
+ * group writes its name as plain text, as before; nothing is renamed or added by itself.
+ */
+let categoryChoices = [];
+function fillCategorySelect(current = '') {
+  const select = form.elements.category;
+  categoryChoices = categoryOptions(state.subs, { nameOf: t, labelOf: groupLabel, compare: compareNames, current });
+  select.innerHTML = categoryChoices.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  select.value = String(current ?? '').trim();
+}
+
+/** Show or hide the new group's name field ("New group…" chosen, and an expense). */
+function syncNewGroup() {
+  const f = form.elements;
+  $('#field-new-group').hidden = state.formType === 'income' || f.category.value !== NEW_GROUP;
 }
 
 /**
@@ -1766,6 +1778,7 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
     clearErrors();
     const f = form.elements;
     fillCurrencySelect(f.currency, sub?.currency || state.settings.defaultCurrency);
+    fillCategorySelect(sub?.category ?? '');
 
     if (sub) {
       f.name.value = sub.name;
@@ -1776,7 +1789,6 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
       f.cycle.value = sub.cycle;
       f.nextRenewal.value = sub.nextRenewal || '';
       f.date.value = sub.date || '';
-      f.category.value = sub.category || '';
       f.notes.value = sub.notes || '';
     } else if (isDay(date)) {
       // Both date fields, so the day stays whichever cycle is picked.
@@ -1816,6 +1828,7 @@ function syncFormMode() {
     ? t(income ? 'form.title.editIncome' : 'form.title.editExpense')
     : t(income ? 'form.title.newIncome' : 'form.title.newExpense');
   $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
+  syncNewGroup();
   $('#field-renewal').hidden = once;
   $('#label-renewal').textContent = t(income ? 'form.renewal.income' : 'form.renewal.expense');
   $('#field-date').hidden = !once;
@@ -1879,7 +1892,24 @@ function bindForm() {
     clearTimeout(logoTimer);
     logoTimer = setTimeout(updateFormLogo, 400);
   });
-  f.category.addEventListener('input', () => { auto.category = !f.category.value; });
+  // Category: a pick is the person's own (a known name no longer refills it), except Uncategorised.
+  // "New group…" shows the name field and moves focus there, unless the pick came from the arrow
+  // keys on the closed drop-down (a desktop keyboard steps through the options one change at a
+  // time; the field is next in Tab order then).
+  let categoryKeyed = false;
+  const STEP_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+  f.category.addEventListener('keydown', (e) => { categoryKeyed = STEP_KEYS.has(e.key); });
+  f.category.addEventListener('pointerdown', () => { categoryKeyed = false; });
+  const pickCategory = () => {
+    auto.category = !f.category.value;
+    clearErrors('newGroup');
+    syncNewGroup();
+    if (f.category.value === NEW_GROUP && !categoryKeyed) f.newGroup.focus();
+    categoryKeyed = false;
+  };
+  f.category.addEventListener('change', pickCategory);
+  f.category.addEventListener('input', () => { auto.category = !f.category.value; syncNewGroup(); });
+  f.newGroup.addEventListener('input', () => clearErrors('newGroup'));
   // Emoji: keep only the first emoji (whole grapheme), drop anything else. Selecting on focus
   // means a newly typed emoji replaces the old one instead of being appended and discarded.
   const keepEmoji = () => {
@@ -1972,6 +2002,21 @@ function readForm() {
   if (cycle !== 'once' && !isDay(f.nextRenewal.value)) {
     setError('nextRenewal', t(income ? 'form.error.renewal.income' : 'form.error.renewal.expense')); valid = false;
   }
+  // Category: the option picked, or under "New group…" the name typed (js/category-select.js): empty
+  // is Uncategorised, a name that is already an option picks that option, too long is refused.
+  let category = f.category.value === NEW_GROUP ? '' : f.category.value.trim();
+  if (!income && f.category.value === NEW_GROUP) {
+    const picked = resolveNewGroup(f.newGroup.value, categoryChoices, { max: CATEGORY_MAX });
+    if (picked.error) {
+      setMoreDetails(true); // the field is under More details, which may have been folded since
+      setError('newGroup', t('form.error.groupLong', { max: CATEGORY_MAX })); valid = false;
+    } else if (!picked.created) {
+      category = picked.value;
+      f.category.value = picked.value;
+      f.newGroup.value = '';
+      syncNewGroup();
+    } else category = picked.value;
+  }
   if (!valid) {
     const bad = form.querySelector('[aria-invalid="true"]');
     bad?.focus();
@@ -1998,7 +2043,7 @@ function readForm() {
     cycle,
     nextRenewal: cycle === 'once' ? '' : f.nextRenewal.value || '',
     date: cycle === 'once' ? f.date.value : '',
-    category: hidden('category', f.category.value.trim()),
+    category: hidden('category', category),
     notes: f.notes.value.trim(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -2010,7 +2055,7 @@ function setError(field, msg) {
   $(`[data-error-for="${field}"]`, form).textContent = msg;
 }
 function clearErrors(field) {
-  const fields = field ? [field] : ['name', 'price', 'date', 'nextRenewal'];
+  const fields = field ? [field] : ['name', 'price', 'date', 'nextRenewal', 'newGroup'];
   for (const k of fields) {
     form.elements[k].removeAttribute('aria-invalid');
     $(`[data-error-for="${k}"]`, form).textContent = '';

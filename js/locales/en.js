@@ -54,7 +54,9 @@ export default {
 
   // Add / edit sheet
   'form.category': 'Category',
-  'form.category.placeholder': 'e.g. Music',
+  'form.category.new': 'New group…',
+  'form.newGroup': 'New group name',
+  'form.newGroup.placeholder': 'e.g. Music',
   'form.currency': 'Currency',
   'form.cycle.annual': 'Annual',
   'form.cycle.expense': 'Billing cycle',
@@ -363,6 +365,7 @@ export default {
   'form.error.date': 'Pick the date it happens.',
   'form.error.renewal.expense': 'Pick a renewal date.',
   'form.error.renewal.income': 'Pick a payment date.',
+  'form.error.groupLong': 'Shorten the name to {max} characters or fewer.',
   'form.delete.title': 'Delete {name}?',
   'form.delete.message': 'This deletes it here and on any devices you sync with. Export a backup first if you might want it back.',
   'form.toast.saved': 'Saved {name}',
