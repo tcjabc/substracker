@@ -259,10 +259,13 @@ test('a name over 40 characters is refused with the category limit; 40 is fine',
   eq(document.activeElement, f().newGroup, 'focus on the field');
   assert(body().scrollWidth <= body().clientWidth + 1, 'the message fits the sheet\'s width');
   eq((await byName('Too long')), undefined, 'nothing stored');
-  setValue('newGroup', 'z'.repeat(40));
+  // Forty characters in words: one unbroken 40-letter word doesn't wrap in the List's group heading
+  // at 320px (a known issue from before 1.25.0, not the sheet's), and would make the page scroll.
+  const FORTY = 'word word word word word word word word!';
+  setValue('newGroup', FORTY);
   eq(text($('[data-error-for="newGroup"]')), '', 'typing clears the message');
   await save();
-  eq((await byName('Too long')).category, 'z'.repeat(40), '40 characters save');
+  eq([FORTY.length, (await byName('Too long')).category], [40, FORTY], '40 characters save');
 });
 
 test('a known service preselects its default group and opens More details by itself; a pick of your own stays', async () => {
