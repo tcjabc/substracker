@@ -31,6 +31,9 @@
 
 import { readFileSync } from 'node:fs';
 import { RoomCore, memoryStore } from '../../relay/src/room-logic.js';
+// The current sheet's Category drop-down helpers (1.25.0); 1.19.0's sheet doesn't use them.
+import { resolveNewGroup, NEW_GROUP } from '../../js/category-select.js';
+import { CATEGORY_MAX } from '../../js/import-ai.js';
 
 export const RELAY_URL = 'https://relay.example';
 
@@ -493,6 +496,7 @@ function standInForm() {
     kind: radios(['expense', 'income'], 'expense'), name: text(), domain: text(), emoji: text(), plan: text(),
     price: number(), currency: text(), cycle: radios(['monthly', 'annual', 'once'], 'monthly'),
     nextRenewal: date(), date: date(), category: text(), notes: text(),
+    newGroup: text(), // 1.25.0: the name field under Category's "New group…"
   };
   return { elements, reset() { for (const e of Object.values(elements)) e.reset(); }, querySelector: () => null };
 }
@@ -524,12 +528,16 @@ function itemForm(mod, { subs, defaultCurrency }) {
   const fns = new Function(
     'form', 'state', 't', 'uid', 'cleanDomain', 'firstEmoji', 'isIncome', '$', 'fillCurrencySelect', 'clearErrors',
     'syncFormMode', 'updateFormLogo', 'openDialog', 'dialog', 'matchMedia', 'reportError', 'console',
-    'setMoreDetails', 'keyboardLikely', body,
+    'setMoreDetails', 'keyboardLikely',
+    // Since 1.25.0 Category is a drop-down (js/category-select.js): the stand-in keeps the edited
+    // item's category as its value, as the page's added option does.
+    'fillCategorySelect', 'syncNewGroup', 'categoryChoices', 'resolveNewGroup', 'NEW_GROUP', 'CATEGORY_MAX', body,
   )(
     form, state, mod.i18n.t, mod.util.uid, mod.services.cleanDomain, mod.util.firstEmoji, mod.util.isIncome, $,
     (select, selected) => { select.value = selected; }, () => { for (const k of Object.keys(errors)) delete errors[k]; },
     () => {}, () => {}, () => {}, { focus() {} }, () => ({ matches: true }), (msg, err) => { throw err ?? new Error(msg); }, console,
     () => {}, () => false,
+    (current = '') => { form.elements.category.value = String(current ?? '').trim(); }, () => {}, [], resolveNewGroup, NEW_GROUP, CATEGORY_MAX,
   );
   return {
     open: (sub, type) => fns.openForm(sub, type),
