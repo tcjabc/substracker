@@ -1,7 +1,8 @@
 // In-browser tests for the Money tab's summary since 1.21.0 (js/app.js, js/wallet.js,
 // js/wallet-math.js): the Money card (Cash due, Income, Left over, the Monthly | Annual toggle, the
 // due-soon chip, a tap that opens Insights), the income card pinned above the stack (no longer a
-// Wallet card or a Sort group) and its gauge (the front card's share of the income). Run by
+// Wallet card or a Sort group) and its gauge (the front card's share of the income), and the Wallet
+// cards' chevrons (where a tap moves the card). Run by
 // tests/money-card.html with a fixed clock (18 November 2026) against a throwaway database, with
 // index.html's markup. Run it at 320, 360 and 393px, with and without reduced motion emulated, and
 // in English, the pseudo-locale (?lang=xx) and zh-TW (?lang=zh-TW). Expected words come from t(),
@@ -591,6 +592,40 @@ test('the page keeps room for the one + only, and the last card clears it in eve
     await tick(100);
   }
   await view('wallet');
+});
+
+// Which way a Wallet chevron points. Its path is a down chevron, turned half round to point up.
+// `to`: where a running turn ends, else where it is now.
+function chevWay(chev, { to = false } = {}) {
+  let tf = getComputedStyle(chev).transform;
+  const turn = to && chev.getAnimations().find((a) => a.transitionProperty === 'transform');
+  if (turn) tf = turn.effect.getKeyframes().at(-1).transform;
+  return !tf || tf === 'none' || new DOMMatrix(tf).d > 0 ? 'down' : 'up';
+}
+
+test('the Wallet chevrons show where a tap moves the card: up when closed, down when open, turned at the tap', async () => {
+  await view('wallet');
+  await front(0);
+  const cards = $$('#wallet .w-card');
+  const ways = () => cards.map((c) => chevWay(c.querySelector('.w-chev')));
+  eq(ways(), cards.map(() => 'up'), 'every closed card: up');
+  const band = cards[0].querySelector('.w-band');
+  const chev = cards[0].querySelector('.w-chev');
+  const label = band.getAttribute('aria-label');
+  for (const [way, expanded] of [['down', 'true'], ['up', 'false']]) {
+    band.click();
+    eq(chevWay(chev, { to: true }), way, `${way} straight after the tap`);
+    if (reduced()) {
+      eq(chevWay(chev), way, 'Reduce motion: there at once');
+      eq(chev.getAnimations().length, 0, 'Reduce motion: no turn');
+    } else assert(chev.getAnimations().some((a) => a.transitionProperty === 'transform'), 'it turns, as before');
+    eq(band.getAttribute('aria-expanded'), expanded, 'aria-expanded');
+    eq(band.getAttribute('aria-label'), label, 'the label is unchanged');
+    await settle();
+    await tick(400);
+    eq(chevWay(chev), way, `${way} once it settles`);
+  }
+  eq(ways(), cards.map(() => 'up'), 'all closed again: up');
 });
 
 test(`fits ${innerWidth}px in ${LANG}: the big figure never cut, the toggle and the chip inside the card, nothing runs out`, async () => {

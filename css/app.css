@@ -955,8 +955,10 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 }
 /* Even two lines would cut the name: this card leaves out its logo chip (js/wallet.js fitNames). */
 .w-band.w-tight .w-logos { display: none; }
-.w-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transition: transform var(--dur) var(--ease); }
-.is-open .w-chev { transform: rotate(180deg); }
+/* The chevron shows where a tap moves the card, not its state: up on a closed card (a tap lifts it
+   open), down on the open one (a tap puts it back in the stack). It turns as the tap lands. */
+.w-chev { width: var(--icon-sm); height: var(--icon-sm); flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; transform: rotate(180deg); transition: transform var(--dur) var(--ease); }
+.is-open .w-chev { transform: none; }
 .w-total { grid-area: total; font-size: var(--text-md); font-weight: var(--weight-semibold); line-height: var(--leading-tight); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* The second row (items, and what's due) is one line across the card, so its width never squeezes the
    name's column above it. The due words give way (an ellipsis) before the item count does. */

@@ -14,6 +14,7 @@ import {
 import { esc, money, isIncome, isOnce, nextRenewal, renewalText, parseDate, shortDate, daysUntil } from './util.js';
 import { t, formatLocale } from './i18n.js';
 
+// Drawn pointing down; app.css turns it up on a closed card (it shows where a tap moves the card).
 const CHEVRON = '<svg class="w-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
