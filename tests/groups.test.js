@@ -1,7 +1,7 @@
 // In-browser tests for the H + L stack's groups on the 1.22 screens (js/app.js bindGroupMerge,
-// bindGroupColors, fillCategoryList, ensureGroupColors; js/group-merge.js, js/group-slots.js): Tidy
+// bindGroupColors, fillCategorySelect, ensureGroupColors; js/group-merge.js, js/group-slots.js): Tidy
 // up groups and the 15-slot colour picker are overlays (Android Back closes them, as Cancel and
-// Escape do); Merge moves the items and Undo puts them back; the default groups are suggestions for
+// Escape do); Merge moves the items and Undo puts them back; the default groups are options of
 // Group under the add sheet's More details, in the language in use, and a known service name fills
 // it; income saves no group; and every place that draws a group colour draws the same one (the Grid
 // dot, the Wallet card, the income gauge's front card, Insights' donut and legend in the pinned
@@ -217,11 +217,15 @@ test('add sheet: the default groups are the suggestions for Group, under More de
   await until(() => isOpen(sheet()), 'the add sheet opens');
   assert($('#more-details').hidden, 'More details is folded when adding');
   assert($('#more-details').contains(f().category), 'Group is under More details');
-  eq(f().category.getAttribute('list'), 'category-names', 'with the suggestions list');
-  const options = $$('#category-names option').map((o) => o.value);
-  const own = (await expenseGroups());
-  eq(options.slice(0, own.length).sort(), [...own].sort(), 'the household\'s own groups first');
-  for (const g of DEFAULT_GROUPS) assert(options.includes(t(g.key)), `then the default group ${t(g.key)}`);
+  // 1.25.0: a drop-down. Uncategorised, the default groups in table order, the household's others
+  // A–Z, then New group… (tests/category-select.html covers it in depth).
+  eq(f().category.tagName, 'SELECT', 'Group is a drop-down');
+  const options = $$('option', f().category).map((o) => o.value);
+  eq(options[0], '', 'Uncategorised first');
+  eq(options.slice(1, 1 + DEFAULT_GROUPS.length), DEFAULT_GROUPS.map((g) => t(g.key)), 'then the default groups, in the language in use');
+  const defaults = new Set(DEFAULT_GROUPS.map((g) => t(g.key).toLowerCase()));
+  const own = (await expenseGroups()).filter((g) => g && !defaults.has(g.trim().toLowerCase())).sort(compareNames);
+  eq(options.slice(1 + DEFAULT_GROUPS.length, -1), own, 'then the household\'s own groups, A–Z');
   eq(options.length, new Set(options).size, 'no name twice');
   f().name.value = 'Netflix';
   f().name.dispatchEvent(new Event('input', { bubbles: true }));

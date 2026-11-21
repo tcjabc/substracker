@@ -1,4 +1,5 @@
-// In-browser tests for 1.21.1 (js/app.js, js/wallet.js, css/app.css): the add and edit sheet (the
+// In-browser tests for 1.21.1 (js/app.js, js/wallet.js, css/app.css; Category a drop-down since
+// 1.25.0, tested in depth by tests/category-select.html): the add and edit sheet (the
 // tinted Expense | Income switch, required fields first and the rest under More details, income
 // mode, the required date, focus on opening, Android Back), the income gauge with Reduce motion and
 // effects when no card is open, and long group names in a Wallet card's header next to a wide total.
@@ -238,7 +239,9 @@ test('More details opens by itself when a known service fills a field in it whil
   await tick(30);
   eq(more().getAttribute('aria-expanded'), 'true', 'Netflix fills Group (and the domain): open');
   assert(shown(f().category) && shown(f().domain), 'the filled fields show');
+  eq(f().category.tagName, 'SELECT', 'Category is a drop-down (1.25.0)');
   eq(f().category.value, t('group.preset.entertainment'), 'with the default group, in the language in use');
+  eq(f().category.selectedOptions[0]?.textContent, t('group.preset.entertainment'), 'preselected, under its own name');
   eq(document.activeElement, focused, 'focus stays where it was');
   eq(overlays.ids(), ['sub-dialog'], 'still an inline disclosure, no overlay of its own');
   more().click();
@@ -268,7 +271,8 @@ test('typed fields survive the Expense | Income switch; income hides the domain,
   await openAdd();
   await pickKind('expense');
   more().click();
-  const typed = { name: 'Lessons', price: '120', domain: 'music.example', emoji: '🎹', plan: 'Basic', category: 'Hobbies', notes: 'Tuesdays', nextRenewal: '2026-12-01' };
+  // Category is a drop-down (1.25.0): a default group, named in the language in use.
+  const typed = { name: 'Lessons', price: '120', domain: 'music.example', emoji: '🎹', plan: 'Basic', category: t('group.preset.hobbies'), notes: 'Tuesdays', nextRenewal: '2026-12-01' };
   for (const [k, v] of Object.entries(typed)) setValue(k, v);
   await pickKind('income');
   for (const n of ['domain', 'emoji', 'plan', 'category']) assert(!shown(fieldOf(n)), `income: ${n} hidden`);

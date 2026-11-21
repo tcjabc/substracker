@@ -314,7 +314,7 @@
       "aria-label=31 December 2026, nothing due"
     ],
     "form.new.expense": [
-      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
+      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. Netflix",
       "placeholder=0",
@@ -328,10 +328,11 @@
       "Enter a name.",
       "Enter a price of 0 or more.",
       "Pick a renewal date.",
+      "",
       ""
     ],
     "form.new.income": [
-      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
       "placeholder=0",
@@ -345,10 +346,11 @@
       "Enter a name.",
       "Enter an amount of 0 or more.",
       "Pick a payment date.",
+      "",
       ""
     ],
     "form.new.income.once": [
-      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
       "placeholder=0",
