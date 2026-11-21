@@ -169,7 +169,7 @@ export function createCalendar(host, opts) {
         </div>
       </div>
       ${occ.others.length ? `<p class="cal-flow-note">${esc(othersText(occ.others))}</p>` : ''}
-      <div class="cal-grid" role="grid" aria-labelledby="cal-month" aria-describedby="cal-keys">
+      <div class="cal-grid" data-no-page-swipe role="grid" aria-labelledby="cal-month" aria-describedby="cal-keys">
         <div role="rowgroup" class="cal-heads"><div role="row" class="cal-row">${heads}</div></div>
         <div role="rowgroup" class="cal-weeks">${weeks}</div>
       </div>

@@ -90,7 +90,7 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
     <div class="panel ins-chart">
       ${note ? `<p class="ring-note">${esc(note)}</p>` : ''}
       <div class="ins-fit">
-        <div class="donut"${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
+        <div class="donut" data-no-page-swipe${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
           <svg viewBox="0 0 200 200" role="img" aria-label="${esc(t('donut.label', { month: monthName }))}">${arcs}</svg>
           <div class="donut-center">
             <span class="donut-total ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>

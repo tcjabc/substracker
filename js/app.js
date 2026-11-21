@@ -17,6 +17,7 @@ import { initSyncScreen } from './sync-ui.js';
 import { initSyncSheet } from './sync-sheet.js';
 import { initImportAiSheet, copyText } from './import-ai-sheet.js';
 import { createTabPill } from './tab-pill.js';
+import { bindSwipeNav } from './swipe-nav.js';
 import { itemsCsv, itemsCsvText, csvItems } from './csv-export.js';
 import { createRoller } from './count-anim.js';
 import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSetting, saveLangSetting, relativeDays, dateWords, compareNames } from './i18n.js';
@@ -37,7 +38,7 @@ import {
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.23.0';
+const APP_VERSION = '1.24.0';
 // Format 5's first-launch step writes it into this device's version note (js/storage.js migrateFormat).
 storage.setAppVersion(APP_VERSION);
 
@@ -354,6 +355,15 @@ function bindTabs() {
     const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
     setTab(next.dataset.tab);
     next.focus();
+  });
+  // A sideways swipe on a page goes to the next or previous tab (js/swipe-nav.js): a shortcut through
+  // setTab, exactly as a tap. Not while an overlay is shown (a sheet, a menu, an open Wallet card);
+  // an overlay left open on another tab and out of sight doesn't count, as for Back.
+  bindSwipeNav({
+    order: () => tabs.map((t) => t.dataset.tab),
+    current: () => state.tab,
+    go: (tab) => setTab(tab),
+    blocked: () => overlays.top() !== null || !!document.querySelector('dialog[open]'),
   });
 }
 
@@ -784,6 +794,7 @@ function renderWallet(list, { reorder = false } = {}) {
   if (!walletHost) {
     walletHost = document.createElement('div');
     walletHost.id = 'wallet';
+    walletHost.dataset.noPageSwipe = ''; // the stack's own drag (js/swipe-nav.js)
     wallet = createWallet(walletHost, {
       overlays,
       isShown: walletShown,
@@ -1284,7 +1295,7 @@ function renderInsights() {
   if (!currencies.includes(state.insightsCurrency)) state.insightsCurrency = currencies[0];
   const cur = state.insightsCurrency;
   const chipsHTML = currencies.length > 1 ? `
-    <div class="chips" id="currency-chips" role="group" aria-label="${esc(t('insights.currency.label'))}">
+    <div class="chips" id="currency-chips" data-no-page-swipe role="group" aria-label="${esc(t('insights.currency.label'))}">
       ${currencies.map((c) => `<button type="button" class="chip" data-currency="${esc(c)}" aria-pressed="${c === cur}">${esc(c)}</button>`).join('')}
     </div>` : '';
   const currencyNotice = currencies.length > 1 ? `<p class="notice">${esc(t('insights.notice.currencies'))}</p>` : '';
@@ -1523,7 +1534,7 @@ function ringHTML(total, cur, monthName) {
   return `
     <div class="panel ins-chart">
       <div class="ins-fit">
-        <div class="ring-stage" tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
+        <div class="ring-stage" data-no-page-swipe tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
           aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
           <div class="ring-total"><span class="ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span></div>
           <div class="ring-caption" aria-hidden="true"><span class="ring-name"></span><span class="ring-amount"></span><span class="ring-share"></span></div>
@@ -1652,7 +1663,7 @@ function renderYearView(root, { inCur, cur, chipsHTML, currencyNotice }) {
       </div>
       <button type="button" class="chip" data-year-income ${pressed(state.yearIncome)}>${esc(t('insights.showIncome'))}</button>
     </div>
-    <div class="yc-fit"><div id="year-chart"></div></div>
+    <div class="yc-fit"><div id="year-chart" data-no-page-swipe></div></div>
     </div>
     ${currencyNotice}
     ${undated.length ? `<button type="button" class="summary-note summary-note-action yc-undated" data-id="${esc(undated[0].id)}">${esc(t('common.excludesUndated', { count: undated.length }))}</button>` : ''}
