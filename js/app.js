@@ -6,7 +6,8 @@ import { DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
-import { createCardsUI } from './cards-ui.js';
+import { createCardsUI, nextCardColour, cardNameError } from './cards-ui.js';
+import { listCards, cardNameProblem, cardByName, newCardId, payToSave, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH } from './cards.js';
 import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
@@ -1776,6 +1777,32 @@ function syncNewGroup() {
 }
 
 /**
+ * The Payment method drop-down's options (1.27.0, js/cards.js), built each time the sheet opens: Not
+ * set, Cash, the household's live cards by name, then "Add new card…" where cards can be written.
+ * `current` (the edited item's pay) is selected when it is one of them; a pay that isn't (a card this
+ * device hasn't received yet, a deleted one, a later version's value) shows as Not set and is kept as
+ * it is unless the person changes the drop-down (readForm, js/cards.js payToSave).
+ */
+function fillPaySelect(current = '') {
+  const select = form.elements.pay;
+  const options = [
+    { value: PAY_NOT_SET, label: t('form.pay.notSet') },
+    { value: PAY_CASH, label: t('form.pay.cash') },
+    ...listCards(state.settingsRecord).map((c) => ({ value: c.id, label: c.name })),
+    ...(state.cardsWritable ? [{ value: PAY_NEW_CARD, label: t('form.pay.new') }] : []),
+  ];
+  select.innerHTML = options.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  select.value = options.some((o) => o.value === current && o.value !== PAY_NEW_CARD) ? current : PAY_NOT_SET;
+  select.dataset.touched = '';
+}
+
+/** Show or hide the new card's nickname field ("Add new card…" chosen, and an expense). */
+function syncNewCard() {
+  const f = form.elements;
+  $('#field-new-card').hidden = state.formType === 'income' || f.pay.value !== PAY_NEW_CARD;
+}
+
+/**
  * Open the add sheet (no `sub`; `type` is where its Expense | Income switch starts) or the edit
  * sheet for `sub`, which keeps its type: the switch is only there when adding. `date`
  * (YYYY-MM-DD, from the Calendar tab's selected day) fills in a new item's date; the date rules
@@ -1791,6 +1818,7 @@ function openForm(sub = null, type = 'expense', { date = '' } = {}) {
     const f = form.elements;
     fillCurrencySelect(f.currency, sub?.currency || state.settings.defaultCurrency);
     fillCategorySelect(sub?.category ?? '');
+    fillPaySelect(sub?.pay ?? '');
 
     if (sub) {
       f.name.value = sub.name;
@@ -1841,6 +1869,7 @@ function syncFormMode() {
     : t(income ? 'form.title.newIncome' : 'form.title.newExpense');
   $$('[data-expense-only]', form).forEach((el) => { el.hidden = income; });
   syncNewGroup();
+  syncNewCard();
   $('#field-renewal').hidden = once;
   $('#label-renewal').textContent = t(income ? 'form.renewal.income' : 'form.renewal.expense');
   $('#field-date').hidden = !once;
@@ -1856,7 +1885,7 @@ function syncFormMode() {
 }
 
 /** The fields under More details. */
-const MORE_FIELDS = ['domain', 'emoji', 'plan', 'category', 'notes'];
+const MORE_FIELDS = ['domain', 'emoji', 'plan', 'category', 'pay', 'notes'];
 function setMoreDetails(open) {
   $('#more-toggle').setAttribute('aria-expanded', String(open));
   $('#more-details').hidden = !open;
@@ -1923,6 +1952,21 @@ function bindForm() {
   f.category.addEventListener('change', pickCategory);
   f.category.addEventListener('input', () => { auto.category = !f.category.value; syncNewGroup(); });
   f.newGroup.addEventListener('input', () => clearErrors('newGroup'));
+  // Payment method (1.27.0): the same rule. A change marks the drop-down as the person's (a pay it
+  // didn't show is replaced only then); "Add new card…" shows the nickname field and moves focus
+  // there, unless the pick came from the arrow keys on the closed drop-down.
+  let payKeyed = false;
+  f.pay.addEventListener('keydown', (e) => { payKeyed = STEP_KEYS.has(e.key) && !e.altKey; });
+  f.pay.addEventListener('pointerdown', () => { payKeyed = false; });
+  f.pay.addEventListener('change', () => {
+    f.pay.dataset.touched = '1';
+    clearErrors('newCard');
+    syncNewCard();
+    if (f.pay.value === PAY_NEW_CARD && !payKeyed) f.newCard.focus();
+    payKeyed = false;
+  });
+  f.pay.addEventListener('input', () => { f.pay.dataset.touched = '1'; syncNewCard(); });
+  f.newCard.addEventListener('input', () => clearErrors('newCard'));
   // Emoji: keep only the first emoji (whole grapheme), drop anything else. Selecting on focus
   // means a newly typed emoji replaces the old one instead of being appended and discarded.
   const keepEmoji = () => {
@@ -1956,9 +2000,14 @@ function bindForm() {
     e.preventDefault();
     const fromForm = readForm();
     if (!fromForm) return;
+    // "Add new card…": the card readForm described is stored with the item, in one commit.
+    const newCard = fromForm.newCard ?? null;
+    delete fromForm.newCard;
     const sub = mergeFormEdit(fromForm);
     try {
-      await storage.save(sub);
+      if (newCard) await storage.saveItemWithCard(sub, newCard.id, newCard.card);
+      else await storage.save(sub);
+      if (newCard) state.settingsRecord = await storage.getSettingsRecord();
       const i = state.subs.findIndex((s) => s.id === sub.id);
       if (i >= 0) state.subs[i] = sub; else state.subs.push(sub);
       closeDialog(dialog);
@@ -2030,6 +2079,31 @@ function readForm() {
       syncNewGroup();
     } else category = picked.value;
   }
+  // Payment method: the option picked, or under "Add new card…" the nickname typed (js/cards.js):
+  // empty is Not set, a nickname that is already a card picks that card, one that looks like a card
+  // number or is too long is refused. A new card is described here and stored with the item (submit).
+  let pay = f.pay.value;
+  let newCard = null;
+  if (!income && pay === PAY_NEW_CARD) {
+    const typed = f.newCard.value.trim();
+    const cards = listCards(state.settingsRecord);
+    const problem = typed ? cardNameProblem(typed) : '';
+    const same = typed && !problem ? cardByName(cards, typed) : null;
+    if (!typed) pay = PAY_NOT_SET;
+    else if (problem) {
+      setMoreDetails(true);
+      setError('newCard', cardNameError(problem)); valid = false;
+    } else if (same) {
+      pay = same.id;
+      f.pay.value = same.id;
+      f.newCard.value = '';
+      syncNewCard();
+    } else {
+      const id = newCardId(state.settingsRecord);
+      newCard = { id, card: { name: typed, colour: nextCardColour(cards) } };
+      pay = id;
+    }
+  }
   if (!valid) {
     const bad = form.querySelector('[aria-invalid="true"]');
     bad?.focus();
@@ -2044,6 +2118,9 @@ function readForm() {
   // (whatever was typed while it was an expense stays out); an edited one keeps what it holds, so
   // saving never clears a field the form didn't show (mergeFormEdit then sees it unchanged).
   const hidden = (k, v) => (income ? (formBase?.[k] ?? '') : v);
+  // Income has no Payment method: an edited item keeps whatever it holds, a new one gets none. An
+  // expense saves the pick only once the drop-down was changed (js/cards.js payToSave).
+  const payValue = income ? formBase?.pay : payToSave({ stored: formBase?.pay, chosen: pay, touched: f.pay.dataset.touched === '1' });
   return {
     id: existing?.id ?? uid(),
     type: income ? 'income' : 'expense',
@@ -2058,8 +2135,10 @@ function readForm() {
     date: cycle === 'once' ? f.date.value : '',
     category: hidden('category', category),
     notes: f.notes.value.trim(),
+    ...(payValue !== undefined ? { pay: payValue } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+    ...(newCard ? { newCard } : {}),
   };
 }
 

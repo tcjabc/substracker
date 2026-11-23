@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHousehold } from './helpers/mixed-sync.js';
-import { listCards, payCard } from '../js/cards.js';
+import { listCards, payCard, PAY_NEW_CARD } from '../js/cards.js';
 
 const OLD = ['legacy', 'legacy125'];
 const SETTINGS = 'settings';
@@ -110,6 +110,31 @@ for (const old of OLD) {
       assert.equal(payCard(d.item('a'), d.settingsRecord()), null, `${d.name}: reads as Not set`);
       clean(d, d.name);
     }
+    // The item sheet shows Not set for it, and a save that doesn't touch the drop-down keeps it.
+    time.advance();
+    const form = A.formSave('a', { name: 'Item a renamed' });
+    assert.deepEqual(form.ops.map((o) => o.f).sort(), ['name', 'updatedAt'], 'no pay written');
+    await h.syncAll();
+    for (const d of [A, B, O]) assert.equal(d.item('a').pay, 'k1', `${d.name}: the guard kept the pay`);
+  });
+
+  test(`the current item sheet's "Add new card…" stores the card with the item; ${old} edits the item and pay survives`, async () => {
+    const { h, time } = await household();
+    const N = await h.device('new', { version: 'current', now: time.now() });
+    const O = await h.device('old', { version: old, now: time.now() });
+    const form = N.formSave(null, { name: 'Phone bill', price: '499', nextRenewal: '2026-12-10', pay: PAY_NEW_CARD, newCard: '  Family Visa ' });
+    assert.deepEqual(form.errors, {});
+    assert.ok(form.newCard, 'a new card described');
+    assert.deepEqual([...new Set(form.ops.map((o) => o.rec))].sort(), [form.saved.id, SETTINGS].sort(), 'one commit');
+    await h.syncAll();
+    const id = form.saved.id;
+    assert.equal(O.item(id).pay, form.newCard.id);
+    assert.equal(O.settingsRecord().fields[`card_${form.newCard.id}`].name, 'Family Visa');
+    time.advance();
+    O.formSave(id, { name: 'Phone' });
+    await h.syncAll();
+    for (const d of [N, O]) assert.equal(d.item(id).pay, form.newCard.id, `${d.name}: pay survives`);
+    assert.equal(payCard(N.item(id), N.settingsRecord()).name, 'Family Visa');
   });
 
   test(`a card rename on the new device keeps keys a later version added; ${old} stores the whole value`, async () => {
@@ -145,6 +170,33 @@ test('two new devices add "Visa" offline through the item sheet path: both cards
     assert.equal(payCard(d.item('b'), d.settingsRecord()).id, 'kb');
     clean(d, d.name);
   }
+});
+
+test('the current item sheet: Not set writes no pay; a typed nickname that is a card picks it; a card number is refused; income ignores it', async () => {
+  const { h, time } = await household();
+  const N = await h.device('new', { version: 'current', now: time.now() });
+  N.saveCard('k1', { name: 'Visa', colour: 'c7' });
+  const plain = N.formSave(null, { name: 'Plain', price: '10', nextRenewal: '2026-12-10' });
+  assert.ok(!plain.ops.some((o) => o.f === 'pay'), 'a new item with Not set: no pay op');
+  assert.equal(N.item(plain.saved.id).pay, undefined);
+  const picked = N.formSave(null, { name: 'Picked', price: '10', nextRenewal: '2026-12-10', pay: PAY_NEW_CARD, newCard: ' vIsA ' });
+  assert.equal(picked.newCard, null, 'no new card');
+  assert.equal(N.item(picked.saved.id).pay, 'k1', 'the existing card');
+  const emptyNick = N.formSave(null, { name: 'Empty nick', price: '10', nextRenewal: '2026-12-10', pay: PAY_NEW_CARD, newCard: '  ' });
+  assert.equal(N.item(emptyNick.saved.id).pay, undefined, 'an empty nickname is Not set');
+  const before = N.s.made.length;
+  const bad = N.formSave(null, { name: 'Bad', price: '10', nextRenewal: '2026-12-10', pay: PAY_NEW_CARD, newCard: '4111 1111 1111 1111' });
+  assert.equal(bad.saved, null, 'refused');
+  assert.ok(bad.errors.newCard, 'with a message under the field');
+  assert.equal(N.s.made.length, before, 'nothing written');
+  const cashToNot = N.formSave(null, { name: 'Cash one', price: '10', nextRenewal: '2026-12-10', pay: 'cash' });
+  assert.equal(N.item(cashToNot.saved.id).pay, 'cash');
+  time.advance();
+  N.formSave(cashToNot.saved.id, { pay: '' });
+  assert.equal(N.item(cashToNot.saved.id).pay, '', 'a real change back to Not set is written');
+  const income = N.formSave(null, { kind: 'income', name: 'Salary', price: '100', nextRenewal: '2026-12-10', pay: 'k1' }, { type: 'income' });
+  assert.equal(N.item(income.saved.id).pay, undefined, 'income gets no pay');
+  assert.equal(N.item(income.saved.id).type, 'income');
 });
 
 test('an export with a card is format 6 and round-trips; after delete-with-clear it is format 5 again', async () => {

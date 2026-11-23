@@ -425,9 +425,20 @@
             <input class="input" name="newGroup" autocomplete="off" enterkeyhint="done" placeholder="e.g. Music" data-i18n-attr="placeholder:form.newGroup.placeholder">
             <span class="field-error" data-error-for="newGroup"></span>
           </label>
+          <!-- Payment method (1.27.0, js/cards.js): Not set, Cash, the household's cards, then "Add new
+               card…", which shows the nickname field under it (inline, as New group…). Expenses only. -->
+          <label class="field" data-expense-only>
+            <span class="field-label" data-i18n="form.pay.label">Payment method <span class="optional" data-i18n="form.optional">optional</span></span>
+            <select class="input" name="pay"></select>
+          </label>
+          <label class="field" id="field-new-card" hidden>
+            <span class="field-label" data-i18n="form.newCard">New card nickname</span>
+            <input class="input" name="newCard" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="e.g. Family Visa" data-i18n-attr="placeholder:form.newCard.placeholder">
+            <span class="field-error" data-error-for="newCard"></span>
+          </label>
           <label class="field">
             <span class="field-label" data-i18n="form.notes">Notes <span class="optional" data-i18n="form.optional">optional</span></span>
-            <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, billed to card ending 1234…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
+            <textarea class="input" name="notes" rows="3" maxlength="1000" placeholder="Shared with family, split three ways…" data-i18n-attr="placeholder:form.notes.placeholder.expense"></textarea>
           </label>
         </div>
       </div>

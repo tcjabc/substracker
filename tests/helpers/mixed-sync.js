@@ -35,6 +35,8 @@ import { RoomCore, memoryStore } from '../../relay/src/room-logic.js';
 // The current sheet's Category drop-down helpers (1.25.0); 1.19.0's sheet doesn't use them.
 import { resolveNewGroup, NEW_GROUP } from '../../js/category-select.js';
 import { CATEGORY_MAX } from '../../js/import-ai.js';
+import * as cardsLib from '../../js/cards.js';
+import { nextCardColour, cardNameError } from '../../js/cards-ui.js';
 
 export const RELAY_URL = 'https://relay.example';
 
@@ -473,14 +475,17 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
     formSave(id, edits = {}, { type = 'expense' } = {}) {
       const sub = id === null ? null : items().find((x) => x.id === id);
       if (id !== null && !sub) throw new Error(`No item ${id}`);
-      const f = itemForm(mod, { subs: items(), defaultCurrency: settings().defaultCurrency ?? 'TWD' });
+      const f = itemForm(mod, { subs: items(), defaultCurrency: settings().defaultCurrency ?? 'TWD', settingsRecord: device.settingsRecord() });
       f.open(sub, type);
       for (const [field, v] of Object.entries(edits)) f.set(field, v);
       const fromForm = f.read();
       if (!fromForm) return { saved: null, errors: f.errors(), ops: [] };
+      // 1.27.0's submit: a new card readForm described goes in one commit with the item.
+      const newCard = fromForm.newCard ?? null;
+      delete fromForm.newCard;
       const merged = f.merge(fromForm);
-      const ops = device.save(merged);
-      return { saved: merged, errors: f.errors(), ops };
+      const ops = newCard ? device.saveItemWithCard(merged, newCard.id, newCard.card) : device.save(merged);
+      return { saved: merged, errors: f.errors(), ops, newCard };
     },
   };
   return device;
@@ -523,12 +528,16 @@ function standInForm() {
     price: number(), currency: text(), cycle: radios(['monthly', 'annual', 'once'], 'monthly'),
     nextRenewal: date(), date: date(), category: text(), notes: text(),
     newGroup: text(), // 1.25.0: the name field under Category's "New group…"
+    // 1.27.0: Payment method (a select whose value a person's pick marks as touched, as its change
+    // event does on the page) and the nickname field under its "Add new card…".
+    pay: (() => { let v = ''; return { ...attrs(), dataset: { touched: '' }, get value() { return v; }, set value(x) { v = String(x ?? ''); this.dataset.touched = '1'; }, reset() { v = ''; this.dataset.touched = ''; }, quiet(x) { v = String(x ?? ''); this.dataset.touched = ''; } }; })(),
+    newCard: text(),
   };
   return { elements, reset() { for (const e of Object.values(elements)) e.reset(); }, querySelector: () => null };
 }
 
 /** The version's item-sheet functions, run from its app.js source against the stand-in form. */
-function itemForm(mod, { subs, defaultCurrency }) {
+function itemForm(mod, { subs, defaultCurrency, settingsRecord = null }) {
   const src = mod.appSource;
   const isDayLine = /^const isDay = .*$/m.exec(src)?.[0];
   if (!isDayLine) throw new Error('app.js: isDay not found');
@@ -550,14 +559,18 @@ function itemForm(mod, { subs, defaultCurrency }) {
   const errors = {};
   const slot = (field) => ({ set textContent(v) { if (v) errors[field] = v; else delete errors[field]; }, get textContent() { return errors[field] ?? ''; }, scrollIntoView() {} });
   const $ = (sel) => { const m = /data-error-for="([^"]+)"/.exec(sel); return m ? slot(m[1]) : { hidden: false, scrollIntoView() {} }; };
-  const state = { subs, settings: { defaultCurrency }, editingId: null, formType: 'expense' };
+  const state = { subs, settings: { defaultCurrency }, editingId: null, formType: 'expense', settingsRecord, cardsWritable: true };
   const fns = new Function(
     'form', 'state', 't', 'uid', 'cleanDomain', 'firstEmoji', 'isIncome', '$', 'fillCurrencySelect', 'clearErrors',
     'syncFormMode', 'updateFormLogo', 'openDialog', 'dialog', 'matchMedia', 'reportError', 'console',
     'setMoreDetails', 'keyboardLikely',
     // Since 1.25.0 Category is a drop-down (js/category-select.js): the stand-in keeps the edited
     // item's category as its value, as the page's added option does.
-    'fillCategorySelect', 'syncNewGroup', 'categoryChoices', 'resolveNewGroup', 'NEW_GROUP', 'CATEGORY_MAX', body,
+    'fillCategorySelect', 'syncNewGroup', 'categoryChoices', 'resolveNewGroup', 'NEW_GROUP', 'CATEGORY_MAX',
+    // Since 1.27.0 the sheet has Payment method (js/cards.js): the stand-in select shows the stored
+    // pay when it is a live option (Not set otherwise), as the page's fillPaySelect does.
+    'fillPaySelect', 'syncNewCard', 'listCards', 'cardNameProblem', 'cardByName', 'newCardId', 'payToSave',
+    'PAY_NEW_CARD', 'PAY_NOT_SET', 'PAY_CASH', 'nextCardColour', 'cardNameError', body,
   )(
     form, state, mod.i18n.t, mod.util.uid, mod.services.cleanDomain, mod.util.firstEmoji, mod.util.isIncome, $,
     (select, selected) => { select.value = selected; }, () => { for (const k of Object.keys(errors)) delete errors[k]; },
@@ -565,6 +578,12 @@ function itemForm(mod, { subs, defaultCurrency }) {
     () => {}, () => false,
     (current = '') => { form.elements.category.value = String(current ?? '').trim(); }, () => {}, [],
     mod.categorySelect?.resolveNewGroup ?? resolveNewGroup, mod.categorySelect?.NEW_GROUP ?? NEW_GROUP, CATEGORY_MAX,
+    (current = '') => {
+      const live = new Set([cardsLib.PAY_NOT_SET, cardsLib.PAY_CASH, ...cardsLib.listCards(settingsRecord).map((c) => c.id)]);
+      form.elements.pay.quiet(live.has(current) ? current : cardsLib.PAY_NOT_SET);
+    },
+    () => {}, cardsLib.listCards, cardsLib.cardNameProblem, cardsLib.cardByName, cardsLib.newCardId, cardsLib.payToSave,
+    cardsLib.PAY_NEW_CARD, cardsLib.PAY_NOT_SET, cardsLib.PAY_CASH, nextCardColour, cardNameError,
   );
   return {
     open: (sub, type) => fns.openForm(sub, type),

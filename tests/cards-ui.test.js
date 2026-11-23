@@ -274,6 +274,200 @@ test('layout: the sheet and the Settings list stay inside the screen; a long nic
   assert(document.documentElement.scrollWidth <= innerWidth, 'the page doesn\'t scroll sideways');
 });
 
+/* ------------------------------------------------------------- The item sheet's Payment method */
+
+const sheet = () => $('#sub-dialog');
+const f = () => $('#sub-form').elements;
+const paySelect = () => f().pay;
+const newCardField = () => $('#field-new-card');
+const more = () => $('#more-toggle');
+const subBody = () => $('#sub-dialog .sheet-body');
+const view = async (v) => {
+  await goTab('subs');
+  $('#view-btn').click();
+  $(`#view-menu [data-view="${v}"]`).click();
+  await tick(80);
+};
+const setField = (name, v) => setValue(f()[name], v);
+/** Pick an option as a tap in the picker does: the value, then input and change. */
+const choosePay = (value) => {
+  const s = paySelect();
+  s.value = value;
+  assert(s.value === value, `"${value}" is an option`);
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+  s.dispatchEvent(new Event('change', { bubbles: true }));
+};
+async function openAdd() {
+  await goTab('subs');
+  $('#fab').click();
+  await until(() => isOpen(sheet()), 'the add sheet opens');
+  await settled(sheet());
+  await tick(30);
+}
+async function openEdit(id) {
+  await view('list');
+  $(`#subs-list [data-id="${id}"]`).click();
+  await until(() => isOpen(sheet()), 'the edit sheet opens');
+  await settled(sheet());
+  await tick(30);
+}
+async function saveItem() {
+  $('#sub-form button[type="submit"]').click();
+  await until(() => !isOpen(sheet()), 'the sheet saves and closes');
+  await tick(80);
+}
+const NEW_CARD = ' new-card';
+const byName = async (name) => (await storage.getAll()).find((s) => s.name === name);
+
+test('Payment method: under More details after the New group field and before Notes; Not set, Cash, the cards A–Z, Add new card… last', async () => {
+  await openAdd();
+  assert(!more().hidden, 'More details is there');
+  more().click();
+  const fields = $$('#more-details > .field, #more-details > .field-row').filter((el) => !el.hidden);
+  const at = (el) => fields.indexOf(el.closest('.field'));
+  assert(at(paySelect()) === at(f().category) + 1, 'right after Category (New group\'s field is hidden)');
+  assert(at(f().notes) === at(paySelect()) + 1, 'and before Notes');
+  const all = $$('#more-details > *');
+  eq(all.indexOf(newCardField()), all.indexOf(paySelect().closest('.field')) + 1, 'its nickname field right under it');
+  assert(all.indexOf($('#field-new-group')) < all.indexOf(paySelect().closest('.field')), 'after the New group field');
+  eq(text(paySelect().closest('.field').querySelector('.field-label')), `${t('form.pay.label')} ${t('form.optional')}`, 'its label');
+  eq(paySelect().tagName, 'SELECT', 'a native drop-down');
+  const cards = await cardsNow();
+  eq($$('option', paySelect()).map((o) => o.value), ['', 'cash', ...cards.map((c) => c.id), NEW_CARD], 'the options');
+  eq($$('option', paySelect()).map((o) => o.textContent), [t('form.pay.notSet'), t('form.pay.cash'), ...cards.map((c) => c.name), t('form.pay.new')], 'their words');
+  eq(paySelect().value, '', 'Not set by default (no "remember last used")');
+  assert(newCardField().hidden, 'no nickname field yet');
+  await pickKindIncome();
+  assert(paySelect().closest('.field').hidden, 'income: no Payment method');
+  await closeSheets();
+});
+async function pickKindIncome() {
+  $('#field-kind input[value="income"]').click();
+  await tick(60);
+}
+
+test('Add new card…: the nickname field shows with focus; a picker pick, not an arrow-key step; one Back closes the sheet', async () => {
+  await openAdd();
+  more().click();
+  paySelect().focus();
+  paySelect().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  choosePay(NEW_CARD);
+  assert(!newCardField().hidden, 'the field shows');
+  assert(document.activeElement !== f().newCard, 'an arrow-key step leaves focus on the drop-down');
+  choosePay('');
+  assert(newCardField().hidden, 'hidden again');
+  paySelect().dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  choosePay(NEW_CARD);
+  eq(document.activeElement, f().newCard, 'a pick from the picker moves focus to it');
+  eq(text(newCardField().querySelector('.field-label')), t('form.newCard'), 'a visible label');
+  eq(overlays.ids(), ['sub-dialog'], 'only the sheet on the overlay stack');
+  pressBack();
+  await tick(60);
+  assert(!isOpen(sheet()), 'one Back closes the sheet');
+  eq(overlays.ids(), [], 'nothing left open');
+});
+
+test('a new card from the item sheet: refused when it looks like a card number; saved with the item in one go; cancel writes nothing', async () => {
+  const before = (await cardsNow()).length;
+  await openAdd();
+  setField('name', 'Phone bill');
+  setField('price', '499');
+  setField('nextRenewal', '2026-12-10');
+  more().click();
+  choosePay(NEW_CARD);
+  setField('newCard', 'Mobile card');
+  await closeSheets();
+  eq((await cardsNow()).length, before, 'cancelled: no card');
+  eq(await byName('Phone bill'), undefined, 'and no item');
+  await openAdd();
+  setField('name', 'Phone bill');
+  setField('price', '499');
+  setField('nextRenewal', '2026-12-10');
+  more().click();
+  choosePay(NEW_CARD);
+  setField('newCard', fullWidth('4111 1111 1111 1111'));
+  $('#sub-form button[type="submit"]').click();
+  await tick(80);
+  assert(isOpen(sheet()), 'refused');
+  eq(text($('#sub-form [data-error-for="newCard"]')), t('card.error.digits'), 'the message under the field');
+  eq(f().newCard.getAttribute('aria-invalid'), 'true', 'marked invalid');
+  setField('newCard', 'x'.repeat(41));
+  $('#sub-form button[type="submit"]').click();
+  await tick(80);
+  eq(text($('#sub-form [data-error-for="newCard"]')), t('card.error.long', { max: 40 }), 'too long');
+  setField('newCard', '  Mobile card ');
+  await saveItem();
+  const item = await byName('Phone bill');
+  const card = (await cardsNow()).find((c) => c.name === 'Mobile card');
+  assert(card, 'the card is stored');
+  eq(item.pay, card.id, 'the item is paid with it');
+  assert(/^c([1-9]|10)$/.test(card.colour), `it got a colour (${card.colour})`);
+  assert($(`#card-list [data-card="${card.id}"]`), 'Settings lists it');
+});
+
+test('a typed nickname that is already a card picks it; an empty one is Not set; Not set writes no pay', async () => {
+  const before = (await cardsNow()).length;
+  await openAdd();
+  setField('name', 'Second phone');
+  setField('price', '199');
+  setField('nextRenewal', '2026-12-11');
+  more().click();
+  choosePay(NEW_CARD);
+  setField('newCard', '  MOBILE CARD');
+  await saveItem();
+  const card = (await cardsNow()).find((c) => c.name === 'Mobile card');
+  eq((await byName('Second phone')).pay, card.id, 'the existing card');
+  eq((await cardsNow()).length, before, 'no second card');
+  await openAdd();
+  setField('name', 'No pay');
+  setField('price', '5');
+  setField('nextRenewal', '2026-12-12');
+  more().click();
+  choosePay(NEW_CARD);
+  await saveItem();
+  eq('pay' in (await byName('No pay')), false, 'an empty nickname: Not set, and no pay field at all');
+});
+
+test('editing: More details opens for an item with a payment method; a card this device doesn\'t know shows Not set and is kept', async () => {
+  await openEdit('e-rent');
+  eq(more().getAttribute('aria-expanded'), 'true', 'Cash: More details open');
+  eq(paySelect().value, 'cash', 'Cash selected');
+  await closeSheets();
+  await openEdit('e-ghost');
+  eq(more().getAttribute('aria-expanded'), 'true', 'More details open');
+  eq(paySelect().value, '', 'shown as Not set');
+  setField('name', 'Ghost renamed');
+  await saveItem();
+  eq((await storage.getAll()).find((s) => s.id === 'e-ghost').pay, 'k_unknown', 'the stored pay kept');
+  await openEdit('e-misc');
+  eq(more().getAttribute('aria-expanded'), 'false', 'Not set and nothing else: folded');
+  await closeSheets();
+});
+
+test('the add sheet at this size with More details and the new-card field open: the body scrolls, Save stays on screen', async () => {
+  await openAdd();
+  more().click();
+  choosePay(NEW_CARD);
+  await tick(60);
+  const save = $('#sub-form button[type="submit"]').getBoundingClientRect();
+  assert(save.top >= 0 && save.bottom <= innerHeight + 0.5, `Save on screen (${Math.round(save.top)}–${Math.round(save.bottom)} of ${innerHeight})`);
+  f().newCard.scrollIntoView({ block: 'nearest' });
+  await tick(30);
+  const field = f().newCard.getBoundingClientRect();
+  const body = subBody().getBoundingClientRect();
+  assert(field.top >= body.top - 0.5 && field.bottom <= body.bottom + 0.5, 'the field can be scrolled into view inside the body');
+  assert(subBody().scrollWidth <= subBody().clientWidth + 1, 'no sideways scroll');
+  for (const el of [paySelect(), f().newCard]) {
+    const r = el.getBoundingClientRect();
+    assert(r.left >= body.left - 0.5 && r.right <= body.right + 0.5, `${el.name} inside the sheet`);
+  }
+  const anims = [newCardField(), paySelect().closest('.field')].flatMap((el) => el.getAnimations({ subtree: true }));
+  const focusStyle = /^(border-(top|right|bottom|left)-color|box-shadow)$/;
+  eq(anims.filter((a) => !(a.transitionProperty && focusStyle.test(a.transitionProperty))).map((a) => a.transitionProperty ?? a.animationName), [], 'the field itself doesn\'t animate');
+  if (reduced()) eq(anims.length, 0, 'Reduce motion and effects: no transition at all');
+  await closeSheets();
+});
+
 /* --------------------------------------------------------------------------------------------- */
 
 async function run() {
