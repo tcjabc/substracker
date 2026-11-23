@@ -340,7 +340,10 @@ test('export writes format 5: repeat and groupSlots where present, and nothing n
   assert.equal(rich.format, 5);
   assert.deepEqual(rich.payload.items[0].repeat, every(1, 'week'));
   assert.deepEqual(rich.payload.settings.groupSlots, { Hobbies: 4 });
-  assert.equal(storage.BACKUP_VERSION, 5);
+  // 1.26.0: the newest format read as this version's own is 6 (cards), but a backup without cards or
+  // pay is still written as format 5 (tests/backup6.node.test.js).
+  assert.equal(storage.BACKUP_VERSION, 6);
+  assert.equal(storage.PLAIN_BACKUP_VERSION, 5);
   assert.equal(storage.SCHEMA_VERSION, 4, 'the data format in meta moves to 5 only with 1.20.0\'s first-launch step');
 });
 
@@ -363,8 +366,8 @@ test('the export check: something 1.19.0 couldn\'t import, or an interval that w
   assert.match(storage.checkBackup(storage.backupPayload(live, settings, AT), live, { groupColors: { A: 'w1' }, groupSlots: { A: 0 } }), /palette slots/);
 });
 
-test('import reads formats 3, 4 and 5 as this version\'s own and flags anything newer', () => {
-  for (const [v, newer] of [[3, false], [4, false], [5, false], [6, true], [9, true]]) {
+test('import reads formats 3 to 6 as this version\'s own and flags anything newer', () => {
+  for (const [v, newer] of [[3, false], [4, false], [5, false], [6, false], [7, true], [9, true]]) {
     const plan = storage.planFromBackup(storage.parseBackup(fileOf([item()], { schemaVersion: v })), [], {});
     assert.equal(plan.merge.summary.newerVersion, newer, `format ${v}`);
   }

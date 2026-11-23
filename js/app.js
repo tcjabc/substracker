@@ -2252,7 +2252,7 @@ function applyTheme(mode) {
 async function exportData() {
   try {
     // Format 5 when its check passes, else format 4 as 1.19.0 wrote it (storage.exportBackupFrom).
-    const { payload, format } = await storage.exportBackup();
+    const { payload, format, wanted } = await storage.exportBackup();
     payload.items.sort(byName);
     // A backup carries the household's colours (everything in the settings record: picked ones, old
     // g and slot alike, and the shared automatic slots), never this device's own automatic colours.
@@ -2265,7 +2265,7 @@ async function exportData() {
     const items = t('common.items', { count: payload.items.length });
     // The older format leaves the palette slots out: say so, calmly (the items are all there), and
     // keep it up until dismissed, as it's longer than the usual note.
-    if (delivered && format < storage.BACKUP_VERSION) {
+    if (delivered && format < wanted) {
       toast(t('settings.export.doneOlder', { items }), { label: t('common.dismiss'), sticky: true, run: () => {} });
     } else if (delivered) toast(t('settings.export.done', { items }));
     return delivered === true;

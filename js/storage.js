@@ -861,7 +861,13 @@ export function importOps(replica, { clear, writes }, opts) {
   }
   // An item without `repeat` in the file leaves a stored one alone (putRecord only sets the fields
   // it's given): a missing repeat means "not known here", never "every 1 month" (see effectiveInterval).
-  for (const item of writes) ops.push(...sync.putRecord(replica, item.id, importFields(item), opts));
+  // `pay` likewise (filePay): left out, a stored one stays. A Not set ('') from a format 6 file is
+  // written only over a stored `pay`: '' and no field read the same, so it's never written over none.
+  for (const item of writes) {
+    const fields = importFields(item);
+    if (fields[PAY_FIELD] === PAY_NOT_SET && !(PAY_FIELD in (replica.records.get(item.id)?.fields ?? {}))) delete fields[PAY_FIELD];
+    ops.push(...sync.putRecord(replica, item.id, fields, opts));
+  }
   return ops;
 }
 
@@ -1054,10 +1060,12 @@ export function versionNoteOps(replica, { deviceId, version, fmt, now = Date.now
 }
 
 /**
- * Record fields for a settings change ({ defaultCurrency?, groupColors? }, groupColors a patch by
- * group name). With replaceColors, colours in the record that the change doesn't name are cleared.
+ * Record fields for a settings change ({ defaultCurrency?, groupColors?, groupSlots?, cards? },
+ * groupColors a patch by group name, cards a patch by card id). With replaceColors, colours in the
+ * record that the change doesn't name are cleared; with replaceCards, live cards it doesn't name are
+ * deleted (their tombstone, js/cards.js cardTombstone), as a card is always deleted.
  */
-export function settingsFields(record, change, { replaceColors = false, keepMatching = false } = {}) {
+export function settingsFields(record, change, { replaceColors = false, replaceCards = false, keepMatching = false } = {}) {
   const fields = {};
   const named = new Set();
   const cur = change?.defaultCurrency;
@@ -1081,12 +1089,32 @@ export function settingsFields(record, change, { replaceColors = false, keepMatc
       if (k.startsWith(COLOR_PREFIX) && v !== null && !named.has(k)) fields[k] = null;
     }
   }
+  // Cards (1.26.0): each one the change names, cleaned (cardValue); an id that can't be a card id or
+  // a card without a name is left out, so no field another version refuses is ever written.
+  // keepMatching: a card the record already has, the same once cleaned, is left as it is (keys a
+  // later version added stay). A deleted card the change names comes back.
+  const namedCards = new Set();
+  for (const [id, card] of Object.entries(isObj(change?.cards) ? change.cards : {})) {
+    const field = cardFieldName(id);
+    const value = field ? cardValue(card) : null;
+    if (!value) continue;
+    namedCards.add(field);
+    const now = record?.fields?.[field];
+    if (keepMatching && sync.sameValue(parseCardValue(now), value)) continue;
+    fields[field] = value;
+  }
+  if (replaceCards) {
+    for (const [k, v] of Object.entries(record?.fields ?? {})) {
+      const p = cardIdOf(k) ? parseCardValue(v) : null;
+      if (p && !p.gone && !namedCards.has(k)) fields[k] = cardTombstone(v);
+    }
+  }
   return fields;
 }
 
 /** Ops for an explicit settings change (a choice in the app or an import). Unchanged values make none. */
-export function settingsOps(replica, change, { replaceColors, keepMatching, ...opts } = {}) {
-  const fields = settingsFields(replica.records.get(SETTINGS_ID), change, { replaceColors, keepMatching });
+export function settingsOps(replica, change, { replaceColors, replaceCards, keepMatching, ...opts } = {}) {
+  const fields = settingsFields(replica.records.get(SETTINGS_ID), change, { replaceColors, replaceCards, keepMatching });
   return sync.setFields(replica, SETTINGS_ID, fields, opts);
 }
 
@@ -1376,15 +1404,22 @@ export async function requestPersistence() {
 /** The settings a backup carries. An allowlist, so anything added to settings later stays out until listed here. */
 export const BACKUP_SETTINGS = ['defaultCurrency', 'groupColors', 'groupSlots'];
 
-/** The backup format this version writes. Files up to it import as this version's own. */
-export const BACKUP_VERSION = 5;
+/**
+ * The newest backup format this version writes and reads as its own: 6 (1.26.0), format 5 plus the
+ * household's cards and each item's `pay`. Files up to it import as this version's own; a later one
+ * imports with the "newer version" note. The writer picks the format (exportBackupFrom): 6 only when
+ * there's a card or a `pay` to carry, else format 5, byte for byte as 1.25.1 wrote it.
+ */
+export const BACKUP_VERSION = 6;
+/** The format a backup without cards is written in (and the default of backupPayload). */
+export const PLAIN_BACKUP_VERSION = 5;
 const LEGACY_BACKUP_SETTINGS = ['defaultCurrency', 'groupColors'];
 
 /**
  * A backup of `items` (live, as getAll gives them) and `settings` (as getSettings gives them), in
  * format `version` (5, or 4 as 1.19.0 wrote it: the same items, without groupSlots). Pure.
  */
-export function backupPayload(items, settings, exportedAt, version = BACKUP_VERSION) {
+export function backupPayload(items, settings, exportedAt, version = PLAIN_BACKUP_VERSION) {
   // Fill fields older records lack (pre-1.1.0 ones have no type, date or emoji) so every backup
   // carries the full current shape.
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
@@ -1436,8 +1471,8 @@ export function checkBackup(payload, items, settings = {}) {
 export function exportBackupFrom(items, settings, exportedAt) {
   const payload = backupPayload(items, settings, exportedAt);
   const problem = checkBackup(payload, items, settings);
-  if (!problem) return { payload, format: BACKUP_VERSION, problem: null };
-  return { payload: backupPayload(items, settings, exportedAt, 4), format: 4, problem };
+  if (!problem) return { payload, format: PLAIN_BACKUP_VERSION, wanted: PLAIN_BACKUP_VERSION, problem: null };
+  return { payload: backupPayload(items, settings, exportedAt, 4), format: 4, wanted: PLAIN_BACKUP_VERSION, problem };
 }
 
 /** What exporting this device's data writes: { payload, format, problem } (exportBackupFrom). */
@@ -1501,7 +1536,7 @@ export function parseBackup(json) {
   const firstSeen = new Map();
   const items = rows.map((raw, i) => {
     checkItem(raw, i, firstSeen);
-    return { item: normalize(raw, data.exportedAt), ts: stamp(raw.updatedAt) };
+    return { item: normalize(raw, data.exportedAt, version), ts: stamp(raw.updatedAt) };
   });
   // A file without settings (hand-made, or from a pre-release build of format 4) leaves them as they are.
   return { version, items, settings: data.settings ?? null };
@@ -1527,8 +1562,20 @@ function checkItem(raw, i, firstSeen) {
   if (raw.cycle === 'once' && !isDay(raw.date)) fail('import.error.date');
 }
 
+/**
+ * The `pay` a backup item brings in (1.26.0): its value when it's one this version writes ('' Not
+ * set, 'cash' or a card id, js/cards.js isPayValue), from a file of any version (an older device's
+ * backup carries a `pay` it synced). Otherwise Not set ('') from a format 6 file, whose writer knew
+ * the field, and nothing (undefined) from an older one, so a stored `pay` is left as it is.
+ */
+export function filePay(raw, version) {
+  if (isPayValue(raw?.[PAY_FIELD])) return raw[PAY_FIELD];
+  return version >= 6 ? PAY_NOT_SET : undefined;
+}
+
 /** Keep only the fields the app knows, trimmed to the same limits as the form. */
-function normalize(raw, exportedAt) {
+function normalize(raw, exportedAt, version) {
+  const pay = filePay(raw, version);
   const fallbackTime = typeof exportedAt === 'string' && !Number.isNaN(Date.parse(exportedAt))
     ? exportedAt : new Date().toISOString();
   const once = raw.cycle === 'once';
@@ -1551,6 +1598,8 @@ function normalize(raw, exportedAt) {
     // Format 5's interval, from a file of any version (a 1.19.0 backup can carry one it synced):
     // kept only when usable and in agreement with the cycle (fileRepeat); otherwise left out.
     ...(fileRepeat(raw) ? { [REPEAT]: fileRepeat(raw) } : {}),
+    // How it's paid (filePay): left out when the file can't say.
+    ...(pay !== undefined ? { [PAY_FIELD]: pay } : {}),
   };
 }
 
@@ -1561,7 +1610,22 @@ function normalize(raw, exportedAt) {
  */
 export function importChange(replica, plan, opts) {
   const replaceColors = plan.clear && 'groupColors' in plan.settings;
-  return [...importOps(replica, plan, opts), ...settingsOps(replica, plan.settings, { replaceColors, keepMatching: true, ...opts })];
+  // Cards follow the colours: Replace takes the file's cards (live ones here that the file doesn't
+  // have are deleted, as tombstones) only when the file carries cards (format 6); Merge adds and
+  // updates the file's cards and deletes none. A file without cards (format 3-5) leaves them alone.
+  const replaceCards = plan.clear && 'cards' in plan.settings;
+  return [...importOps(replica, plan, opts), ...settingsOps(replica, plan.settings, { replaceColors, replaceCards, keepMatching: true, ...opts })];
+}
+
+/** Cards from a file (format 6 `settings.cards`): id → cleaned card, for usable ids and values. Tombstones and the rest are left out. */
+function fileCards(raw) {
+  if (!isObj(raw)) return {};
+  const out = {};
+  for (const [id, v] of Object.entries(raw)) {
+    const value = cardFieldName(id) && !(isObj(v) && v.gone === true) ? cardValue(v) : null;
+    if (value) out[id] = value;
+  }
+  return out;
 }
 
 /** Palette slots from a file: name → slot (0-29) for the names in `colors` whose swatch the slot matches. */
@@ -1618,14 +1682,19 @@ export function planFromBackup(backup, existing, current) {
   const cur = withSettings ? backup.settings.defaultCurrency : null;
   const fileCurrency = typeof cur === 'string' && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;
   const replaceLocal = withSettings ? { groupColors: fileColors, ...(fileCurrency ? { defaultCurrency: fileCurrency } : {}) } : {};
-  const replaceSettings = withSettings ? { ...replaceLocal, ...slotPart } : {};
+  // Format 6 (1.26.0): the household's cards, only when the file carries them (`settings.cards`, an
+  // object; usable cards only, fileCards). Merge adds and updates them; Replace takes them as the
+  // whole set (importChange). They go to the shared record only: a device whose settings aren't
+  // shared yet has nowhere to keep them, so localSettings never has them.
+  const cardPart = withSettings && isObj(backup.settings.cards) ? { cards: fileCards(backup.settings.cards) } : {};
+  const replaceSettings = withSettings ? { ...replaceLocal, ...slotPart, ...cardPart } : {};
 
   return {
     merge: {
       summary: { ...base, mode: 'merge', added, updated, kept, removed: 0 },
       clear: false,
       writes: mergeWrites,
-      settings: withSettings ? { groupColors: fileColors, ...slotPart } : {},
+      settings: withSettings ? { groupColors: fileColors, ...slotPart, ...cardPart } : {},
       localSettings: withSettings ? { groupColors: { ...cleanColors(current.groupColors), ...fileColors } } : {},
     },
     replace: {
