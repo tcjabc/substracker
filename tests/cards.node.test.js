@@ -163,3 +163,89 @@ test('saving an item that came with pay writes no pay op unless it changed; a ne
   assert.deepEqual(core.putRecord(r, 'a', fields({ ...storage.toItem(r.records.get('a')), price: 6 }), { now: NOW + 2, newId }).map((o) => o.f), ['price'], 'pay kept, not rewritten');
   assert.equal(storage.toItem(r.records.get('a')).pay, 'c1');
 });
+
+/* ------------------------------------------------------------------ Release B (1.27.0) helpers */
+
+// Full-width digits (U+FF10-FF19) built in code, so this file holds no such characters.
+const fullWidth = (s) => s.replace(/\d/g, (d) => String.fromCharCode(0xff10 + Number(d)));
+const NBSP = String.fromCharCode(0xa0);
+
+test('newCardId: 32 hex characters, never a dash, never an id the record has in any state', () => {
+  const id = cards.newCardId({ fields: {} });
+  assert.match(id, /^[0-9a-f]{32}$/);
+  assert.ok(cards.isCardId(id));
+  assert.ok(core.isFieldName(cards.cardFieldName(id)), 'a valid field name on every version');
+  const taken = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const gone = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const free = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const seq = [taken, gone, free];
+  const rec = { fields: { [`card_${taken.replace(/-/g, '')}`]: { name: 'Visa' }, [`card_${gone.replace(/-/g, '')}`]: { gone: true } } };
+  assert.equal(cards.newCardId(rec, () => seq.shift()), free.replace(/-/g, ''), 'skips a live card and a tombstone');
+  assert.throws(() => cards.newCardId(rec, () => taken), /could not make/);
+  const many = new Set(Array.from({ length: 200 }, () => cards.newCardId(null)));
+  assert.equal(many.size, 200);
+});
+
+test('cardNameProblem: empty, over 40, and 13 or more digits through spaces, dashes and full-width digits', () => {
+  assert.equal(cards.cardNameProblem(''), 'empty');
+  assert.equal(cards.cardNameProblem('   '), 'empty');
+  assert.equal(cards.cardNameProblem(null), 'empty');
+  assert.equal(cards.cardNameProblem('x'.repeat(40)), '');
+  assert.equal(cards.cardNameProblem(`  ${'x'.repeat(40)}  `), '', 'trimmed before counting');
+  assert.equal(cards.cardNameProblem('x'.repeat(41)), 'long');
+  for (const ok of ['Visa', 'Visa 2024 2025 2026', 'Mastercard 1234', '123456789012', 'Jo 1234-5678-9012', fullWidth('Visa 2024 2025 2026'), 'A 123456 B 1234567']) {
+    assert.equal(cards.cardNameProblem(ok), '', ok);
+  }
+  for (const bad of ['4111111111111', '4111 1111 1111 1111', '4111-1111-1111-1111', fullWidth('4111111111111'), fullWidth('4111 1111 1111 1'),
+    `4111${NBSP}1111${NBSP}1111${NBSP}1`, `Visa ${String.fromCharCode(0x2013)}4111 1111 1111 1`, '411111 1111111', `4111${String.fromCharCode(0xff0d)}1111-1111-1`]) {
+    assert.equal(cards.cardNameProblem(bad), 'digits', bad);
+  }
+  assert.equal(cards.digitRun('Visa 2024 2025 2026'), 12);
+  assert.equal(cards.digitRun(fullWidth('12 34')), 4);
+  assert.equal(cards.CARD_NAME_DIGITS_MAX, 12);
+});
+
+test('cardByName: trimmed, case-insensitive, NFKC; null when nothing matches', () => {
+  const list = cards.listCards({ fields: { card_a: { name: 'Visa' }, card_b: { name: 'Line Bank' }, card_c: { name: 'visa' } } });
+  assert.equal(cards.cardByName(list, '  VISA ').id, 'a', 'the first by name then id');
+  assert.equal(cards.cardByName(list, 'line bank').id, 'b');
+  const fullWidthVisa = [...'VISA'].map((c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).join('');
+  assert.equal(cards.cardByName(list, fullWidthVisa).id, 'a', 'full-width letters match after NFKC');
+  assert.equal(cards.cardByName(list, 'Amex'), null);
+  assert.equal(cards.cardByName(list, ''), null);
+  assert.equal(cards.cardByName(null, 'Visa'), null);
+});
+
+test('card colours: c1-c10, never a group swatch key; the new-card sentinel is never a pay value', () => {
+  assert.deepEqual([...cards.CARD_COLOUR_KEYS], ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10']);
+  for (const k of cards.CARD_COLOUR_KEYS) assert.ok(cards.isCardColourKey(k));
+  for (const k of ['', 'w3', 'c0', 'c11', 'C1', null]) assert.ok(!cards.isCardColourKey(k), String(k));
+  assert.ok(!cards.isPayValue(cards.PAY_NEW_CARD));
+  assert.ok(!cards.isCardId(cards.PAY_NEW_CARD));
+});
+
+test('payCard: the live card only; Not set, Cash, a gone card and an unknown id read as none', () => {
+  const rec = { fields: { card_a: { name: 'Visa', colour: 'c2', due: 10 }, card_g: { name: 'Old', gone: true }, card_bad: 7 } };
+  assert.deepEqual(cards.payCard({ pay: 'a' }, rec), { id: 'a', name: 'Visa', colour: 'c2', cut: null, due: 10 });
+  for (const pay of ['', 'cash', 'g', 'bad', 'zzz', undefined, { id: 'a' }]) assert.equal(cards.payCard({ pay }, rec), null, String(pay));
+  assert.equal(cards.payCard({ pay: 'a' }, null), null);
+});
+
+test('payToSave: a pay nobody touched is never overwritten; Not set on a new item stays absent', () => {
+  // Untouched: whatever is stored stays, even a card this device doesn't know or a future value.
+  for (const stored of [undefined, '', 'cash', 'a', 'gone_card', { v: 2 }]) {
+    assert.deepEqual(cards.payToSave({ stored, chosen: '', touched: false }), stored);
+  }
+  assert.equal(cards.payToSave({ stored: undefined, chosen: '', touched: true }), undefined, 'no pay: "" op on a new item');
+  assert.equal(cards.payToSave({ stored: '', chosen: '', touched: true }), '');
+  assert.equal(cards.payToSave({ stored: 'a', chosen: '', touched: true }), '', 'a real change back to Not set');
+  assert.equal(cards.payToSave({ stored: undefined, chosen: 'cash', touched: true }), 'cash');
+  assert.equal(cards.payToSave({ stored: 'gone_card', chosen: 'b', touched: true }), 'b');
+});
+
+test('itemsPaidWith: the items whose pay is that card id, exactly', () => {
+  const items = [{ id: '1', pay: 'a' }, { id: '2', pay: 'b' }, { id: '3', pay: 'a' }, { id: '4' }, { id: '5', pay: 'A' }, null];
+  assert.deepEqual(cards.itemsPaidWith(items, 'a'), ['1', '3']);
+  assert.deepEqual(cards.itemsPaidWith(items, 'cash'), []);
+  assert.deepEqual(cards.itemsPaidWith(null, 'a'), []);
+});

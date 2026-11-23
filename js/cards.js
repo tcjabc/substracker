@@ -116,3 +116,98 @@ export function payOf(item) {
 
 /** Whether `v` is a `pay` value this version writes: '', 'cash' or a card id. */
 export const isPayValue = (v) => v === PAY_NOT_SET || v === PAY_CASH || isCardId(v);
+
+/* ---------------------------------------------------------------- Release B (1.27.0): the cards UI */
+
+/**
+ * The card colours a person can pick (css/app.css --card-c1..c10), stored as the key. Never a group
+ * swatch key (w1-w15), so a card colour can't be read as a group's. Any other string (an empty one,
+ * a key a later version adds, the w3 an old test wrote) draws as a neutral outline card.
+ */
+export const CARD_COLOUR_KEYS = Object.freeze(['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10']);
+
+/** Whether `v` is one of the ten card colours this version draws. */
+export const isCardColourKey = (v) => CARD_COLOUR_KEYS.includes(v);
+
+/**
+ * The Payment method select's "Add new card…" option value. It starts with a space, which no card
+ * id can (isCardId), so it can never be a stored `pay` (the same rule as js/category-select.js NEW_GROUP).
+ */
+export const PAY_NEW_CARD = ' new-card';
+
+/** The most digits a nickname may hold in one run (spaces and dashes inside the run don't break it). */
+export const CARD_NAME_DIGITS_MAX = 12;
+
+// Dashes and minus signs a person may type between digit groups (NFKC already turns the full-width
+// hyphen-minus into '-'). Whitespace is \s, which covers the no-break spaces.
+const DIGIT_GAP_RE = /[\s\-\u2010-\u2015\u2212]+/gu;
+
+/** The longest run of digits in `name` after NFKC, reading through spaces and dashes. */
+export function digitRun(name) {
+  if (typeof name !== 'string') return 0;
+  const joined = name.normalize('NFKC').replace(DIGIT_GAP_RE, '');
+  let best = 0;
+  for (const m of joined.matchAll(/\d+/gu)) best = Math.max(best, m[0].length);
+  return best;
+}
+
+/**
+ * Why a typed nickname can't be saved, or '' when it can: 'empty' (nothing after trimming), 'long'
+ * (over CARD_NAME_MAX), or 'digits' (13 or more digits in one run, counted through spaces and dashes
+ * after NFKC, so full-width digits count): that reads as a card number, which the app never stores.
+ * "Visa 2024 2025 2026" (12) passes.
+ */
+export function cardNameProblem(name) {
+  const t = typeof name === 'string' ? name.trim() : '';
+  if (!t) return 'empty';
+  if (t.length > CARD_NAME_MAX) return 'long';
+  if (digitRun(t) > CARD_NAME_DIGITS_MAX) return 'digits';
+  return '';
+}
+
+/** How two nicknames compare when a typed one picks an existing card: trimmed, NFKC, case-insensitive. */
+export const nameKey = (name) => (typeof name === 'string' ? name.normalize('NFKC').trim().toLowerCase() : '');
+
+/** The live card (from listCards) whose nickname matches `name` (nameKey), or null. The first one when two share it. */
+export function cardByName(list, name) {
+  const key = nameKey(name);
+  return key ? (list ?? []).find((c) => nameKey(c.name) === key) ?? null : null;
+}
+
+/**
+ * A new card id for the settings record `record` ({ fields }): 32 hex characters (a random UUID with
+ * its dashes taken out, since a dash makes a field name every version refuses), never one whose
+ * `card_<id>` field is in the record in any state, a deleted card's included. `random` is for tests.
+ */
+export function newCardId(record, random = () => crypto.randomUUID()) {
+  const fields = isObj(record?.fields) ? record.fields : {};
+  for (let i = 0; i < 100; i++) {
+    const id = String(random()).replace(/-/g, '').toLowerCase();
+    if (/^[0-9a-f]{32}$/.test(id) && isCardId(id) && !Object.hasOwn(fields, `${CARD_PREFIX}${id}`)) return id;
+  }
+  throw new Error('Cards: could not make a new card id');
+}
+
+/** The live card an item is paid with ({ id, name, colour, cut, due }), or null for Not set, Cash or a card that is gone or unknown. */
+export function payCard(item, record) {
+  const id = payOf(item);
+  if (!id || id === PAY_CASH) return null;
+  return listCards(record).find((c) => c.id === id) ?? null;
+}
+
+/**
+ * The `pay` the item sheet saves. Until the person changes the select (`touched` false) the stored
+ * value stays as it is, whatever it is (a card this device hasn't received yet, a deleted card, a
+ * value a later version wrote): '' is never written over a `pay` nobody touched. Not set on an item
+ * that has no `pay` stays absent (undefined), so a new item gets no `pay: ''` op.
+ */
+export function payToSave({ stored, chosen, touched }) {
+  if (!touched) return stored;
+  if (chosen === PAY_NOT_SET && (stored === undefined || stored === PAY_NOT_SET)) return stored;
+  return chosen;
+}
+
+/** The ids of the live items in `items` paid with card `id` (what a card delete sets back to Not set). */
+export function itemsPaidWith(items, id) {
+  return (items ?? []).filter((s) => s && isCardId(id) && s[PAY_FIELD] === id).map((s) => s.id);
+}
