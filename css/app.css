@@ -72,6 +72,14 @@
   --wallet-drop: 0 22px 44px -22px rgb(16 17 29 / 0.52), 0 8px 16px -8px rgb(16 17 29 / 0.26);
   /* Logo tiles on cards: always neutral, so brand colours never meet the card colour. */
   --wallet-tile: #ffffff; --wallet-tile-text: var(--text-muted); --wallet-tile-edge: rgb(16 17 29 / 0.10);
+  /* Payment cards (js/cards.js CARD_COLOUR_KEYS c1 … c10, 1.27.0): the card glyph's fills. One set for
+     both themes, picked with js/wallet-math.js for distance from each other, also under protan, deutan
+     and tritan simulation (tests/card-palette.node.test.js pins it), not from the group colours: the
+     card shape tells them apart. The outline is the theme's text colour, 4.5:1 or more on every plate
+     the glyph sits on; a colour this version can't draw gets the muted outline and no fill. */
+  --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
+  --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
+  --card-ring: var(--text); --card-ring-neutral: var(--text-muted);
   /* Insights Ring (js/donut-3d.js): ground-shadow strength, glow on raised slices (a share of their
      colour), and the hemisphere light's sky and ground colours. */
   --ring-shadow: 0.28; --ring-glow: 0.07; --ring-sky: #ffffff; --ring-ground: #c9c6d6;
@@ -149,6 +157,9 @@
   --icon: 22px;
   --logo-sm: 32px;
   --logo-xs: 22px;   /* the Wallet's logo chip */
+  --card-glyph-sm: 14px;   /* the payment-card chip on a Wallet item's logo tile */
+  --card-glyph-md: 24px;   /* the card glyph in Settings and the card sheet */
+  --card-glyph-ring: 1.5px;
   --wallet-band: 64px;     /* Wallet: a card's top band (js/wallet-math.js GEOM.band) */
   --wallet-reveal: 88px;   /* the front card's extra face (GEOM.reveal) */
   --wallet-lip-room: 24px; /* card height below that, under the next card (GEOM.lip) */
@@ -270,6 +281,9 @@
     --wallet-cast: 0 -1px 2px rgb(0 0 0 / 0.30), 0 -4px 10px -3px rgb(0 0 0 / 0.45);
     --wallet-drop: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 8px 18px -10px rgb(0 0 0 / 0.55);
     --wallet-tile: #25262e; --wallet-tile-edge: rgb(255 255 255 / 0.10);
+    /* Card glyph fills: the same set as light (one set for both themes); keep the three blocks in step. */
+    --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
+    --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
     --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
     --type-monthly: #5eead4;
     --type-annual: var(--accent);
@@ -325,6 +339,9 @@
   --wallet-cast: 0 -1px 2px rgb(0 0 0 / 0.30), 0 -4px 10px -3px rgb(0 0 0 / 0.45);
   --wallet-drop: 0 24px 48px -24px rgb(0 0 0 / 0.85), 0 8px 18px -10px rgb(0 0 0 / 0.55);
   --wallet-tile: #25262e; --wallet-tile-edge: rgb(255 255 255 / 0.10);
+  /* Card glyph fills: the same set as light (one set for both themes); keep the three blocks in step. */
+  --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
+  --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
   --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
   --type-monthly: #5eead4;
   --type-annual: var(--accent);
@@ -758,13 +775,38 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
   width: var(--swatch-size); height: var(--swatch-size); padding: 0;
   border: 0; border-radius: var(--radius-full); background: var(--swatch);
 }
-.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.swatch[aria-pressed="true"], .swatch:checked { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+/* The card sheet's colours are native radios drawn as swatches (arrow keys, one group name). */
+.swatch[type="radio"] { appearance: none; -webkit-appearance: none; margin: 0; cursor: pointer; }
 /* A colour another group already has: a small mark in the middle, in the surface colour. */
 .swatch { position: relative; }
 .swatch.is-used::after {
   content: ''; position: absolute; inset: 0; margin: auto; width: var(--space-2); height: var(--space-2);
   border-radius: var(--radius-full); background: var(--surface); box-shadow: 0 0 0 1px var(--text);
 }
+
+/* The payment-card glyph (1.27.0): a rounded card in its fill, with an outline in the theme's text
+   colour and a thin stripe. data-colour is set only for a colour this version draws (c1 … c10); without
+   it the glyph is a muted outline with no fill. Always aria-hidden: its meaning is in the label. */
+.card-glyph {
+  --card-fill: transparent; --card-ink: var(--card-ring-neutral); --card-w: var(--card-glyph-md);
+  display: inline-block; flex: none; box-sizing: border-box; vertical-align: middle;
+  width: var(--card-w); height: calc(var(--card-w) * 0.64);
+  border: var(--card-glyph-ring) solid var(--card-ink); border-radius: calc(var(--card-w) * 0.16);
+  background: linear-gradient(to bottom, transparent 24%, var(--card-ink) 24%, var(--card-ink) 40%, transparent 40%), var(--card-fill);
+}
+.card-glyph[data-colour] { --card-ink: var(--card-ring); }
+.card-glyph[data-colour="c1"] { --card-fill: var(--card-c1); }
+.card-glyph[data-colour="c2"] { --card-fill: var(--card-c2); }
+.card-glyph[data-colour="c3"] { --card-fill: var(--card-c3); }
+.card-glyph[data-colour="c4"] { --card-fill: var(--card-c4); }
+.card-glyph[data-colour="c5"] { --card-fill: var(--card-c5); }
+.card-glyph[data-colour="c6"] { --card-fill: var(--card-c6); }
+.card-glyph[data-colour="c7"] { --card-fill: var(--card-c7); }
+.card-glyph[data-colour="c8"] { --card-fill: var(--card-c8); }
+.card-glyph[data-colour="c9"] { --card-fill: var(--card-c9); }
+.card-glyph[data-colour="c10"] { --card-fill: var(--card-c10); }
+.card-glyph-sm { --card-w: var(--card-glyph-sm); }
 
 .subs-grid {
   display: grid; gap: var(--space-3);
