@@ -38,6 +38,7 @@ const SHELL = [
   './js/group-slots.js',
   './js/category-select.js',
   './js/cards.js',
+  './js/cards-ui.js',
   './js/format-migration.js',
   './js/legacy-step.js',
   './js/logos.js',

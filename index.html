@@ -172,6 +172,20 @@
         </div>
       </div>
 
+      <!-- Payment cards (1.27.0, js/cards-ui.js): nicknames only, never a card number. Shown once
+           settings are shared (js/storage.js cardsWritable), which every device on the records store is. -->
+      <div class="settings-group" id="card-settings" hidden>
+        <h2 class="group-title" data-i18n="settings.cards">Payment cards</h2>
+        <div class="panel">
+          <ul class="card-list" id="card-list" hidden></ul>
+          <p class="panel-empty card-empty" id="card-empty" data-i18n="settings.cards.empty">No payment cards yet. Add one to choose it as an item's payment method.</p>
+          <div class="setting-row">
+            <span class="setting-label"><span class="setting-hint" data-i18n="settings.cards.hint">Nicknames only. Never enter a card number.</span></span>
+            <button type="button" class="btn" id="btn-card-add" data-i18n="settings.cards.add">Add card</button>
+          </div>
+        </div>
+      </div>
+
       <div class="settings-group">
         <h2 class="group-title" data-i18n="settings.sync.title">Sync</h2>
         <div class="panel">
@@ -419,6 +433,46 @@
       </div>
       <div class="sheet-foot">
         <button type="button" class="btn btn-danger-text" id="btn-delete" hidden data-i18n="form.delete">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-i18n="common.save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- A payment card (1.27.0, js/cards-ui.js): add, edit or delete. Nicknames only; the days are kept
+       for later and promise nothing. tabindex: the sheet takes focus itself on opening, as the item sheet. -->
+  <dialog class="sheet" id="card-dialog" aria-labelledby="card-dialog-title" tabindex="-1">
+    <form id="card-form" method="dialog" novalidate>
+      <div class="sheet-head">
+        <span class="card-glyph card-sheet-glyph" id="card-form-glyph" aria-hidden="true"></span>
+        <h2 id="card-dialog-title" data-i18n="card.title.new">New card</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close" data-i18n-attr="aria-label:common.close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <label class="field">
+          <span class="field-label" data-i18n="card.name">Nickname</span>
+          <input class="input" name="cardName" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-describedby="card-name-hint" placeholder="e.g. Family Visa" data-i18n-attr="placeholder:card.name.placeholder">
+          <span class="field-hint" id="card-name-hint" data-i18n="card.name.hint">A name you'll recognise. Never the card number.</span>
+          <span class="field-error" data-error-for="cardName"></span>
+        </label>
+        <fieldset class="field">
+          <legend class="field-label" data-i18n="card.colour">Colour</legend>
+          <div class="swatch-grid card-colours" id="card-colours"></div>
+        </fieldset>
+        <label class="field">
+          <span class="field-label" data-i18n="card.cut">Statement closing day</span>
+          <select class="input" name="cardCut"></select>
+        </label>
+        <label class="field">
+          <span class="field-label" data-i18n="card.due">Payment due day</span>
+          <select class="input" name="cardDue"></select>
+        </label>
+      </div>
+      <div class="sheet-foot">
+        <button type="button" class="btn btn-danger-text" id="btn-card-delete" hidden data-i18n="card.delete">Delete card</button>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close data-i18n="common.cancel">Cancel</button>
         <button type="submit" class="btn btn-primary" data-i18n="common.save">Save</button>

@@ -6,6 +6,7 @@ import { DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
+import { createCardsUI } from './cards-ui.js';
 import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
@@ -74,6 +75,7 @@ const state = {
   groupSort: groupSortFrom(storage.getPref('groupSort')), // Money: Sort groups A–Z (default) | Total | Items, per device
   colorPicks: new Set(), // groups with a colour in the household's record: picked, or a shared slot (left alone by this device's automatic colours)
   settingsRecord: null, // the shared settings record, read for group slots (js/group-slots.js); null before settings are shared
+  cardsWritable: false, // cards can be written here (js/storage.js cardsWritable: settings are shared)
   formatMigrated: false, // format 5's first-launch step is verified here: this device's automatic colours are shared slots
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
@@ -208,6 +210,13 @@ async function init() {
   bindForm();
   bindSettings();
   bindGroupMerge();
+  // Settings → Payment cards and the card sheet (1.27.0). A write reads the data again, so the
+  // Wallet, the item sheet's options and the list all follow.
+  cardsUI = createCardsUI({
+    storage, openDialog, closeDialog, confirmDialog, toast, keyboardLikely,
+    record: () => state.settingsRecord, items: () => state.subs, writable: () => state.cardsWritable,
+    changed: () => reloadData(),
+  });
   initImportAiSheet({
     storage,
     ui: {
@@ -249,6 +258,7 @@ async function init() {
     state.settingsRecord = record;
     const st = await storage.status();
     state.formatMigrated = st.formatMigration?.verified === true;
+    state.cardsWritable = await storage.cardsWritable();
     const usingLegacy = st.usingLegacy;
     syncUnavailable = usingLegacy ? t('sync.unavailable.legacy') : '';
     if (usingLegacy) {
@@ -346,6 +356,8 @@ const FAB_TABS = new Set(['subs', 'calendar']);
 
 // The pill behind the active tab (js/tab-pill.js): it slides with every tab change, Back included.
 let tabPill = null;
+// Settings → Payment cards and the card sheet (js/cards-ui.js), bound in init().
+let cardsUI = null;
 
 function bindTabs() {
   tabPill = createTabPill($('.tabbar'), { reduceMotion: () => reduceEffects() });
@@ -409,6 +421,7 @@ function setTab(tab, { focus = true } = {}) {
 function render() {
   ensureGroupColors();
   renderSubs();
+  cardsUI?.render();
   if (state.tab === 'calendar') renderCalendar();
   if (state.tab === 'insights') renderInsights();
 }

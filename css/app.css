@@ -808,6 +808,22 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .card-glyph[data-colour="c10"] { --card-fill: var(--card-c10); }
 .card-glyph-sm { --card-w: var(--card-glyph-sm); }
 
+/* Settings → Payment cards: one row button per card (glyph, nickname, its days), then Add card. */
+.card-list { list-style: none; margin: 0; padding: 0; }
+.card-list[hidden], .card-empty[hidden] { display: none; }
+.card-list > li { border-bottom: var(--border-width) solid var(--border); }
+.card-row {
+  width: 100%; justify-content: flex-start; gap: var(--space-3); border: 0; background: transparent;
+  color: inherit; font: inherit; text-align: start; cursor: pointer;
+}
+.card-row:hover { background: var(--surface-2); }
+.card-row:focus-visible { outline-offset: -2px; }
+.card-row-label { flex: 1; min-width: 0; }
+.card-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-empty { border-bottom: var(--border-width) solid var(--border); margin: 0; }
+/* A short line under a field (the card sheet's "never the card number"). */
+.field-hint { font-size: var(--text-xs); color: var(--text-muted); }
+
 .subs-grid {
   display: grid; gap: var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min)), 1fr));
