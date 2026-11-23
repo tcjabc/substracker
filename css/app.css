@@ -160,6 +160,8 @@
   --card-glyph-sm: 14px;   /* the payment-card chip on a Wallet item's logo tile */
   --card-glyph-md: 24px;   /* the card glyph in Settings and the card sheet */
   --card-glyph-ring: 1.5px;
+  --card-chip-offset: 3px;  /* how far the Wallet chip sits past the logo tile's corner */
+  --card-chip-plate: 2px;   /* the ring of tile colour round the chip, so its outline always meets the tile */
   --wallet-band: 64px;     /* Wallet: a card's top band (js/wallet-math.js GEOM.band) */
   --wallet-reveal: 88px;   /* the front card's extra face (GEOM.reveal) */
   --wallet-lip-room: 24px; /* card height below that, under the next card (GEOM.lip) */
@@ -1063,6 +1065,13 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .w-item:hover { background: var(--ink-line); }
 .w-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
 .w-item .logo { grid-row: 1 / 3; }
+/* An item paid with a card: its logo and the card chip on the tile's bottom-right corner (1.27.0).
+   Positioned on the tile, so it takes no width from the name, amount or date. */
+.w-i-tile { grid-row: 1 / 3; position: relative; display: inline-flex; }
+.w-i-chip {
+  position: absolute; right: calc(var(--card-chip-offset) * -1); bottom: calc(var(--card-chip-offset) * -1);
+  box-shadow: 0 0 0 var(--card-chip-plate) var(--wallet-tile);
+}
 .w-i-name { font-size: var(--text-base); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .w-i-amt { font-size: var(--text-base); font-weight: var(--weight-semibold); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .w-i-meta, .w-i-due { font-size: var(--text-sm); color: var(--ink-2); }

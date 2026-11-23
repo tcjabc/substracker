@@ -468,6 +468,79 @@ test('the add sheet at this size with More details and the new-card field open: 
   await closeSheets();
 });
 
+/* ------------------------------------------------------------------------------ The Wallet chip */
+
+const wItem = (id) => $(`#wallet .w-item[data-id="${id}"]`);
+const wSettled = () => until(() => $('#wallet')?.wallet && !$('#wallet').wallet.state().animating, 'the wallet settles', 4000);
+
+test('Wallet: a chip on the logo tile only for a live card (none for Not set, Cash, a cleared or unknown card); the label names the card', async () => {
+  await view('wallet');
+  await wSettled();
+  const lineCard = (await cardsNow()).find((c) => c.id === 'k_line');
+  const chip = wItem('e-long').querySelector('.w-i-chip');
+  assert(chip, 'the item paid with LINE has a chip');
+  eq(chip.dataset.colour, lineCard.colour, 'in the card\'s colour');
+  eq(chip.getAttribute('aria-hidden'), 'true', 'hidden from screen readers');
+  eq(text(chip), '', 'no text on it');
+  eq(wItem('e-long').getAttribute('aria-label'), t('common.editItemPaid', { name: LONG_NAME, card: lineCard.name }), 'the label names the card');
+  for (const id of ['e-netflix', 'e-rent', 'e-ghost', 'e-misc']) {
+    assert(!wItem(id).querySelector('.w-i-chip'), `${id}: no chip`);
+    const name = (await storage.getAll()).find((s) => s.id === id).name;
+    eq(wItem(id).getAttribute('aria-label'), t('common.editItem', { name }), `${id}: the usual label`);
+  }
+  // Grid and List stay as they were: no chip there.
+  await view('list');
+  assert(!$('#subs-list .card-glyph'), 'List: no chip');
+  await view('grid');
+  assert(!$('#subs-list .card-glyph'), 'Grid: no chip');
+  await view('wallet');
+  await wSettled();
+});
+
+test('Wallet: the chip takes no width from the name, amount or date (a long name, this width), and sits on the tile\'s corner', async () => {
+  await view('wallet');
+  await wSettled();
+  wItem('e-long').closest('.w-card').querySelector('.w-band').click();
+  await wSettled();
+  await tick(100);
+  const withChip = wItem('e-long');
+  const without = wItem('e-netflix');
+  eq(Math.round(withChip.querySelector('.w-i-name').getBoundingClientRect().left), Math.round(without.querySelector('.w-i-name').getBoundingClientRect().left), 'the name starts where it does in a row without a chip');
+  eq(withChip.querySelector('.w-i-tile').getBoundingClientRect().width, withChip.querySelector('.logo').getBoundingClientRect().width, 'the tile is as wide as the logo');
+  // The same row with the chip taken out: every column is where it was.
+  const cols = () => ['.w-i-name', '.w-i-amt', '.w-i-meta', '.w-i-due'].map((sel) => { const r = withChip.querySelector(sel).getBoundingClientRect(); return [Math.round(r.left * 2) / 2, Math.round(r.width * 2) / 2]; });
+  const before = cols();
+  const chipEl = withChip.querySelector('.w-i-chip');
+  const parent = chipEl.parentElement;
+  chipEl.remove();
+  eq(cols(), before, 'no column moves or narrows without the chip');
+  parent.append(chipEl);
+  const name = withChip.querySelector('.w-i-name');
+  assert(name.scrollWidth > name.clientWidth, 'the long name ellipsises, as before');
+  const tile = withChip.querySelector('.logo').getBoundingClientRect();
+  const chip = withChip.querySelector('.w-i-chip').getBoundingClientRect();
+  assert(chip.right > tile.right - chip.width && chip.bottom > tile.bottom - chip.height, 'on the bottom-right corner');
+  assert(chip.right <= tile.right + 6 && chip.bottom <= tile.bottom + 6, 'no more than a few px past it');
+  assert(withChip.getBoundingClientRect().right <= innerWidth, 'the row stays on screen');
+  assert(document.documentElement.scrollWidth <= innerWidth, 'the page doesn\'t scroll sideways');
+  pressBack();
+  await wSettled();
+});
+
+test('a card edit redraws the Wallet: a new colour shows at once; deleting the card takes the chip away', async () => {
+  await view('wallet');
+  await wSettled();
+  await storage.saveCard('k_line', { name: 'LINE', colour: 'c2' });
+  await $('#money-summary').reload();
+  await wSettled();
+  eq(wItem('e-long').querySelector('.w-i-chip')?.dataset.colour, 'c2', 'the new colour');
+  await storage.deleteCard('k_line');
+  await $('#money-summary').reload();
+  await wSettled();
+  assert(!wItem('e-long').querySelector('.w-i-chip'), 'no chip once the card is deleted');
+  eq((await storage.getAll()).find((s) => s.id === 'e-long').pay, '', 'and the item is Not set');
+});
+
 /* --------------------------------------------------------------------------------------------- */
 
 async function run() {

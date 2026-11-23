@@ -7,7 +7,7 @@ import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
 import { createCardsUI, nextCardColour, cardNameError } from './cards-ui.js';
-import { listCards, cardNameProblem, cardByName, newCardId, payToSave, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH } from './cards.js';
+import { listCards, cardNameProblem, cardByName, newCardId, payToSave, payCard, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH } from './cards.js';
 import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
@@ -816,6 +816,8 @@ function renderWallet(list, { reorder = false } = {}) {
       viewport: walletViewport,
       logo: (s, size) => logoHTML(s, size, { neutral: true, defer: true }),
       loadLogos: loadDeferredLogos,
+      // The item's live payment card, for the chip on its logo and its label (1.27.0); null otherwise.
+      payCard: (s) => { const c = payCard(s, state.settingsRecord); return c ? { name: c.name, colour: c.colour } : null; },
       // A card's total rolls when it changes (js/count-anim.js); only cards on or near the screen.
       total: (el, g, near) => roller.show(g.total > 0 ? el : null, `wallet:${g.key}`, g.total, state.settings.defaultCurrency, { visible: near && moneyOnScreen() }),
       // The income card's gauge follows the front card, and names it once the stack stops.

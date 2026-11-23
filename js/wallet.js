@@ -13,6 +13,7 @@ import {
 } from './wallet-math.js';
 import { esc, money, isIncome, isOnce, nextRenewal, renewalText, parseDate, shortDate, daysUntil } from './util.js';
 import { t, formatLocale } from './i18n.js';
+import { cardGlyphHTML } from './cards-ui.js';
 
 // Drawn pointing down; app.css turns it up on a closed card (it shows where a tap moves the card).
 const CHEVRON = '<svg class="w-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
@@ -122,8 +123,14 @@ export function createWallet(host, opts) {
     const rowsHTML = g.ranked.map((s) => {
       const c = g.cash(s);
       const notes = [cycleWord(s), s.plan ? s.plan : '', s.currency !== cur ? t('wallet.notInTotals', { currency: cur }) : '', c > 0 ? '' : notWord()].filter(Boolean);
-      return `<li><button type="button" class="w-item" data-id="${esc(s.id)}" aria-label="${esc(t('common.editItem', { name: s.name }))}">
-        ${opts.logo(s, 'sm')}
+      // The payment card (1.27.0): a small glyph on the logo tile's corner, only for a live card
+      // (opts.payCard: nothing for Not set, Cash or a deleted card). No text on it: the card's name is
+      // in the button's label, and the glyph is hidden from screen readers.
+      const card = opts.payCard?.(s) ?? null;
+      const label = card ? t('common.editItemPaid', { name: s.name, card: card.name }) : t('common.editItem', { name: s.name });
+      const tile = card ? `<span class="w-i-tile">${opts.logo(s, 'sm')}${cardGlyphHTML(card, { size: 'sm', extraClass: 'w-i-chip' })}</span>` : opts.logo(s, 'sm');
+      return `<li><button type="button" class="w-item" data-id="${esc(s.id)}" aria-label="${esc(label)}">
+        ${tile}
         <span class="w-i-name">${esc(s.name)}</span>
         <span class="w-i-amt">${esc(money(s.price, s.currency))}${per(s) ? `<span class="w-i-meta"> ${esc(per(s))}</span>` : ''}</span>
         <span class="w-i-meta">${esc(notes.join(' · '))}</span>
