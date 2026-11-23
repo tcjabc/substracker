@@ -1,5 +1,6 @@
-// Mixed-version sync harness, Node only. A household of devices, each running either the frozen
-// 1.19.0 modules (tests/legacy-1.19.0/, "legacy") or the current js/ ("current"). Each device has
+// Mixed-version sync harness, Node only. A household of devices, each running the frozen 1.19.0
+// modules (tests/legacy-1.19.0/, "legacy"), the frozen 1.25.1 ones (tests/legacy-1.25.1/,
+// "legacy125": the last version before payment cards) or the current js/ ("current"). Each device has
 // its own store, outbox, clock and HLC state, and the real sync engine of its version
 // (createSyncEngine). They sync through an in-memory relay built on the relay's own room logic
 // (relay/src/room-logic.js), the protocol tests/sync-engine.node.test.js uses. Nothing here
@@ -39,6 +40,8 @@ export const RELAY_URL = 'https://relay.example';
 
 export const VERSIONS = Object.freeze({
   legacy: { label: '1.19.0', dir: new URL('../legacy-1.19.0/', import.meta.url) },
+  // The last version before payment cards (tests/legacy-1.25.1/README.md).
+  legacy125: { label: '1.25.1', dir: new URL('../legacy-1.25.1/', import.meta.url) },
   current: { label: 'current', dir: new URL('../../js/', import.meta.url) },
 });
 
@@ -57,7 +60,8 @@ export function loadVersion(version) {
       ]);
       const appSource = readFileSync(new URL('app.js', v.dir), 'utf8').replace(/\r\n/g, '\n');
       const groupSlots = await at('group-slots.js').catch(() => null); // shared slots: not in 1.19.0
-      return { version, label: v.label, storage, engine, core, crypto, util, insights, services, i18n, walletMath, groupSlots, appSource };
+      const categorySelect = await at('category-select.js').catch(() => null); // the Category drop-down: 1.25.0 on
+      return { version, label: v.label, storage, engine, core, crypto, util, insights, services, i18n, walletMath, groupSlots, categorySelect, appSource };
     })());
   }
   return loaded.get(version);
@@ -191,7 +195,7 @@ export async function createHousehold({ crypto = 'plain', relayNow = () => Date.
     },
 
     /**
-     * Add a device. Options: version 'legacy' | 'current'; now () => ms, or skewMs on top of real
+     * Add a device. Options: version 'legacy' | 'legacy125' | 'current'; now () => ms, or skewMs on top of real
      * time; joined (default true): already in the household; otherwise call device.join(mode).
      */
     async device(name, opts = {}) {
@@ -357,6 +361,14 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
     writeFields: (rec, fields) => local((r) => (rec === SETTINGS_ID
       ? core.setFields(r, rec, fields, { now: now() })
       : core.putRecord(r, rec, fields, { now: now() }))),
+    /**
+     * storage.saveCard (1.26.0 on): write card `id` ({ name, … }) or, with `card` null, delete it, as
+     * setFields ops on the settings record. Versions without cards throw.
+     */
+    saveCard(id, card) {
+      if (!storage.cardOps) throw new Error(`${mod.label} has no cards`);
+      return local((r) => (card === null ? storage.removeCardOps(r, id, { now: now() }) : storage.cardOps(r, id, card, { now: now() })));
+    },
     /** Apply ops as if pulled, in exactly this order, moving the cursor to `cursor` (default: unchanged). */
     deliver: (ops, { cursor = s.cursor } = {}) => store.applyRemote(clone(ops), cursor),
 
@@ -537,7 +549,8 @@ function itemForm(mod, { subs, defaultCurrency }) {
     (select, selected) => { select.value = selected; }, () => { for (const k of Object.keys(errors)) delete errors[k]; },
     () => {}, () => {}, () => {}, { focus() {} }, () => ({ matches: true }), (msg, err) => { throw err ?? new Error(msg); }, console,
     () => {}, () => false,
-    (current = '') => { form.elements.category.value = String(current ?? '').trim(); }, () => {}, [], resolveNewGroup, NEW_GROUP, CATEGORY_MAX,
+    (current = '') => { form.elements.category.value = String(current ?? '').trim(); }, () => {}, [],
+    mod.categorySelect?.resolveNewGroup ?? resolveNewGroup, mod.categorySelect?.NEW_GROUP ?? NEW_GROUP, CATEGORY_MAX,
   );
   return {
     open: (sub, type) => fns.openForm(sub, type),

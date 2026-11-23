@@ -2,3 +2,5 @@
 tests/fixtures/** -text
 # The frozen 1.19.0 modules (tests/legacy-1.19.0/README.md) are checked byte for byte: never convert them.
 tests/legacy-1.19.0/**/*.js -text
+# The frozen 1.25.1 modules (tests/legacy-1.25.1/README.md), likewise.
+tests/legacy-1.25.1/**/*.js -text
