@@ -15,3 +15,4 @@ await import('./mixed-version.scenarios.js');
 await import('./mixed-format5.scenarios.js');
 await import('./mixed-groups.scenarios.js');
 await import('./mixed-cards.scenarios.js');
+await import('./mixed-cards-ui.scenarios.js');

@@ -249,3 +249,42 @@ test('itemsPaidWith: the items whose pay is that card id, exactly', () => {
   assert.deepEqual(cards.itemsPaidWith(items, 'cash'), []);
   assert.deepEqual(cards.itemsPaidWith(null, 'a'), []);
 });
+
+test('cardOps keepUnknown: a rename keeps keys a later version added, and a colour this version cannot draw', () => {
+  const r = replicaOf();
+  // A later version wrote the card with a key 1.27.0 doesn't know and a colour it can't draw.
+  assert.equal(storage.applyRemoteOps(r, [remoteOp('settings', 'card_k1', { name: 'Visa', colour: 'z9', cut: 25, due: 10, limit: { v: 5000 } })], NOW).skipped, 0);
+  const ops = storage.cardOps(r, 'k1', { name: 'Visa Gold' }, { keepUnknown: true, now: NOW + 1, newId });
+  assert.equal(ops.length, 1);
+  assert.deepEqual(r.records.get('settings').fields.card_k1, { name: 'Visa Gold', colour: 'z9', cut: 25, due: 10, limit: { v: 5000 } });
+  storage.cardOps(r, 'k1', { name: 'Visa Gold', colour: 'c3', due: null }, { keepUnknown: true, now: NOW + 2, newId });
+  assert.deepEqual(r.records.get('settings').fields.card_k1, { name: 'Visa Gold', colour: 'c3', cut: 25, due: null, limit: { v: 5000 } }, 'only the named keys change');
+  assert.deepEqual(storage.cardOps(r, 'k1', { name: 'Visa Gold', colour: 'c3' }, { keepUnknown: true, now: NOW + 3, newId }), [], 'unchanged: no op');
+  // Without the option the value is the cleaned one (as 1.26.0 wrote it).
+  storage.cardOps(r, 'k1', { name: 'Plain' }, { now: NOW + 4, newId });
+  assert.deepEqual(r.records.get('settings').fields.card_k1, { name: 'Plain', colour: '', cut: null, due: null });
+  // A new card with keepUnknown is just the cleaned value.
+  storage.cardOps(r, 'k2', { name: 'New', colour: 'c1' }, { keepUnknown: true, now: NOW + 5, newId });
+  assert.deepEqual(r.records.get('settings').fields.card_k2, { name: 'New', colour: 'c1', cut: null, due: null });
+});
+
+test('deleteCardOps: the tombstone plus pay "" on each live item with that card, nothing else on them', () => {
+  const r = replicaOf();
+  storage.cardOps(r, 'v1', { name: 'Visa' }, { now: NOW, newId });
+  const put = (id, fields) => core.putRecord(r, id, fields, { now: NOW + 1, newId });
+  put('i1', { type: 'expense', name: 'A', price: 1, pay: 'v1' });
+  put('i2', { type: 'expense', name: 'B', price: 2, pay: 'v1' });
+  put('i3', { type: 'expense', name: 'C', price: 3, pay: 'cash' });
+  put('i4', { type: 'expense', name: 'D', price: 4, pay: 'v1' });
+  core.deleteRecord(r, 'i4', { now: NOW + 2, newId });
+  const { ops, cleared } = storage.deleteCardOps(r, 'v1', { now: NOW + 3, newId });
+  assert.deepEqual(cleared.sort(), ['i1', 'i2']);
+  assert.deepEqual(ops.map((o) => `${o.rec}.${o.f}`).sort(), ['i1.pay', 'i2.pay', 'settings.card_v1']);
+  assert.equal(r.records.get('settings').fields.card_v1.gone, true);
+  assert.equal(r.records.get('i1').fields.pay, '');
+  assert.equal(r.records.get('i1').fields.name, 'A');
+  assert.equal(r.records.get('i3').fields.pay, 'cash');
+  assert.equal(r.records.get('i4').fields.pay, 'v1', 'a deleted item is left alone');
+  assert.ok(!ops.some((o) => o.f === core.DELETED), 'no del anywhere');
+  assert.deepEqual(storage.deleteCardOps(r, 'v1', { now: NOW + 4, newId }).ops, [], 'again: nothing');
+});

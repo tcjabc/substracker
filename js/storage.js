@@ -1123,13 +1123,37 @@ export function settingsOps(replica, change, { replaceColors, replaceCards, keep
  * settings record: setFields on that record only, never a record of its own and never `del`. Throws
  * for an id that can't be a card id (a dash, `cash`, over 59 characters) or a card without a name,
  * so no op with a field name another version refuses is ever made. An unchanged card makes none.
+ * With `keepUnknown` (the app's card editor, 1.27.0) the value is merged over the one stored: keys a
+ * later version added to the card stay, and of colour, cut and due only the ones `card` names are
+ * changed (an editor save leaves a colour this version can't draw as it is unless a swatch is picked).
  */
-export function cardOps(replica, id, card, opts) {
+export function cardOps(replica, id, card, { keepUnknown = false, ...opts } = {}) {
   const field = cardFieldName(id);
   if (!field) throw new Error('Storage: not a card id');
   const value = cardValue(card);
   if (!value) throw new Error('Storage: a card needs a name');
-  return sync.setFields(replica, SETTINGS_ID, { [field]: value }, opts);
+  const cur = replica.records.get(SETTINGS_ID)?.fields?.[field];
+  if (!keepUnknown || !isObj(cur) || cur.gone === true) return sync.setFields(replica, SETTINGS_ID, { [field]: value }, opts);
+  const merged = { ...cur, name: value.name };
+  for (const k of ['colour', 'cut', 'due']) if (Object.hasOwn(card, k)) merged[k] = value[k];
+  return sync.setFields(replica, SETTINGS_ID, { [field]: merged }, opts);
+}
+
+/**
+ * Ops that delete card `id` and set every live item paid with it back to Not set (1.27.0): the
+ * tombstone (removeCardOps) plus `pay: ''` on each such item, through putRecord with that one field,
+ * so nothing else on the item changes. For one commit over the settings record and those items.
+ * Returns { ops, cleared } (the ids of the items set back).
+ */
+export function deleteCardOps(replica, id, opts) {
+  const ops = removeCardOps(replica, id, opts);
+  const cleared = [];
+  for (const rec of [...replica.records.values()]) {
+    if (rec.id === SETTINGS_ID || rec.fields?.[PAY_FIELD] !== id || !toItem(rec)) continue;
+    ops.push(...sync.putRecord(replica, rec.id, { [PAY_FIELD]: PAY_NOT_SET }, opts));
+    cleared.push(rec.id);
+  }
+  return { ops, cleared };
 }
 
 /**
@@ -1309,12 +1333,45 @@ export async function saveColourValues(fields) {
 /**
  * Write a card (cardOps) or, with `card` null, delete it (removeCardOps), as ops on the shared
  * settings record that sync like any setting. Only once settings are shared; before that it throws
- * and writes nothing. No screen calls this in 1.26.0: only the tests. Returns the ops written.
+ * and writes nothing. "Shared" is format 4's local settings step (migrateSettings), not pairing: an
+ * unsynced device has it too, and its ops wait in the outbox. A write keeps keys a later version added
+ * to the card (cardOps keepUnknown). Returns the ops written.
  */
 export async function saveCard(id, card) {
   await open();
   if (!settingsShared) throw new Error('Storage: cards need shared settings');
-  return commit((r) => (card === null ? removeCardOps(r, id) : cardOps(r, id, card)), { ids: [SETTINGS_ID] });
+  return commit((r) => (card === null ? removeCardOps(r, id) : cardOps(r, id, card, { keepUnknown: true })), { ids: [SETTINGS_ID] });
+}
+
+/** Whether cards can be written here (settings are shared; js/storage.js saveCard). Read-only. */
+export async function cardsWritable() {
+  await open();
+  return settingsShared && source === RECORDS;
+}
+
+/**
+ * Save `item` together with a new card `cardId` ({ name, colour?, cut?, due? }) in ONE commit over
+ * the settings record and the item: either both are stored or neither, so a failed save leaves no
+ * card nobody uses. The item sheet's "Add new card…" (1.27.0). Returns the ops written.
+ */
+export async function saveItemWithCard(item, cardId, card) {
+  if (!sync.isRecordId(item?.id)) throw new Error('Storage: an item needs an id.');
+  if (item.id === SETTINGS_ID) throw new Error('Storage: that item id is reserved.');
+  await open();
+  if (!settingsShared || source !== RECORDS) throw new Error('Storage: cards need shared settings');
+  return commit((r) => [...cardOps(r, cardId, card, { keepUnknown: true }), ...sync.putRecord(r, item.id, itemFields(item))], { ids: [SETTINGS_ID, item.id] });
+}
+
+/**
+ * Delete card `id` and set every live item paid with it back to Not set, in ONE commit (deleteCardOps):
+ * all of it is stored or none of it. Returns { ops, cleared } (the ids of the items set back).
+ */
+export async function deleteCard(id) {
+  await open();
+  if (!settingsShared || source !== RECORDS) throw new Error('Storage: cards need shared settings');
+  let cleared = [];
+  const ops = await commit((r) => { const out = deleteCardOps(r, id); cleared = out.cleared; return out.ops; });
+  return { ops, cleared };
 }
 
 async function readSettings(store) {

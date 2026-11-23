@@ -367,7 +367,21 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
      */
     saveCard(id, card) {
       if (!storage.cardOps) throw new Error(`${mod.label} has no cards`);
-      return local((r) => (card === null ? storage.removeCardOps(r, id, { now: now() }) : storage.cardOps(r, id, card, { now: now() })));
+      // 1.27.0's saveCard keeps keys a later version added (cardOps keepUnknown); 1.26.0 had no option.
+      const keep = storage.deleteCardOps ? { keepUnknown: true } : {};
+      return local((r) => (card === null ? storage.removeCardOps(r, id, { now: now() }) : storage.cardOps(r, id, card, { ...keep, now: now() })));
+    },
+    /** storage.saveItemWithCard (1.27.0 on): a new card and the item in one commit. */
+    saveItemWithCard(item, cardId, card) {
+      if (!storage.deleteCardOps) throw new Error(`${mod.label} has no cards UI`);
+      return local((r) => [...storage.cardOps(r, cardId, card, { keepUnknown: true, now: now() }), ...core.putRecord(r, item.id, itemFields(item), { now: now() })]);
+    },
+    /** storage.deleteCard (1.27.0 on): the tombstone and pay '' on every live item with that card, in one commit. */
+    deleteCard(id) {
+      if (!storage.deleteCardOps) throw new Error(`${mod.label} has no cards UI`);
+      let cleared = [];
+      const ops = local((r) => { const out = storage.deleteCardOps(r, id, { now: now() }); cleared = out.cleared; return out.ops; });
+      return { ops, cleared };
     },
     /** Apply ops as if pulled, in exactly this order, moving the cursor to `cursor` (default: unchanged). */
     deliver: (ops, { cursor = s.cursor } = {}) => store.applyRemote(clone(ops), cursor),
