@@ -14,6 +14,7 @@
 import { CURRENCIES, uid, isOnce, mergeSyncNote, replaceConfirmSync } from './util.js';
 import { t, formatLocale } from './i18n.js';
 import { APP_ID, SCHEMA_VERSION, SETTINGS_ID, parseBackup } from './storage.js';
+import { PAY_CASH, PAY_NOT_SET, isCardId } from './cards.js';
 import { DEFAULT_CATEGORIES, LEGACY_CATEGORIES } from './services.js';
 
 export const AI_SCHEMA_VERSION = 1;
@@ -490,8 +491,13 @@ export function reviewAiImport(input, existing = []) {
 /* --------------------------------------------------------------------------
    Rows → items, through a normal backup
    -------------------------------------------------------------------------- */
-/** The item a checked row becomes, in the shape the app's form saves. */
-export function itemFromFields(f, now = new Date().toISOString(), newId = uid) {
+/**
+ * The item a checked row becomes, in the shape the app's form saves. `pay` (1.27.0) is the review's
+ * Paid with choice for the row: kept only on an expense, and only for Cash or a card id; Not set
+ * (or anything else) leaves the item with no `pay`, as before. The AI's reply never sets it (checkRow
+ * keeps only the known fields), so cards stay out of the prompt and the reply.
+ */
+export function itemFromFields(f, now = new Date().toISOString(), newId = uid, pay = PAY_NOT_SET) {
   let id = newId();
   while (id === SETTINGS_ID) id = newId();
   const once = f.cycle === 'once';
@@ -509,19 +515,32 @@ export function itemFromFields(f, now = new Date().toISOString(), newId = uid) {
     date: once ? f.nextDate : '',
     category: f.type === 'income' ? '' : f.category,
     notes: f.notes ?? '',
+    ...(f.type === 'expense' && (pay === PAY_CASH || isCardId(pay)) ? { pay } : {}),
     createdAt: now,
     updatedAt: now,
   };
 }
 
 /**
+ * The review's Paid with choice for row `n`: its own pick (`perRow`, a Map of row number → value)
+ * or else the one for every row (`all`). Only Cash or a card in `live` (the ids of the household's
+ * live cards) counts; anything else is Not set ('').
+ */
+export function rowPay(n, { all = PAY_NOT_SET, perRow = new Map(), live = new Set() } = {}) {
+  const choice = perRow.has(n) ? perRow.get(n) : all;
+  return choice === PAY_CASH || (isCardId(choice) && live.has(choice)) ? choice : PAY_NOT_SET;
+}
+
+/**
  * The backup to import from the rows that are included and importable: a format-4 backup with
  * no settings, so importing it leaves the default currency and group colours as they are. It is
  * checked with storage.parseBackup here, and storage.previewImport / importAll take it as it is.
- * Throws AiImportError when no row is selected.
+ * Throws AiImportError when no row is selected. `payOf(n)` gives row n's Paid with (rowPay); it
+ * stays format 4 with no `settings` all the same: a `settings.cards` key would make Replace all
+ * delete every card the file doesn't name, and this file names none.
  */
-export function backupFromRows(rows, { now = new Date().toISOString(), newId = uid } = {}) {
-  const items = rows.filter((r) => r.include && r.importable).map((r) => itemFromFields(r.fields, now, newId));
+export function backupFromRows(rows, { now = new Date().toISOString(), newId = uid, payOf = () => PAY_NOT_SET } = {}) {
+  const items = rows.filter((r) => r.include && r.importable).map((r) => itemFromFields(r.fields, now, newId, payOf(r.n)));
   if (!items.length) throw new AiImportError(t('ai.reply.noneSelected'));
   const backup = { app: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: now, items };
   parseBackup(backup); // the same checks as any backup file

@@ -122,6 +122,7 @@ function grab(root, { skip = [] } = {}) {
 const snap = {};
 let dueSettingsEn = null; // English: Settings → Due soon, checked on its own (not in the recording)
 let groupSettingsEn = null; // English: Settings → Groups (new with the default groups), checked on its own
+let cardSettingsEn = null; // English: Settings → Payment cards (1.27.0), checked on its own
 const overflow = [];
 const geometry = {};
 const put = (key, lines) => {
@@ -360,9 +361,10 @@ async function walk() {
   // The language picker and the Due soon and Calendar settings are new since the 1.15.0 recording,
   // so English leaves them out of the screen (their own tests and keys check them); the other
   // languages walk them.
-  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings', '#calendar-settings', '#group-settings'] : [])] }));
+  put('settings', grab($('#panel-settings'), { skip: ['#dev-sync', '#app-version', ...(MODE === 'en' ? ['#lang-row', '#due-settings', '#calendar-settings', '#group-settings', '#card-settings'] : [])] }));
   if (MODE === 'en') dueSettingsEn = grab($('#due-settings'));
   if (MODE === 'en') groupSettingsEn = grab($('#group-settings'));
+  if (MODE === 'en') cardSettingsEn = grab($('#card-settings'));
   put('settings.calendar', grab($('#calendar-settings')));
 
   // Sync sheet: every step's text, then a Join with wrong words.
@@ -476,6 +478,10 @@ if (MODE === 'en') {
 
   test('Settings → Groups in English: Tidy up groups and its button', async () => {
     eq(groupSettingsEn, ['Groups Tidy up groups Suggests moving groups that mean the same into one default group. Nothing changes until you choose Merge. Suggest'], 'the words');
+  });
+
+  test('Settings → Payment cards in English (1.27.0): the empty state, the hint and Add card', async () => {
+    eq(cardSettingsEn, ["Payment cards No payment cards yet. Add one to choose it as an item's payment method. Nicknames only. Never enter a card number. Add card"], 'the words');
   });
 
   test("index.html's own English is the dictionary's, so the page reads the same before the script runs", async () => {

@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHousehold } from './helpers/mixed-sync.js';
 import { listCards, payCard, PAY_NEW_CARD } from '../js/cards.js';
+import { reviewRows, backupFromRows, rowPay } from '../js/import-ai.js';
 
 const OLD = ['legacy', 'legacy125'];
 const SETTINGS = 'settings';
@@ -197,6 +198,34 @@ test('the current item sheet: Not set writes no pay; a typed nickname that is a 
   const income = N.formSave(null, { kind: 'income', name: 'Salary', price: '100', nextRenewal: '2026-12-10', pay: 'k1' }, { type: 'income' });
   assert.equal(N.item(income.saved.id).pay, undefined, 'income gets no pay');
   assert.equal(N.item(income.saved.id).type, 'income');
+});
+
+test('Import with AI rows with Cash and a card keep pay through parseBackup and importAll (Merge and Replace all); cards untouched; old devices keep it', async () => {
+  const { h, time } = await household();
+  const N = await h.device('new', { version: 'current', now: time.now() });
+  const olds = await Promise.all(OLD.map((v) => h.device(v, { version: v, now: time.now() })));
+  N.saveCard('k1', { name: 'Visa', colour: 'c7' });
+  N.saveCard('k2', { name: 'Amex', colour: 'c1' });
+  N.save(item('mine'));
+  const aiRow = (over) => ({ name: 'AI', amount: 100, currency: 'TWD', cycle: 'monthly', nextDate: '2026-12-05', category: 'Hobbies', type: 'expense', ...over });
+  const rows = reviewRows([aiRow({ name: 'Stream' }), aiRow({ name: 'Books' }), aiRow({ name: 'Wage', type: 'income', category: '' })]);
+  const live = new Set(listCards(N.settingsRecord()).map((c) => c.id));
+  const backup = backupFromRows(rows, { now: '2026-11-24T00:00:00.000Z', payOf: (n) => rowPay(n, { all: 'k1', perRow: new Map([[2, 'cash']]), live }) });
+  assert.equal(backup.schemaVersion, 4);
+  N.importBackup(JSON.stringify(backup), 'merge');
+  await h.syncAll();
+  for (const d of [N, ...olds]) {
+    const by = (name) => d.items().find((x) => x.name === name);
+    assert.deepEqual([by('Stream').pay, by('Books').pay, by('Wage').pay], ['k1', 'cash', undefined], d.name);
+    assert.deepEqual(listCards(d.settingsRecord()).map((c) => c.id), ['k2', 'k1'], `${d.name}: both cards`);
+    clean(d, d.name);
+  }
+  // Replace all with the same file: the cards stay (the file has no settings), the pays come in again.
+  time.advance();
+  N.importBackup(JSON.stringify(backupFromRows(rows, { now: '2026-11-24T00:00:00.000Z', payOf: (n) => rowPay(n, { all: 'k2', live }) })), 'replace');
+  await h.syncAll();
+  assert.deepEqual(listCards(N.settingsRecord()).map((c) => c.id), ['k2', 'k1'], 'Replace all deleted no card');
+  assert.deepEqual(N.items().map((x) => [x.name, x.pay]).sort(), [['Books', 'k2'], ['Stream', 'k2'], ['Wage', undefined]]);
 });
 
 test('an export with a card is format 6 and round-trips; after delete-with-clear it is format 5 again', async () => {

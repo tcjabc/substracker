@@ -314,7 +314,7 @@
       "aria-label=31 December 2026, nothing due"
     ],
     "form.new.expense": [
-      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
+      "? New expense Type Expense Income Name Price Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR Billing cycle Monthly Annual Once Next renewal required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Payment method optional Not setCashAdd new card… New card nickname Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. Netflix",
       "placeholder=0",
@@ -322,17 +322,19 @@
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
       "placeholder=e.g. Music",
-      "placeholder=Shared with family, billed to card ending 1234…"
+      "placeholder=e.g. Family Visa",
+      "placeholder=Shared with family, split three ways…"
     ],
     "form.errors.expense": [
       "Enter a name.",
       "Enter a price of 0 or more.",
       "Pick a renewal date.",
       "",
+      "",
       ""
     ],
     "form.new.income": [
-      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter a price of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Payment method optional Not setCashAdd new card… New card nickname Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
       "placeholder=0",
@@ -340,6 +342,7 @@
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
       "placeholder=e.g. Music",
+      "placeholder=e.g. Family Visa",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
     "form.errors.income": [
@@ -347,10 +350,11 @@
       "Enter an amount of 0 or more.",
       "Pick a payment date.",
       "",
+      "",
       ""
     ],
     "form.new.income.once": [
-      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Notes optional Delete Cancel Save",
+      "? New income Type Expense Income Name Enter a name. Amount Enter an amount of 0 or more. Currency TWDUSDEURGBPJPYHKDCNYKRWSGDAUDCADNZDCHFTHBMYRPHPIDRVNDINR How often Monthly Annual Once Next payment required Date required More details Website domain for logo Emoji optional Plan optional Category optional UncategorisedHousingUtilitiesFoodTransportSoftware & cloudEntertainmentHobbiesEducationShoppingHealth & fitnessInsurance & financeHealthHouseNew group… New group name Payment method optional Not setCashAdd new card… New card nickname Notes optional Delete Cancel Save",
       "aria-label=Close",
       "placeholder=e.g. My salary",
       "placeholder=0",
@@ -358,6 +362,7 @@
       "placeholder=e.g. 🍜",
       "placeholder=e.g. Premium",
       "placeholder=e.g. Music",
+      "placeholder=e.g. Family Visa",
       "placeholder=e.g. Paid on the 5th, after tax"
     ],
     "form.edit": [
@@ -507,7 +512,7 @@
       "Word 2 (\"abilty\") isn't in the list. Did you mean \"ability\"?"
     ],
     "ai.sheet": [
-      "Import with AI Peek Budget has no connection to any AI service. The app never sends anything: what you upload is between you and the provider you choose. Privacy claims belong to each provider and can change. Check them yourself before you upload anything. Remove account numbers, card numbers and names first. The app only needs the merchant, amount and date. AI can misread documents, so check every row before you import. Nothing is imported until you confirm. Choosing a tool Look for one that says it keeps no chat logs, doesn't train on your data, and has a temporary or incognito chat mode. Export a backup first (10 items) Optional. Saves your 10 items as a file you can import again. Read the points above first… Drag to the end, or use the arrow keys. It unlocks after a moment. Or tick: I've read this Cancel Continue 1. Copy the prompt It describes the format the app needs and asks the AI to check unclear dates with you instead of guessing. Copy prompt Couldn't copy. Select the prompt below and copy it. Show the prompt 2. Ask your AI chat Paste the prompt into the AI chat you chose, attach photos or PDFs of your statements, and answer its questions. 3. Bring back the reply Paste the reply Or pick a file Copy error for your AI Back Review Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat. Copy error for your AI Selected totals Nothing is saved until you choose Merge or Replace all. Back Import",
+      "Import with AI Peek Budget has no connection to any AI service. The app never sends anything: what you upload is between you and the provider you choose. Privacy claims belong to each provider and can change. Check them yourself before you upload anything. Remove account numbers, card numbers and names first. The app only needs the merchant, amount and date. AI can misread documents, so check every row before you import. Nothing is imported until you confirm. Choosing a tool Look for one that says it keeps no chat logs, doesn't train on your data, and has a temporary or incognito chat mode. Export a backup first (10 items) Optional. Saves your 10 items as a file you can import again. Read the points above first… Drag to the end, or use the arrow keys. It unlocks after a moment. Or tick: I've read this Cancel Continue 1. Copy the prompt It describes the format the app needs and asks the AI to check unclear dates with you instead of guessing. Copy prompt Couldn't copy. Select the prompt below and copy it. Show the prompt 2. Ask your AI chat Paste the prompt into the AI chat you chose, attach photos or PDFs of your statements, and answer its questions. 3. Bring back the reply Paste the reply Or pick a file Copy error for your AI Back Review Paid with For every expense row. Change a row below to override it. Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat. Copy error for your AI Selected totals Nothing is saved until you choose Merge or Replace all. Back Import",
       "aria-label=Close",
       "aria-label=Slide to confirm you've read this",
       "aria-valuetext=Locked for a moment",
@@ -535,15 +540,17 @@
       "aria-label=Error text to copy"
     ],
     "ai.review": [
-      "6 rows · 2 selected · 1 needs a date · 1 with an unsupported cycle · 1 duplicate skipped · 1 can’t be imported. Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat. Copy error for your AI 1. Example Streaming Expense · Monthly · Next renewal 5 Dec · Entertainment NT$390 / mo 2. Water bill Expense · Monthly · Utilities NT$800 / mo Needs a date Row 2: nextDate is missing; add the next renewal date as YYYY-MM-DD, like 2026-12-05 Next renewal date 3. Magazine Expense · “weekly” · Next renewal 1 Dec · News NT$120 Unsupported cycle Row 3: unsupported cycle \"weekly\"; cycle must be \"monthly\", \"annual\" or \"one-off\", or leave the row out Cycle Choose…MonthlyAnnualOne-off 4. Phone Expense · Monthly · Next renewal 20 Nov · Utilities NT$499 / mo Duplicate, skipped Row 4: already in your list, skipped 5. Mystery Expense · Monthly · Next renewal 1 Dec Can’t import Row 5: amount must be 0 or more without a minus sign; use \"type\": \"income\" for money coming inRow 5: currency \"XYZ\" isn't supported; use one of TWD, USD, EUR, GBP, JPY, HKD, CNY, KRW, SGD, AUD, CAD, NZD, CHF, THB, MYR, PHP, IDR, VND, INR, or leave the row out 6. Side job Income · One-off · Date 10 Dec NT$5,000 Selected totals TWDMonthly items (1): NT$390 out, each monthOne-off (1): NT$5,000 in Nothing is saved until you choose Merge or Replace all. Back Import 2 items",
+      "6 rows · 2 selected · 1 needs a date · 1 with an unsupported cycle · 1 duplicate skipped · 1 can’t be imported. Paid with Not setCash For every expense row. Change a row below to override it. Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat. Copy error for your AI 1. Example Streaming Expense · Monthly · Next renewal 5 Dec · Entertainment NT$390 / mo Paid with Not setCash 2. Water bill Expense · Monthly · Utilities NT$800 / mo Needs a date Row 2: nextDate is missing; add the next renewal date as YYYY-MM-DD, like 2026-12-05 Next renewal date 3. Magazine Expense · “weekly” · Next renewal 1 Dec · News NT$120 Unsupported cycle Row 3: unsupported cycle \"weekly\"; cycle must be \"monthly\", \"annual\" or \"one-off\", or leave the row out Cycle Choose…MonthlyAnnualOne-off 4. Phone Expense · Monthly · Next renewal 20 Nov · Utilities NT$499 / mo Duplicate, skipped Row 4: already in your list, skipped Paid with Not setCash 5. Mystery Expense · Monthly · Next renewal 1 Dec Can’t import Row 5: amount must be 0 or more without a minus sign; use \"type\": \"income\" for money coming inRow 5: currency \"XYZ\" isn't supported; use one of TWD, USD, EUR, GBP, JPY, HKD, CNY, KRW, SGD, AUD, CAD, NZD, CHF, THB, MYR, PHP, IDR, VND, INR, or leave the row out 6. Side job Income · One-off · Date 10 Dec NT$5,000 Selected totals TWDMonthly items (1): NT$390 out, each monthOne-off (1): NT$5,000 in Nothing is saved until you choose Merge or Replace all. Back Import 2 items",
       "aria-label=Error text to copy",
       "aria-label=Rows to import",
       "aria-label=Import row 1: Example Streaming",
+      "aria-label=Paid with, row 1",
       "aria-label=Import row 2: Water bill",
       "aria-label=Date for row 2",
       "aria-label=Import row 3: Magazine",
       "aria-label=Cycle for row 3",
       "aria-label=Import row 4: Phone",
+      "aria-label=Paid with, row 4",
       "aria-label=Import row 5: Mystery",
       "aria-label=Import row 6: Side job"
     ],

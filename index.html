@@ -743,6 +743,13 @@
       <div class="sync-view" data-ai-view="review" hidden>
         <div class="sheet-body">
           <p class="sync-text" id="ai-review-summary" role="status" aria-live="polite"></p>
+          <!-- Paid with (1.27.0): one choice for every expense row; each row below can override it.
+               Cards are never in the prompt or the reply: the person picks them here. -->
+          <label class="field ai-pay" id="ai-pay-field" hidden>
+            <span class="field-label" data-i18n="ai.pay">Paid with</span>
+            <select class="input" id="ai-pay" aria-describedby="ai-pay-hint"></select>
+            <span class="field-hint" id="ai-pay-hint" data-i18n="ai.pay.hint">For every expense row. Change a row below to override it.</span>
+          </label>
           <div class="ai-error" id="ai-review-error" hidden>
             <p class="sync-text" data-i18n="ai.review.errorText">Some rows can't be imported as they are. Fix the date or cycle here, or send the errors back to your AI chat.</p>
             <button type="button" class="btn" id="ai-review-copy-error" data-i18n="ai.error.copy">Copy error for your AI</button>

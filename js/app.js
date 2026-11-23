@@ -223,6 +223,7 @@ async function init() {
     ui: {
       openDialog, closeDialog, confirmDialog, toast, overlays, exportData, reloadData,
       items: () => state.subs, isSynced: syncIsSetUp, reduceMotion: () => reduceEffects(),
+      cards: () => listCards(state.settingsRecord),
     },
   });
   bindEditTaps();

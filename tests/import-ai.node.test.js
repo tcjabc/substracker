@@ -10,7 +10,7 @@ import * as sync from '../js/sync-core.js';
 import * as storage from '../js/storage.js';
 import {
   AiImportError, extractJson, parseAiImport, checkRow, reviewRows, reviewAiImport, backupFromRows,
-  itemFromFields, totalsOf, TOTAL_LABELS, errorReport, isRealDay, AI_SCHEMA_VERSION, MAX_AI_CHARS, MAX_AI_ROWS, PROBLEM,
+  itemFromFields, totalsOf, TOTAL_LABELS, errorReport, isRealDay, AI_SCHEMA_VERSION, MAX_AI_CHARS, MAX_AI_ROWS, PROBLEM, rowPay,
 } from '../js/import-ai.js';
 import { AI_IMPORT_PROMPT } from '../js/import-ai-prompt.js';
 
@@ -359,7 +359,7 @@ test('a row with a real error and a duplicate shows the error first', () => {
 test('rows map to items in the form\'s shape: recurring dates in nextRenewal, one-offs in date', () => {
   const rows = reviewRows([row(), row({ name: 'Sample Pay', type: 'income', category: 'x' }), row({ name: 'Desk', cycle: 'one-off', nextDate: '2026-05-04' })]);
   const { items } = backupFromRows(rows, { now: NOW, newId });
-  // Every item field but `pay` (1.26.0): Import with AI leaves how an item is paid Not set, which is no `pay` at all.
+  // Every item field but `pay`: with Paid with left at Not set (the default, 1.27.0) an item has no `pay` at all.
   assert.deepEqual(Object.keys(items[0]), ['id', ...storage.ITEM_FIELDS.filter((f) => f !== 'pay')]);
   assert.deepEqual(items.map((s) => [s.type, s.cycle, s.nextRenewal, s.date, s.category]), [
     ['expense', 'monthly', '2026-12-05', '', 'Entertainment'],
@@ -368,6 +368,44 @@ test('rows map to items in the form\'s shape: recurring dates in nextRenewal, on
   ]);
   assert.equal(items.every((s) => s.createdAt === NOW && s.updatedAt === NOW), true);
   assert.equal(new Set(items.map((s) => s.id)).size, 3);
+});
+
+test('Paid with (1.27.0): Cash or a live card on expense rows, in ITEM_FIELDS order; a row\'s own pick wins; income and Not set get none', () => {
+  const rows = reviewRows([row(), row({ name: 'Sample Pay', type: 'income', category: 'x' }), row({ name: 'Desk', cycle: 'one-off', nextDate: '2026-05-04' }), row({ name: 'Gym' })]);
+  const live = new Set(['k1', 'k2']);
+  const perRow = new Map([[3, 'cash'], [4, '']]);
+  const payOf = (n) => rowPay(n, { all: 'k1', perRow, live });
+  const { items } = backupFromRows(rows, { now: NOW, newId, payOf });
+  assert.deepEqual(items.map((s) => [s.name, s.pay]), [['Example Streaming', 'k1'], ['Sample Pay', undefined], ['Desk', 'cash'], ['Gym', undefined]]);
+  assert.deepEqual(Object.keys(items[0]), ['id', ...storage.ITEM_FIELDS.filter((f) => f !== 'pay').slice(0, -2), 'pay', 'createdAt', 'updatedAt'], 'pay after notes');
+  assert.deepEqual(Object.keys(items[0]).filter((k) => k !== 'id').sort(), [...storage.ITEM_FIELDS].sort(), 'every item field, pay included');
+  assert.ok(!('pay' in items[1]), 'income: no pay, whatever was chosen');
+  assert.ok(!('pay' in items[3]), 'a row set back to Not set: no pay');
+  // The file is still format 4 with no settings (so Replace all never touches cards), and pay survives the backup checks.
+  const backup = backupFromRows(rows, { now: NOW, newId, payOf });
+  assert.equal(backup.schemaVersion, 4);
+  assert.ok(!('settings' in backup));
+  assert.deepEqual(storage.parseBackup(backup).items.map((x) => x.item.pay), ['k1', undefined, 'cash', undefined]);
+});
+
+test('rowPay: only Cash or a live card counts; a card that is gone or unknown, or anything else, is Not set', () => {
+  const live = new Set(['k1']);
+  assert.equal(rowPay(1, { all: 'k1', live }), 'k1');
+  assert.equal(rowPay(1, { all: 'cash', live }), 'cash');
+  assert.equal(rowPay(1, { all: 'gone', live }), '');
+  assert.equal(rowPay(1, { all: ' new-card', live }), '');
+  assert.equal(rowPay(1, { all: 'k1', perRow: new Map([[1, '']]), live }), '', 'a row\'s Not set beats the choice for every row');
+  assert.equal(rowPay(2, { all: 'k1', perRow: new Map([[1, '']]), live }), 'k1');
+  assert.equal(rowPay(1), '');
+  assert.equal(itemFromFields(checkRow(row({ type: 'income' })).fields, NOW, newId, 'cash').pay, undefined, 'itemFromFields: income never');
+  assert.equal(itemFromFields(checkRow(row()).fields, NOW, newId, 'a-b').pay, undefined, 'itemFromFields: not a card id');
+});
+
+test('a pay the AI sends is ignored: cards stay out of the reply', () => {
+  const [r] = reviewRows([row({ pay: 'cash', card: 'Visa' })]);
+  assert.ok(!('pay' in r.fields) && !('card' in r.fields));
+  assert.ok(!('pay' in backupFromRows([r], { now: NOW, newId }).items[0]));
+  assert.ok(!/\bpay\b|payment card|"card"/i.test(AI_IMPORT_PROMPT.replace('account numbers, card numbers', '')), 'the prompt asks for no card or pay');
 });
 
 test('only included, importable rows become items; none selected is an error', () => {

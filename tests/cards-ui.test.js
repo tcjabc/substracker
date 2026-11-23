@@ -541,6 +541,80 @@ test('a card edit redraws the Wallet: a new colour shows at once; deleting the c
   eq((await storage.getAll()).find((s) => s.id === 'e-long').pay, '', 'and the item is Not set');
 });
 
+/* ------------------------------------------------------------------- Import with AI: Paid with */
+
+const aiDlg = () => $('#ai-dialog');
+const aiView = () => $$('#ai-dialog [data-ai-view]').find((v) => !v.hidden)?.dataset.aiView;
+const confirmButton = (label) => $$('#confirm-actions button').find((b) => text(b) === label);
+const aiRow = (over = {}) => ({
+  name: 'AI Stream', amount: 390, currency: 'TWD', cycle: 'monthly', nextDate: '2026-12-05', category: 'Entertainment', type: 'expense', ...over,
+});
+const AI_REPLY = JSON.stringify({ version: 1, rows: [
+  aiRow(),
+  aiRow({ name: 'AI Salary', amount: 50000, type: 'income', category: '' }),
+  aiRow({ name: 'AI Gym', amount: 900, nextDate: '' }),
+  aiRow({ name: 'AI Books', amount: 450 }),
+] });
+const rowPaySelect = (n) => $(`#ai-rows [data-pay="${n}"]`);
+const changeTo = (el, v) => { el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); };
+async function aiReview(reply) {
+  await goTab('settings');
+  $('#btn-import-ai').click();
+  await until(() => aiDlg().open && aiView() === 'warning', 'the warning step');
+  await until(() => !$('#ai-slide').classList.contains('is-locked'), 'the lock to end', 3500);
+  $('#ai-slide [data-slide-check]').click();
+  await until(() => !$('#ai-continue').disabled, 'Continue enabled');
+  $('#ai-continue').click();
+  await until(() => aiView() === 'prompt', 'the prompt step');
+  $('#ai-reply').value = reply;
+  $('#ai-review').click();
+  await until(() => aiView() === 'review', 'the review step');
+  await tick(30);
+}
+
+test('Import with AI: one Paid with for every expense row (Not set, Cash, the cards), a row\'s own pick over it, kept through a fix; income gets none', async () => {
+  const cards = await cardsNow();
+  assert(cards.length >= 1, 'a card to choose');
+  await aiReview(AI_REPLY);
+  const all = $('#ai-pay');
+  assert(!$('#ai-pay-field').hidden, 'shown when there are expense rows');
+  eq(text($('#ai-pay-field .field-label')), t('ai.pay'), 'its label');
+  eq(text($('#ai-pay-hint')), t('ai.pay.hint'), 'its hint');
+  const summary = $('#ai-review-summary');
+  assert(summary.compareDocumentPosition($('#ai-pay-field')) & Node.DOCUMENT_POSITION_FOLLOWING, 'after the summary');
+  assert($('#ai-pay-field').compareDocumentPosition($('#ai-rows')) & Node.DOCUMENT_POSITION_FOLLOWING, 'before the rows');
+  eq($$('option', all).map((o) => o.value), ['', 'cash', ...cards.map((c) => c.id)], 'Not set, Cash, the cards (no Add new card…)');
+  eq(all.value, '', 'Not set by default');
+  eq($$('#ai-rows [data-pay]').map((s) => s.dataset.pay), ['1', '4'], 'a choice on each importable expense row (row 3 needs a date first; row 2 is income)');
+  eq(rowPaySelect(1).getAttribute('aria-label'), t('ai.pay.row', { n: 1 }), 'named by row');
+  changeTo(all, cards[0].id);
+  eq([rowPaySelect(1).value, rowPaySelect(4).value], [cards[0].id, cards[0].id], 'rows follow the choice for every row');
+  changeTo(rowPaySelect(4), 'cash');
+  // Fix row 3's date: the review is drawn again from the rows; the picks stay.
+  const fix = $('#ai-rows [data-fix-date="3"]');
+  fix.value = '2026-12-09';
+  fix.dispatchEvent(new Event('change', { bubbles: true }));
+  await tick(60);
+  eq([rowPaySelect(1).value, rowPaySelect(3).value, rowPaySelect(4).value], [cards[0].id, cards[0].id, 'cash'], 'after the fix: row 3 has the choice for every row, row 4 keeps Cash');
+  changeTo(rowPaySelect(1), '');
+  changeTo(all, cards[0].id);
+  eq(rowPaySelect(1).value, '', 'a row set to Not set by hand keeps it');
+  for (const s of [all, ...$$('#ai-rows [data-pay]')]) {
+    const r = s.getBoundingClientRect();
+    assert(r.right <= aiDlg().getBoundingClientRect().right + 0.5 && r.left >= 0, `${s.id || `row ${s.dataset.pay}`}: inside the sheet`);
+  }
+  assert(document.documentElement.scrollWidth <= innerWidth, 'no sideways scroll');
+  $('#ai-import').click();
+  await until(() => $('#confirm-dialog').open && confirmButton(t('import.merge')), 'the Merge / Replace choice');
+  confirmButton(t('import.merge')).click();
+  await until(() => !aiDlg().open, 'imported');
+  await tick(100);
+  const stored = await storage.getAll();
+  const pay = (name) => stored.find((s) => s.name === name)?.pay;
+  eq(['AI Stream', 'AI Salary', 'AI Gym', 'AI Books'].map(pay), [undefined, undefined, cards[0].id, 'cash'], 'Not set: none; income: none; the card; Cash');
+  eq(listCards(await record()).map((c) => c.id), cards.map((c) => c.id), 'the import changed no card');
+});
+
 /* --------------------------------------------------------------------------------------------- */
 
 async function run() {

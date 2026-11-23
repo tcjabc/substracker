@@ -7,8 +7,9 @@
 import { esc, money, cycleLabel, parseDate, shortDate, chooseImportMode, backupLabel } from './util.js';
 import {
   AiImportError, parseAiImport, reviewRows, backupFromRows, itemFromFields, totalsOf, TOTAL_LABELS, errorReport,
-  aiImportMessage, aiReplaceConfirm, aiChoiceTitle, MAX_AI_CHARS, PROBLEM,
+  aiImportMessage, aiReplaceConfirm, aiChoiceTitle, MAX_AI_CHARS, PROBLEM, rowPay,
 } from './import-ai.js';
+import { PAY_CASH, PAY_NOT_SET } from './cards.js';
 import { t } from './i18n.js';
 import { AI_IMPORT_PROMPT } from './import-ai-prompt.js';
 import { createSlideConfirm } from './slide-confirm.js';
@@ -48,8 +49,9 @@ export async function copyText(text, fallback) {
 
 /**
  * `ui` provides openDialog, closeDialog, confirmDialog, toast, overlays, exportData (resolves true
- * when a backup was delivered), items() (the live items), isSynced(), reloadData() and
- * reduceMotion() (the "Reduce motion and effects" setting).
+ * when a backup was delivered), items() (the live items), isSynced(), reloadData(),
+ * reduceMotion() (the "Reduce motion and effects" setting) and cards() (the household's live
+ * payment cards, js/cards.js listCards: the review's Paid with options, 1.27.0).
  */
 export function initImportAiSheet({ storage, ui }) {
   const dlg = $('#ai-dialog');
@@ -68,6 +70,14 @@ export function initImportAiSheet({ storage, ui }) {
   let rawRows = [];
   let rows = [];
   let chosen = new Map(); // row number → include, for rows the person ticked or unticked
+  // Paid with (1.27.0): one choice for every expense row, and a row's own pick over it. Kept by row
+  // number, like `chosen`, because refreshReview rebuilds the rows after every fix.
+  const payAllSelect = $('#ai-pay');
+  let payAll = PAY_NOT_SET;
+  let payChosen = new Map();
+  let payOptions = [];
+  const livePay = () => new Set(payOptions.map((o) => o.value));
+  const payOptionsHTML = (selected) => payOptions.map((o) => `<option value="${esc(o.value)}"${o.value === selected ? ' selected' : ''}>${esc(o.label)}</option>`).join('');
   let busy = false;
   let backupSaved = false;
   let view = '';
@@ -109,6 +119,8 @@ export function initImportAiSheet({ storage, ui }) {
     rawRows = [];
     rows = [];
     chosen = new Map();
+    payAll = PAY_NOT_SET;
+    payChosen = new Map();
     backupSaved = false;
     replyInput.value = '';
     setReplyProblem('');
@@ -186,6 +198,8 @@ export function initImportAiSheet({ storage, ui }) {
     }
     setReplyProblem('');
     chosen = new Map();
+    payAll = PAY_NOT_SET;
+    payChosen = new Map();
     refreshReview();
     show('review');
   }
@@ -209,6 +223,13 @@ export function initImportAiSheet({ storage, ui }) {
   /* ---------------- review ---------------- */
   function refreshReview() {
     rows = reviewRows(rawRows, ui.items());
+    // Not set, Cash, then the household's live cards (never "Add new card…" here).
+    payOptions = [
+      { value: PAY_NOT_SET, label: t('form.pay.notSet') },
+      { value: PAY_CASH, label: t('form.pay.cash') },
+      ...(ui.cards?.() ?? []).map((c) => ({ value: c.id, label: c.name })),
+    ];
+    if (!livePay().has(payAll)) payAll = PAY_NOT_SET;
     for (const r of rows) if (r.importable && chosen.has(r.n)) r.include = chosen.get(r.n);
     renderReview();
   }
@@ -241,6 +262,11 @@ export function initImportAiSheet({ storage, ui }) {
           <select class="input" data-fix-cycle="${r.n}" aria-label="${esc(t('ai.fix.cycle.label', { n: r.n }))}">
             <option value="">${esc(t('ai.fix.choose'))}</option><option value="monthly">${esc(t('ai.cycle.monthly'))}</option><option value="annual">${esc(t('ai.cycle.annual'))}</option><option value="one-off">${esc(t('ai.cycle.once'))}</option>
           </select></label>` : '';
+    // Paid with, for an expense row that can be imported: the choice for every row unless this
+    // row has its own.
+    const pay = r.importable && f.type === 'expense'
+      ? `<label class="field ai-fix ai-pay-row"><span class="field-label">${esc(t('ai.pay'))}</span>
+          <select class="input" data-pay="${r.n}" aria-label="${esc(t('ai.pay.row', { n: r.n }))}">${payOptionsHTML(payChosen.has(r.n) ? payChosen.get(r.n) : payAll)}</select></label>` : '';
     return `<li class="ai-row${r.importable ? '' : ' is-blocked'}" data-row="${r.n}">
       <label class="ai-row-main">
         <input type="checkbox" class="check" data-include="${r.n}" ${r.include ? 'checked' : ''} ${r.importable ? '' : 'disabled'}
@@ -254,7 +280,7 @@ export function initImportAiSheet({ storage, ui }) {
       </label>
       ${r.status !== 'ok' ? `<div class="ai-row-tags">${STATUS_TAG[r.status]()}</div>` : ''}
       ${problems.length ? `<ul class="ai-row-problems">${problems.map((p) => `<li>${esc(p.message)}</li>`).join('')}</ul>` : ''}
-      ${fixDate || fixCycle ? `<div class="ai-fixes">${fixCycle}${fixDate}</div>` : ''}
+      ${fixDate || fixCycle || pay ? `<div class="ai-fixes">${fixCycle}${fixDate}${pay}</div>` : ''}
     </li>`;
   }
 
@@ -293,6 +319,9 @@ export function initImportAiSheet({ storage, ui }) {
   function renderReview() {
     const selected = selectedItems();
     $('#ai-review-summary').textContent = summaryText(selected.length);
+    payAllSelect.innerHTML = payOptionsHTML(payAll);
+    payAllSelect.value = payAll;
+    $('#ai-pay-field').hidden = !rows.some((r) => r.importable && r.fields.type === 'expense');
     list.innerHTML = rows.map(rowHTML).join('');
     renderTotals(selected);
     const report = errorReport(rows);
@@ -303,8 +332,19 @@ export function initImportAiSheet({ storage, ui }) {
     importBtn.textContent = importLabel(selected.length);
   }
 
+  // The choice for every row: rows without their own pick follow it.
+  payAllSelect.addEventListener('change', () => {
+    payAll = payAllSelect.value;
+    for (const s of $$('[data-pay]', list)) if (!payChosen.has(Number(s.dataset.pay))) s.value = payAll;
+  });
+
   list.addEventListener('change', (e) => {
     const field = e.target;
+    // A row's own Paid with, before the fixes below (which would end here on a value they don't know).
+    if (field.matches('[data-pay]')) {
+      payChosen.set(Number(field.dataset.pay), field.value);
+      return;
+    }
     if (field.matches('[data-include]')) {
       const n = Number(field.dataset.include);
       chosen.set(n, field.checked);
@@ -337,7 +377,8 @@ export function initImportAiSheet({ storage, ui }) {
     let backup;
     let preview;
     try {
-      backup = backupFromRows(rows);
+      const live = livePay();
+      backup = backupFromRows(rows, { payOf: (n) => rowPay(n, { all: payAll, perRow: payChosen, live }) });
       preview = await storage.previewImport(backup);
     } catch (err) {
       console.error(err);
