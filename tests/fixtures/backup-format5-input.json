@@ -1,0 +1,109 @@
+{
+  "exportedAt": "2026-11-23T00:00:00.000Z",
+  "items": [
+    {
+      "type": "expense",
+      "domain": "",
+      "emoji": "",
+      "plan": "",
+      "currency": "TWD",
+      "date": "",
+      "category": "Hobbies",
+      "notes": "",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "id": "a",
+      "name": "Sample class",
+      "price": 150,
+      "cycle": "monthly",
+      "nextRenewal": "2026-12-05",
+      "repeat": {
+        "every": 2,
+        "unit": "week"
+      }
+    },
+    {
+      "type": "expense",
+      "domain": "",
+      "emoji": "",
+      "plan": "",
+      "currency": "TWD",
+      "date": "",
+      "category": "Health",
+      "notes": "",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "id": "b",
+      "name": "Sample gym",
+      "price": 900,
+      "cycle": "annual",
+      "nextRenewal": "2027-03-31",
+      "pay": ""
+    },
+    {
+      "type": "expense",
+      "domain": "",
+      "emoji": "",
+      "plan": "",
+      "currency": "TWD",
+      "date": "2026-05-04",
+      "category": "",
+      "notes": "",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "id": "c",
+      "name": "Sample desk",
+      "price": 3200,
+      "cycle": "once",
+      "nextRenewal": "",
+      "pay": {
+        "later": 1
+      }
+    },
+    {
+      "type": "income",
+      "domain": "",
+      "emoji": "",
+      "plan": "",
+      "currency": "TWD",
+      "date": "",
+      "category": "Salary",
+      "notes": "",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "id": "d",
+      "name": "Sample pay",
+      "price": 50000,
+      "cycle": "monthly",
+      "nextRenewal": "2026-12-01",
+      "futureField": [
+        1,
+        2
+      ]
+    },
+    {
+      "id": "e",
+      "name": "Sample old",
+      "price": 1,
+      "currency": "usd",
+      "cycle": "monthly",
+      "nextRenewal": "",
+      "category": "Hobbies",
+      "notes": "pre-1.1.0 shape",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "settings": {
+    "defaultCurrency": "TWD",
+    "groupColors": {
+      "Hobbies": "w5",
+      "Health": "g3"
+    },
+    "groupSlots": {
+      "Hobbies": 4
+    },
+    "theme": "dark",
+    "pro": true
+  }
+}

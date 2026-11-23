@@ -7,6 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as core from '../js/sync-core.js';
 import * as storage from '../js/storage.js';
 import * as cards from '../js/cards.js';
@@ -142,6 +143,73 @@ test('a deleted card the file has comes back on import; an import never writes a
   assert.deepEqual(fieldsOf(r).card_amex1, AMEX, 'back');
   assert.ok(ops.every((o) => core.isFieldName(o.f)), 'every field name valid on every version');
   assert.ok(!Object.keys(fieldsOf(r)).some((k) => k.includes('-')));
+});
+
+/* ------------------------------------------------------------------ Writing a backup */
+
+test('no card and no pay: format 5, byte for byte what 1.25.1 wrote (tests/fixtures/backup-format5-1.25.1.json)', () => {
+  const input = JSON.parse(readFileSync(new URL('./fixtures/backup-format5-input.json', import.meta.url), 'utf8'));
+  const want = readFileSync(new URL('./fixtures/backup-format5-1.25.1.json', import.meta.url), 'utf8');
+  const out = storage.exportBackupFrom(input.items, input.settings, input.exportedAt);
+  assert.deepEqual([out.format, out.wanted, out.problem], [5, 5, null]);
+  assert.equal(JSON.stringify(out.payload, null, 2), want, 'byte-identical to 1.25.1\'s export of the same data');
+  // The fixture has an item whose pay is '' and one whose pay this version can't read: neither needs format 6.
+  assert.ok(input.items.some((x) => x.pay === '') && input.items.some((x) => cards.payOf(x) === '' && x.pay !== undefined && x.pay !== ''));
+  // The same with a settings object that has only deleted cards (getSettings leaves `cards` out then).
+  const r = replicaOf();
+  storage.cardOps(r, 'old', VISA, opts(1));
+  storage.removeCardOps(r, 'old', opts(2));
+  const { cards: none } = storage.settingsFromRecord(r.records.get(storage.SETTINGS_ID));
+  assert.equal(none, undefined, 'no live card: no cards key');
+  const settings = { ...input.settings, cards: none };
+  assert.equal(JSON.stringify(storage.exportBackupFrom(input.items, settings, input.exportedAt).payload, null, 2), want);
+});
+
+test('a live card or a non-empty pay: format 6, with settings.cards and each item\'s pay as this version reads it', () => {
+  const r = household();
+  core.putRecord(r, 'c', { ...item({ id: 'c', name: 'Sample odd' }), pay: { x: 1 } }, opts(1300));
+  const settings = storage.effectiveSettings({}, r.records.get(storage.SETTINGS_ID));
+  const out = storage.exportBackupFrom(liveOf(r), settings, AT);
+  assert.deepEqual([out.format, out.wanted, out.problem], [6, 6, null]);
+  assert.equal(out.payload.schemaVersion, 6);
+  assert.deepEqual(out.payload.settings.cards, { visa1: VISA, amex1: AMEX });
+  assert.deepEqual(out.payload.items.map((x) => [x.id, x.pay]).sort(), [['a', 'visa1'], ['b', undefined], ['c', '']], 'an unreadable pay is written as Not set');
+  // Only a pay, no card: still format 6, with an empty card set.
+  const p = storage.exportBackupFrom([{ ...item(), pay: 'cash' }], { groupColors: {} }, AT);
+  assert.deepEqual([p.format, p.payload.settings.cards], [6, {}]);
+});
+
+test('format 6 round trip: export, import into a fresh store with Replace, export again gives the same file', () => {
+  const r = household();
+  const first = storage.exportBackupFrom(liveOf(r), storage.effectiveSettings({}, r.records.get(storage.SETTINGS_ID)), AT);
+  assert.equal(first.format, 6);
+  const fresh = replicaOf('devC');
+  importInto(fresh, first.payload, 'replace');
+  assert.deepEqual(cards.cardMap(fresh.records.get(storage.SETTINGS_ID)), { visa1: VISA, amex1: AMEX }, 'cards back');
+  assert.equal(storage.toItem(fresh.records.get('a')).pay, 'visa1', 'pay back');
+  const second = storage.exportBackupFrom(liveOf(fresh), storage.effectiveSettings({}, fresh.records.get(storage.SETTINGS_ID)), AT);
+  assert.deepEqual(second.payload, first.payload);
+});
+
+test('the export check covers cards and pay; when format 6 fails it falls back to 5 (or 4) and says cards were wanted', () => {
+  const r = household();
+  const items = liveOf(r);
+  const settings = storage.effectiveSettings({}, r.records.get(storage.SETTINGS_ID));
+  const six = storage.backupPayload(items, settings, AT, 6);
+  assert.equal(storage.checkBackup(six, items, settings), null);
+  assert.match(storage.checkBackup({ ...six, settings: { ...six.settings, cards: {} } }, items, settings), /cards don't come back/);
+  const lostPay = { ...six, items: six.items.map((x) => ({ ...x, pay: '' })) };
+  assert.match(storage.checkBackup(lostPay, items, settings), /1 of 2 items come back paid another way/);
+  // A card that can't come back (forced by hand: getSettings never gives one) fails format 6's check.
+  const odd = { ...settings, cards: { ...settings.cards, 'bad-id': VISA } };
+  const back5 = storage.exportBackupFrom(items, odd, AT);
+  assert.deepEqual([back5.format, back5.wanted], [5, 6]);
+  assert.match(back5.problem, /cards don't come back/);
+  assert.equal(back5.payload.schemaVersion, 5);
+  assert.ok(!('cards' in back5.payload.settings), 'format 5 has no cards');
+  // Something 1.19.0 couldn't import fails 6 and 5 alike: format 4, still with cards wanted.
+  const back4 = storage.exportBackupFrom([...items, { ...item({ id: 'w' }), cycle: 'weekly' }], settings, AT);
+  assert.deepEqual([back4.format, back4.wanted], [4, 6]);
 });
 
 test('a bad file changes nothing: parseBackup throws before any op', () => {

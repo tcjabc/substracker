@@ -1395,6 +1395,9 @@ export async function requestPersistence() {
 // Backups: { app, schemaVersion: 5, exportedAt, items, settings }: the live (not deleted) items with
 // their ids, and the settings worth restoring (BACKUP_SETTINGS). Format 5 (docs/plan-intervals-groups.md
 // 4.3) is format 4 plus an item's `repeat` and the colours' `groupSlots`, each only where present.
+// Format 6 (1.26.0, docs/plan-cards.md) is format 5 plus `settings.cards` (id → { name, colour, cut,
+// due }, live cards only) and each item's `pay`; it's written only when there's a card or a pay to
+// carry, so a household without cards still gets format 5, byte for byte as 1.25.1 wrote it.
 // Nothing else from the device goes in:
 // no sync bookkeeping (device id, clock, cursor, outbox, field stamps), no entitlement flags, and no
 // appearance or other preferences. Import restores the two settings as explicit changes, so they sync.
@@ -1425,7 +1428,18 @@ export function backupPayload(items, settings, exportedAt, version = PLAIN_BACKU
   const full = items.map((s) => ({ ...s, type: s.type === 'income' ? 'income' : 'expense', date: s.date ?? '', emoji: s.emoji ?? '' }));
   const keys = version >= 5 ? BACKUP_SETTINGS : LEGACY_BACKUP_SETTINGS;
   const kept = Object.fromEntries(keys.filter((k) => settings[k] !== undefined).map((k) => [k, settings[k]]));
+  if (version >= 6) {
+    // Format 6: the household's live cards, always (an empty set says it has none), and each item's
+    // `pay` as this version reads it (a value it can't use is written as Not set).
+    kept.cards = fileCards(settings.cards);
+    for (const s of full) if (PAY_FIELD in s) s[PAY_FIELD] = payOf(s);
+  }
   return { app: APP_ID, schemaVersion: version, exportedAt, items: full, settings: kept };
+}
+
+/** Whether a backup needs format 6: a live card in `settings`, or an item with a non-empty `pay`. */
+export function needsCardsFormat(items, settings) {
+  return Object.keys(fileCards(settings?.cards)).length > 0 || items.some((s) => typeof s[PAY_FIELD] === 'string' && s[PAY_FIELD] !== '');
 }
 
 /**
@@ -1460,19 +1474,37 @@ export function checkBackup(payload, items, settings = {}) {
   if (moved || back.size !== items.length) return `${moved} of ${items.length} items come back with another interval`;
   const slots = cleanSlots(parsed.settings?.groupSlots, cleanColors(parsed.settings?.groupColors));
   if (!sync.sameValue(slots, cleanSlots(settings.groupSlots, settings.groupColors))) return "palette slots don't come back as they are";
+  if (payload.schemaVersion >= 6) {
+    // Format 6: every live card comes back as it is, and every item with the same pay (payOf).
+    if (!isObj(parsed.settings?.cards) || !sync.sameValue(fileCards(parsed.settings.cards), isObj(settings.cards) ? settings.cards : {})) {
+      return "cards don't come back as they are";
+    }
+    const payMoved = items.filter((s) => payOf(back.get(s.id)) !== payOf(s)).length;
+    if (payMoved) return `${payMoved} of ${items.length} items come back paid another way`;
+  }
   return null;
 }
 
 /**
- * What exporting writes, from `items` and `settings` (pure): { payload, format, problem }. Format 5
- * when checkBackup holds; otherwise format 4, exactly as 1.19.0 would have written it, with the
- * problem (counts only). The app says so on screen when it's format 4 (app.js exportData).
+ * What exporting writes, from `items` and `settings` (pure): { payload, format, wanted, problem }.
+ * `wanted` is format 6 when there's a card or a pay to carry (needsCardsFormat), else 5. Format 6 is
+ * written when checkBackup holds for it. Otherwise (and when 5 was wanted) format 5, exactly as 1.25.1
+ * wrote it, when its check holds, else format 4, exactly as 1.19.0 would have written it; `problem`
+ * is the first check that failed (counts only). The app says so on screen when `format` is below
+ * `wanted` (app.js exportData): a format 6 that fell back has no cards in it.
  */
 export function exportBackupFrom(items, settings, exportedAt) {
+  let first = null;
+  if (needsCardsFormat(items, settings)) {
+    const six = backupPayload(items, settings, exportedAt, BACKUP_VERSION);
+    first = checkBackup(six, items, settings);
+    if (!first) return { payload: six, format: BACKUP_VERSION, wanted: BACKUP_VERSION, problem: null };
+  }
+  const wanted = first ? BACKUP_VERSION : PLAIN_BACKUP_VERSION;
   const payload = backupPayload(items, settings, exportedAt);
   const problem = checkBackup(payload, items, settings);
-  if (!problem) return { payload, format: PLAIN_BACKUP_VERSION, wanted: PLAIN_BACKUP_VERSION, problem: null };
-  return { payload: backupPayload(items, settings, exportedAt, 4), format: 4, wanted: PLAIN_BACKUP_VERSION, problem };
+  if (!problem) return { payload, format: PLAIN_BACKUP_VERSION, wanted, problem: first };
+  return { payload: backupPayload(items, settings, exportedAt, 4), format: 4, wanted, problem: first ?? problem };
 }
 
 /** What exporting this device's data writes: { payload, format, problem } (exportBackupFrom). */

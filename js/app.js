@@ -2264,8 +2264,11 @@ async function exportData() {
     const delivered = await deliverFile(blob, `substracker-${todayStamp()}.json`);
     const items = t('common.items', { count: payload.items.length });
     // The older format leaves the palette slots out: say so, calmly (the items are all there), and
-    // keep it up until dismissed, as it's longer than the usual note.
-    if (delivered && format < wanted) {
+    // keep it up until dismissed, as it's longer than the usual note. When format 6 was wanted, the
+    // file also has no cards in it (storage.exportBackupFrom): that's the note then.
+    if (delivered && format < wanted && wanted >= 6) {
+      toast(t('settings.export.doneNoCards', { items }), { label: t('common.dismiss'), sticky: true, run: () => {} });
+    } else if (delivered && format < wanted) {
       toast(t('settings.export.doneOlder', { items }), { label: t('common.dismiss'), sticky: true, run: () => {} });
     } else if (delivered) toast(t('settings.export.done', { items }));
     return delivered === true;

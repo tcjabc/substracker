@@ -1,7 +1,8 @@
 // In-browser tests for the export's on-screen note (js/app.js exportData, js/storage.js
 // exportBackupFrom): a backup that passes format 5's check gives the usual short note; one that
 // falls back to format 4 (as 1.19.0 wrote it) says so, in the language in use, and stays until
-// dismissed, with the file still holding every item. Run by tests/export-note.html with a fixed clock
+// dismissed, with the file still holding every item. With a card (1.26.0) the backup is format 6 with
+// the usual note; one that falls back says the cards are not in it. Run by tests/export-note.html with a fixed clock
 // against a throwaway database, with index.html's markup, at 320, 360 and 393px, in English, the
 // pseudo-locale (?lang=xx) and zh-TW (?lang=zh-TW). Expected words come from t(). The tests run in
 // order, as one session in the app. The format rules themselves are in tests/format5.node.test.js.
@@ -82,6 +83,41 @@ test('a backup that falls back to format 4: says so in the language in use, stay
   $('#toast-action').click();
   assert(!toastShown(), 'dismissed');
   await storage.remove('e-odd');
+});
+
+// 1.26.0: no screen makes cards yet, so the tests write one through storage (saveCard) and give an
+// item a pay, as a later version or an import would.
+test('a household with a card: format 6 with the cards and pay, and the usual short note', async () => {
+  await storage.saveCard('t_visa', { name: 'Visa', due: 10 });
+  await storage.save({ ...SEED[0], pay: 't_visa' });
+  const file = await exportNow();
+  eq(file.schemaVersion, 6, 'format 6');
+  eq(file.settings.cards, { t_visa: { name: 'Visa', colour: '', cut: null, due: 10 } }, 'the card is in it');
+  eq(file.items.find((s) => s.id === 'e-vet').pay, 't_visa', 'and the pay');
+  eq(toastText(), norm(t('settings.export.done', { items: t('common.items', { count: 1 }) })), 'the usual note');
+  assert($('#toast-action').hidden, 'no button');
+  await until(() => !toastShown(), 'it goes by itself', 4500);
+});
+
+test('a format 6 backup that falls back: says the cards are not in the file, stays until dismissed, every item in it', async () => {
+  const odd = { ...base, id: 'e-odd', name: 'Pottery', price: 150, cycle: 'weekly', nextRenewal: '2026-11-19' };
+  await storage.save(odd);
+  const file = await exportNow();
+  eq(file.schemaVersion, 4, 'format 4: 1.19.0 couldn\'t import the weekly item, so no newer format passes its check');
+  eq(file.settings.cards, undefined, 'no cards in the file');
+  eq(file.items.map((s) => s.id).sort(), ['e-odd', 'e-vet'], 'every item is in it');
+  eq(toastText(), norm(t('settings.export.doneNoCards', { items: t('common.items', { count: 2 }) })), 'the no-cards note');
+  assert(toastText() !== norm(t('settings.export.doneOlder', { items: t('common.items', { count: 2 }) })), 'not the colours note');
+  eq(text($('#toast-action')), norm(t('common.dismiss')), 'a Dismiss button');
+  await tick(3600);
+  assert(toastShown(), 'still there after the usual time');
+  const box = $('#toast').getBoundingClientRect();
+  assert(box.left >= 0 && box.right <= innerWidth + 0.5, `inside the screen (${box.left}–${box.right} of ${innerWidth})`);
+  assert($('#toast-text').scrollWidth <= $('#toast-text').clientWidth + 1, 'the text wraps, never cut');
+  $('#toast-action').click();
+  assert(!toastShown(), 'dismissed');
+  await storage.remove('e-odd');
+  await storage.saveCard('t_visa', null);
 });
 
 async function run() {
