@@ -65,6 +65,7 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | Settings (tab) | 設定 | |
 | Wallet (view) | 錢包 | |
 | Cards (view) | 卡片 | |
+| payment card | 付款卡 | ⚠ 1.26.0; only in the export note "your payment cards are not in it" (但付款卡不在其中). Not 卡片, which is the Cards view |
 | List (view) | 清單 | |
 | Sort | 排序 | |
 | A to Z (sort) | 依名稱 | Chinese names have no A–Z; sorted by Zhuyin (ㄅㄆㄇㄈ), Taiwan's standard order |
