@@ -154,7 +154,45 @@ async function migrate(db) {
   else source = (await migrateToRecords(db)) ? RECORDS : ITEMS;
   if (source !== RECORDS) return;
   settingsShared = meta.settingsMigration?.verified ? true : await migrateSettings(db);
-  if (settingsShared && !meta.formatMigration?.verified && appVersion) await migrateFormat(db);
+  if (!settingsShared || !appVersion) return;
+  if (!meta.formatMigration?.verified) await migrateFormat(db);
+  else await refreshVersionNote(db);
+}
+
+/**
+ * On a launch after format 5's step was verified: write this device's version note again when it's
+ * due (versionNoteOps: none in the record, another version or format, or over 30 days old), so other
+ * devices can tell which version each one runs. One transaction over records, outbox and meta; it
+ * sets only this device's own `app_` field (setFields, never `del`) and leaves every other field,
+ * other devices' notes included, as it is. A failure is silent and changes nothing: the next launch
+ * tries again.
+ */
+async function refreshVersionNote(db) {
+  try {
+    const tx = db.transaction([RECORDS, OUTBOX, META], 'readwrite');
+    const metaStore = tx.objectStore(META);
+    const [rec, devRow, hlcRow] = await Promise.all([
+      result(tx.objectStore(RECORDS).get(SETTINGS_ID)), result(metaStore.get('deviceId')), result(metaStore.get('hlc')),
+    ]);
+    let ops;
+    let replica;
+    try {
+      if (migrationFault === 'note') throw new Error('test fault');
+      if (!sync.isDeviceId(devRow?.value)) throw new Error('this device has no sync id');
+      replica = { clock: loadClock(hlcRow?.value, devRow.value), records: new Map(rec ? [[rec.id, rec]] : []) };
+      ops = versionNoteOps(replica, { deviceId: devRow.value, version: appVersion, fmt: FORMAT });
+    } catch (err) {
+      tx.abort();
+      throw err;
+    }
+    if (ops.length) {
+      tx.objectStore(RECORDS).put(replica.records.get(SETTINGS_ID));
+      for (const op of ops) tx.objectStore(OUTBOX).put(op);
+      metaStore.put({ key: 'hlc', value: { wall: replica.clock.wall, count: replica.clock.count } });
+    }
+    await done(tx);
+    if (ops.length) changesEnqueued(ops.length);
+  } catch { /* silent: nothing was written, and the next launch tries again */ }
 }
 
 /**
@@ -956,7 +994,8 @@ export function settingsFromRecord(record) {
 // same cyrb53 as colorField; a device id may hold characters a field name can't), with the value
 // { v: app version, fmt: data format, at: YYYY-MM-DD }. Release 2 (custom intervals) reads them to tell whether every
 // active device can show custom intervals. 1.19.0 keeps the field and ignores it. Format 5's
-// first-launch step (migrateFormat) writes this device's note; nothing refreshes it later yet.
+// first-launch step (migrateFormat) writes this device's note, and every later launch refreshes it
+// when it's due (refreshVersionNote, 1.26.0).
 const NOTE_PREFIX = 'app_';
 const NOTE_MAX_AGE_DAYS = 30;
 
@@ -976,7 +1015,8 @@ export function versionNotes(record) {
 
 /**
  * Ops for this device's version note, only when it's due: none yet, another version or format, or
- * written more than 30 days before `now`. { deviceId, version, fmt, now (ms) }. Called by migrateFormat.
+ * written more than 30 days before `now`. { deviceId, version, fmt, now (ms) }. Called by migrateFormat
+ * and, on later launches, by refreshVersionNote.
  */
 export function versionNoteOps(replica, { deviceId, version, fmt, now = Date.now(), ...opts }) {
   const field = versionNoteField(deviceId);

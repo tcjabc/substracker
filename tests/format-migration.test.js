@@ -71,9 +71,12 @@ async function seedBefore({ items = [], autoColors = {}, picks = {}, remote = []
   eq([st.schemaVersion, st.settingsShared, st.formatMigration], [4, true, null], 'seeded as before the step');
   return name;
 }
-/** Load the database again as the app would (the step runs on open), with `fault` injected. */
-async function reload(name, fault = null) {
-  storage.setAppVersion(VERSION);
+/**
+ * Load the database again as the app would (the step runs on open, or once it's verified the
+ * version-note refresh), with `fault` injected, as app version `version`.
+ */
+async function reload(name, fault = null, version = VERSION) {
+  storage.setAppVersion(version);
   storage.setMigrationFault(fault);
   storage.useDatabase(name);
   const warnings = [];
@@ -225,6 +228,69 @@ test('before settings are shared, or without the app\'s version, the step waits 
   storage.useDatabase(name);
   await storage.getAll();
   eq([(await storage.status()).schemaVersion, (await storage.status()).formatMigration], [4, null], 'no version: not run');
+});
+
+/* ------------------------------------------------------------------ The version-note refresh (1.26.0) */
+
+const noteOf = (snap) => settingsRec(snap).fields[storage.versionNoteField(metaOf(snap).deviceId)];
+
+test('after the step: a launch on a new version rewrites only this device\'s note (one op), other notes and items untouched', async () => {
+  const other = { clock: syncCore.newClock('another-device'), records: new Map() };
+  const otherNote = { v: '1.25.1', fmt: 5, at: '2026-11-01' };
+  const remote = syncCore.setFields(other, storage.SETTINGS_ID, { [storage.versionNoteField('another-device')]: otherNote }, { now: Date.now() - 60_000 });
+  const name = await seedBefore({ ...SEED, remote });
+  await reload(name);
+  const before = await snapshot(name);
+  eq(noteOf(before).v, VERSION, 'the step wrote the note');
+  const { status, warnings } = await reload(name, null, '1.26.0');
+  eq(warnings, [], 'no warning');
+  eq(status.formatMigration, metaOf(before).formatMigration, 'the step is not run again');
+  const after = await snapshot(name);
+  eq([noteOf(after).v, noteOf(after).fmt], ['1.26.0', 5], 'this device\'s note now names the new version');
+  const changed = Object.keys(settingsRec(after).fields).filter((f) => JSON.stringify(settingsRec(after).fields[f]) !== JSON.stringify(settingsRec(before).fields[f]));
+  eq(changed, [storage.versionNoteField(metaOf(after).deviceId)], 'only this device\'s note field changed');
+  eq(settingsRec(after).fields[storage.versionNoteField('another-device')], otherNote, 'another device\'s note as it was');
+  eq(itemRecs(after), itemRecs(before), 'item records untouched');
+  eq(after.settings, before.settings, 'settings store untouched');
+  const newOps = after.outbox.filter((op) => !before.outbox.some((o) => o.id === op.id));
+  eq(newOps.map((op) => op.f), [storage.versionNoteField(metaOf(after).deviceId)], 'one outbox op, the note');
+  assert(!('del' in settingsRec(after).fields), 'the settings record never gets del');
+  eq(await snapshot(name).then((s) => s.records), after.records, 'reading it back changes nothing');
+  await reload(name, null, '1.26.0');
+  eq(await snapshot(name), after, 'the same version again: nothing written');
+});
+
+test('after the step: a launch writes the note again when it is missing (cleared elsewhere)', async () => {
+  const name = await seedBefore(SEED);
+  await reload(name);
+  const dev = metaOf(await snapshot(name)).deviceId;
+  const other = { clock: syncCore.newClock('another-device'), records: new Map() };
+  const clear = syncCore.setFields(other, storage.SETTINGS_ID, { [storage.versionNoteField(dev)]: null }, { now: Date.now() + 1000 });
+  storage.useDatabase(name);
+  await storage.applyRemote(clear, 2);
+  eq(settingsRec(await snapshot(name)).fields[storage.versionNoteField(dev)], null, 'cleared');
+  await reload(name);
+  const note = noteOf(await snapshot(name));
+  eq([note.v, note.fmt, /^\d{4}-\d{2}-\d{2}$/.test(note.at)], [VERSION, 5, true], 'written again');
+});
+
+test('a failure in the refresh changes nothing, shows nothing, and the next launch does it', async () => {
+  const name = await seedBefore(SEED);
+  await reload(name);
+  const before = await snapshot(name);
+  const { status, warnings } = await reload(name, 'note', '1.26.0');
+  eq(warnings, [], 'silent');
+  eq(status.schemaVersion, 5, 'still format 5');
+  eq(await snapshot(name), before, 'every store exactly as before');
+  await reload(name, null, '1.26.0');
+  eq(noteOf(await snapshot(name)).v, '1.26.0', 'done on the next launch');
+});
+
+test('before the step is verified the refresh never runs: a failed step leaves no note', async () => {
+  const name = await seedBefore(SEED);
+  const before = await snapshot(name);
+  await reload(name, 'plan', '1.26.0');
+  eq(await snapshot(name), before, 'nothing written');
 });
 
 async function run() {

@@ -289,20 +289,33 @@ test('a version note is written only when due: none yet, another version or form
   assert.ok(!('del' in r.records.get(storage.SETTINGS_ID).fields));
 });
 
-test('only the format 5 step writes a version note; nothing in the app writes a repeat yet; a slot only with a picked colour', () => {
+test('only the format 5 step and the launch refresh write a version note; nothing in the app writes a repeat yet; a slot only with a picked colour', () => {
   const dir = new URL('../js/', import.meta.url);
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.js'))) {
     const src = readFileSync(new URL(f, dir), 'utf8');
     if (f !== 'storage.js') assert.ok(!/versionNoteOps\(/.test(src), `${f} calls versionNoteOps`);
   }
-  // In storage.js: its definition and one call, inside migrateFormat (the first-launch step).
+  // In storage.js: its definition and two calls, one inside migrateFormat (the first-launch step) and
+  // one inside refreshVersionNote (every later launch, 1.26.0).
   const store = readFileSync(new URL('storage.js', dir), 'utf8');
   const calls = [...store.matchAll(/versionNoteOps\(/g)].map((m) => m.index);
-  assert.equal(calls.length, 2, 'the definition and one call');
-  const step = store.indexOf('async function migrateFormat(');
-  const end = step + store.slice(step).search(/\n\}\r?\n/);
+  assert.equal(calls.length, 3, 'the definition and two calls');
+  const body = (header) => {
+    const at = store.indexOf(header);
+    return [at, at + store.slice(at).search(/\n\}\r?\n/)];
+  };
+  const [step, end] = body('async function migrateFormat(');
+  const [refresh, refreshEnd] = body('async function refreshVersionNote(');
   const def = store.indexOf('export function versionNoteOps(') + 'export function '.length;
-  assert.ok(step > 0 && calls.every((i) => i === def || (i > step && i < end)), 'called only in migrateFormat');
+  const inside = (i, [a, b]) => a > 0 && i > a && i < b;
+  assert.ok(calls.filter((i) => inside(i, [step, end])).length === 1, 'one call in migrateFormat');
+  assert.ok(calls.filter((i) => inside(i, [refresh, refreshEnd])).length === 1, 'one call in refreshVersionNote');
+  assert.ok(calls.every((i) => i === def || inside(i, [step, end]) || inside(i, [refresh, refreshEnd])), 'called nowhere else');
+  // The refresh runs only once the step is verified, and the step only until then (storage.js migrate).
+  const [mig, migEnd] = body('async function migrate(db)');
+  const m = store.slice(mig, migEnd);
+  assert.ok(m.includes('if (!meta.formatMigration?.verified) await migrateFormat(db);'), 'the step until verified');
+  assert.ok(m.includes('else await refreshVersionNote(db);'), 'then the refresh');
   const app = readFileSync(new URL('app.js', dir), 'utf8');
   assert.ok(!/repeat\s*:/.test(app), 'the app builds no repeat values');
   assert.deepEqual([...app.matchAll(/groupSlots:/g)].length, 1, 'one place writes a slot: the colour picker');
