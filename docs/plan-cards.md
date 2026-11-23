@@ -1,9 +1,11 @@
 # Plan: payment cards
 
-Status: **Release A (groundwork) is built** on branch `cards-groundwork` as 1.26.0 / versionCode 39,
-from `main` at 1.25.1 (`2135adf`, versionCode 38). It has no visible UI change. **Release B (the
-card UI) is not built**: Settings screen, add-sheet field, Wallet chip, Calendar, due-soon and
-Insights changes, Import with AI.
+Status: **Release A (groundwork) is built** as 1.26.0 / versionCode 39 (on `main` at `a065fcb`): no
+visible UI change. **Release B (the cards UI) is built** on branch `cards-ui` as 1.27.0 / versionCode
+40, from `main` at `a065fcb`: Settings → Payment cards and the card sheet, the item sheet's Payment
+method, the Wallet chip, and Import with AI's Paid with (section 4). **Release C is not built**:
+Calendar and due-soon card dates, Insights "Paid with", statement amounts, native notifications
+(section 5).
 
 ## 1. Data
 
@@ -48,9 +50,32 @@ There is no data to convert, so there is no first-launch step. The risk-bearing 
 | (a) Export | Everything: it reads items and settings and writes a file. | Only the file. | `checkBackup` reads the payload back with this version's reader and 1.19.0's rules; for format 6 also the cards and every `pay`. | Falls back to format 5, else 4, and says on screen that the cards aren't in the file. | Without cards it is the same format 5 file as before. A format 6 file imports on 1.19.0 and 1.25.1 as a newer one, items intact. |
 | (b) Import | Parsing and planning. | One transaction of ops: items with `putRecord` (Not set never written over no `pay`), cards with `setFields` on the settings record. | Tests read the card fields and `pay` back from the record after each import. | A bad file throws before any op; a failed write aborts the one transaction: nothing changes. | Every op is one an old device stores (valid field names, no `del` on settings, no card record). |
 | (c) Version-note refresh | Reads this device's note. | Only its own `app_<hash>` field, with `setFields`, when it's missing, another version or format, or over 30 days old. | Browser tests read the record back. | Silent; nothing written; tried again on the next launch. | 1.19.0 and 1.25.1 keep the field and ignore it, as they do today. |
+| (d) A card saved in the card sheet (1.27.0) | The record, for the id check and the stored value. | One `setFields` op on the settings record (`card_<id>`), merged over the stored value so a later version's keys stay (`cardOps` `keepUnknown`). | tests/cards-ui.test.js reads the card field back from the record. | One commit: nothing changes; the existing error toast. | A valid field name on every version; settings never get `del`; no card is a record of its own. |
+| (e) An item saved with a new card (1.27.0) | The record and the item. | ONE commit over the settings record and the item: the card's `setFields` op and the item's `putRecord` ops (only fields that changed; Not set on a new item writes no `pay`). | Browser and mixed-harness tests read both back; a bad card id stores neither. | All or nothing: no card without its item, no item pointing at a card that wasn't stored; the existing error toast. | As (d); `pay` is a field every version keeps (1.19.0 and 1.25.1 copy every stored field). |
+| (f) A card deleted (1.27.0) | Every record, to find the live items paid with it. | ONE commit: the tombstone (`gone: true`, `setFields`) and `pay: ""` on each of those items (`putRecord` with that one field, nothing else). | The delete test reads every affected item's `pay` as `""` and the tombstone, from the same commit. | All or nothing; the existing error toast. | As (d) and (e). An item that names a card this device doesn't know (sync order, another device's delete) reads as Not set and keeps its `pay` until someone changes the drop-down. |
 
-## 4. Release B (not built)
+## 4. Release B (built: 1.27.0)
 
-Card UI in Settings, the add-sheet field, the Wallet chip, Calendar, due-soon and Insights. Before
-it ships, check the household's version notes (now refreshed on launch) to see which devices are on
-1.26.0 or later.
+- **Settings → Payment cards** (between Groups and Sync; never "Cards", the Money view's name), shown
+  once settings are shared, which is the local format 4 step, not pairing: an unsynced device has
+  cards too. A row per live card ("Edit card {name}"), Add card, and the card sheet: Nickname (at
+  most 40; refused when it has 13 or more digits in a run read through spaces and dashes after NFKC),
+  ten colours `c1` … `c10`, Statement closing day and Payment due day (kept, promising nothing yet).
+  A nickname that is already a card picks it. Delete says how many items use the card and sets them
+  back to Not set in the same commit as the tombstone.
+- **The item sheet:** Payment method under More details, after the New group field: Not set, Cash,
+  the cards, then "Add new card…" with an inline nickname field (the 1.25.0 category pattern). A new
+  card is stored with its item in one commit. A `pay` the drop-down didn't show is kept unless the
+  person changes it.
+- **The Wallet:** a chip with the card's glyph on the logo tile of an item paid with a live card,
+  aria-hidden; the item's label names the card. Not in Grid or List.
+- **Import with AI:** one Paid with for every expense row and a row's own pick; cards stay out of the
+  prompt and the reply; the file stays format 4 with no settings.
+- **Colours:** ten fills apart from each other (also under colour-vision simulation), not from the
+  group colours; the glyph's outline is the theme's text colour (tests/card-palette.node.test.js).
+- The readiness check was dropped: old devices keep `card_*` and `pay` (section 3).
+
+## 5. Release C (not built)
+
+Calendar and due-soon card dates (the cut-off and due days), Insights "Paid with", statement
+amounts and native notifications.

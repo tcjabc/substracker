@@ -65,7 +65,13 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | Settings (tab) | 設定 | |
 | Wallet (view) | 錢包 | |
 | Cards (view) | 卡片 | |
-| payment card | 付款卡 | ⚠ 1.26.0; only in the export note "your payment cards are not in it" (但付款卡不在其中). Not 卡片, which is the Cards view |
+| payment card | 付款卡 | ⚠ 1.26.0; Settings → Payment cards in 1.27.0. Not 卡片, which is the Cards view |
+| Payment method | 付款方式 | ⚠ 1.27.0, the item sheet; also Import with AI's "Paid with" |
+| Cash (payment method) | 現金 | ⚠ 1.27.0. Not the "cash due" figure (應付金額) |
+| Not set | 未設定 | ⚠ 1.27.0, Payment method and the card's days |
+| nickname (of a card) | 暱稱 | ⚠ 1.27.0 |
+| Statement closing day | 結帳日 | ⚠ 1.27.0; "Statement closes: day {day}" → 結帳日：每月 {day} 日 |
+| Payment due day | 繳款截止日 | ⚠ 1.27.0; "Payment due: day {day}" → 繳款截止日：每月 {day} 日 |
 | List (view) | 清單 | |
 | Sort | 排序 | |
 | A to Z (sort) | 依名稱 | Chinese names have no A–Z; sorted by Zhuyin (ㄅㄆㄇㄈ), Taiwan's standard order |
