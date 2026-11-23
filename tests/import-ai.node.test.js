@@ -359,7 +359,8 @@ test('a row with a real error and a duplicate shows the error first', () => {
 test('rows map to items in the form\'s shape: recurring dates in nextRenewal, one-offs in date', () => {
   const rows = reviewRows([row(), row({ name: 'Sample Pay', type: 'income', category: 'x' }), row({ name: 'Desk', cycle: 'one-off', nextDate: '2026-05-04' })]);
   const { items } = backupFromRows(rows, { now: NOW, newId });
-  assert.deepEqual(Object.keys(items[0]), ['id', ...storage.ITEM_FIELDS]);
+  // Every item field but `pay` (1.26.0): Import with AI leaves how an item is paid Not set, which is no `pay` at all.
+  assert.deepEqual(Object.keys(items[0]), ['id', ...storage.ITEM_FIELDS.filter((f) => f !== 'pay')]);
   assert.deepEqual(items.map((s) => [s.type, s.cycle, s.nextRenewal, s.date, s.category]), [
     ['expense', 'monthly', '2026-12-05', '', 'Entertainment'],
     ['income', 'monthly', '2026-12-05', '', ''],

@@ -19,6 +19,7 @@ import { cleanDomain } from './services.js';
 import * as sync from './sync-core.js';
 import { isReadableInterval, shadowCycle, effectiveInterval, dayNumber, dayOf } from './interval.js';
 import { stepperCheck, planColours, verifyFormatMigration, liveGroups, FORMAT } from './format-migration.js';
+import { PAY_FIELD, PAY_NOT_SET, CARD_PREFIX, cardFieldName, cardIdOf, cardValue, cardTombstone, cardMap, parseCardValue, payOf, isPayValue } from './cards.js';
 
 export const APP_ID = 'substracker';
 
@@ -40,10 +41,14 @@ const SETTINGS = 'settings';
 const META = 'meta';
 const LEGACY = 'subscriptions';
 
-/** The fields of an item, in the order the app writes them (besides `id`). */
+/**
+ * The fields of an item, in the order the app writes them (besides `id`). `pay` (1.26.0, js/cards.js)
+ * is saved and exported like the others, but an op for it from another device isn't checked
+ * (UNCHECKED_FIELDS): any plain JSON is stored, and a value this version can't use reads as Not set.
+ */
 export const ITEM_FIELDS = [
   'type', 'name', 'domain', 'emoji', 'plan', 'price', 'currency', 'cycle',
-  'nextRenewal', 'date', 'category', 'notes', 'createdAt', 'updatedAt',
+  'nextRenewal', 'date', 'category', 'notes', 'createdAt', 'updatedAt', PAY_FIELD,
 ];
 
 let dbPromise = null;
@@ -756,6 +761,12 @@ function itemFields(item) {
 export const REPEAT = 'repeat';
 
 /**
+ * Item fields whose ops from another device are stored whatever plain JSON they hold, never checked
+ * and so never skipped (acceptableRemote): each is read tolerantly where it's used.
+ */
+export const UNCHECKED_FIELDS = Object.freeze([REPEAT, PAY_FIELD]);
+
+/**
  * The `repeat` a backup item may bring in: a readable interval (js/interval.js READ_LIMITS) on a
  * recurring item whose cycle is its shadow, as { every, unit } (other keys dropped). Else null, and
  * only the field is left out: the item itself imports as before.
@@ -862,10 +873,11 @@ export function importOps(replica, { clear, writes }, opts) {
 function acceptableRemote(op) {
   if (op.rec === SETTINGS_ID) return acceptableSetting(op);
   if (op.f === sync.DELETED) return typeof op.v === 'boolean';
-  // Any plain JSON is stored for `repeat` (sync-core has checked it is JSON): a value this version
-  // can't use is read as "use the cycle" (js/interval.js effectiveInterval), never skipped, because a
-  // skipped op never comes back and a later version may know what it means.
-  if (op.f === REPEAT) return true;
+  // Any plain JSON is stored for `repeat` and `pay` (sync-core has checked it is JSON): a value this
+  // version can't use is read as "use the cycle" (js/interval.js effectiveInterval) or as Not set
+  // (js/cards.js payOf), never skipped, because a skipped op never comes back and a later version may
+  // know what it means. This comes before the string rule below, which `pay` (in ITEM_FIELDS) would meet.
+  if (UNCHECKED_FIELDS.includes(op.f)) return true;
   if (op.f === 'price') return typeof op.v === 'number' && Number.isFinite(op.v) && op.v >= 0;
   if (ITEM_FIELDS.includes(op.f)) return typeof op.v === 'string' && op.v.length <= 2000;
   return true;
@@ -909,6 +921,9 @@ export function requeueOps(records) {
 // The record has no `del` field, so it is never live and never an item. Fields:
 //   defaultCurrency      a 3-letter code (null: cleared)
 //   color_<16 hex>       { name, swatch } for one expense group (null: cleared)
+//   app_<16 hex>         one device's version note (versionNoteOps)
+//   card_<id>            one payment card, { name, colour, cut, due } or a tombstone with
+//                        `gone: true` (js/cards.js; 1.26.0 writes them only from tests and imports)
 // One field per group means concurrent colour changes to different groups both survive; for the
 // same field the later stamp wins, as for items. Field names allow only letters, digits and `_`,
 // so the group name is hashed into the field name (colorField) and carried in the value.
@@ -954,6 +969,9 @@ function acceptableSetting(op) {
   if (op.f.startsWith(COLOR_PREFIX)) {
     return op.v === null || (isObj(op.v) && isGroupName(op.v.name) && isSwatchKey(op.v.swatch) && colorField(op.v.name) === op.f);
   }
+  // A card (js/cards.js): any plain JSON is kept, as for `repeat`. A value this version can't use
+  // isn't listed (listCards), and is never skipped: a skipped op never comes back.
+  if (op.f.startsWith(CARD_PREFIX)) return true;
   return true; // a shared setting a newer version added: kept, not used here
 }
 
@@ -969,9 +987,11 @@ export function slotOf(value) {
 }
 
 /**
- * The shared settings in the record: { defaultCurrency?, groupColors, groupSlots? }. Cleared or bad
+ * The shared settings in the record: { defaultCurrency?, groupColors, groupSlots?, cards? }. Cleared or bad
  * fields are skipped. groupSlots (name → slot) is there only when a colour value carries a slot
  * (slotOf); the values themselves, with any keys this version doesn't use, stay in the record.
+ * cards (id → { name, colour, cut, due }, js/cards.js cardMap) is there only when the record has a
+ * live card; deleted and unusable ones are left out.
  */
 export function settingsFromRecord(record) {
   const out = {};
@@ -986,6 +1006,8 @@ export function settingsFromRecord(record) {
     }
   }
   if (Object.keys(slots).length) out.groupSlots = slots;
+  const cards = cardMap(record);
+  if (Object.keys(cards).length) out.cards = cards;
   return out;
 }
 
@@ -1068,6 +1090,34 @@ export function settingsOps(replica, change, { replaceColors, keepMatching, ...o
   return sync.setFields(replica, SETTINGS_ID, fields, opts);
 }
 
+/**
+ * Ops that write card `id` ({ name, colour?, cut?, due? }, cleaned by js/cards.js cardValue) into the
+ * settings record: setFields on that record only, never a record of its own and never `del`. Throws
+ * for an id that can't be a card id (a dash, `cash`, over 59 characters) or a card without a name,
+ * so no op with a field name another version refuses is ever made. An unchanged card makes none.
+ */
+export function cardOps(replica, id, card, opts) {
+  const field = cardFieldName(id);
+  if (!field) throw new Error('Storage: not a card id');
+  const value = cardValue(card);
+  if (!value) throw new Error('Storage: a card needs a name');
+  return sync.setFields(replica, SETTINGS_ID, { [field]: value }, opts);
+}
+
+/**
+ * Ops that delete card `id`: its value with `gone: true` (js/cards.js cardTombstone), so a device
+ * that hasn't seen the delete can't bring the card back. A missing or already deleted card makes none.
+ * Items that name the card keep their `pay`; how they read is for the screens to say.
+ */
+export function removeCardOps(replica, id, opts) {
+  const field = cardFieldName(id);
+  if (!field) throw new Error('Storage: not a card id');
+  const cur = replica.records.get(SETTINGS_ID)?.fields?.[field];
+  const p = parseCardValue(cur);
+  if (!p || p.gone) return [];
+  return sync.setFields(replica, SETTINGS_ID, { [field]: cardTombstone(cur) }, opts);
+}
+
 /** The explicitly stored shared settings in this device's settings store (its key → value rows). */
 export function storedSharedSettings(rows) {
   const out = {};
@@ -1108,6 +1158,7 @@ export function effectiveSettings(local, record) {
   if (cur) out.defaultCurrency = cur;
   out.groupColors = { ...cleanColors(autoColors), ...shared.groupColors };
   if (shared.groupSlots) out.groupSlots = shared.groupSlots;
+  if (shared.cards) out.cards = shared.cards;
   return out;
 }
 
@@ -1225,6 +1276,17 @@ export async function saveColourValues(fields) {
     if (!ok) throw new Error('Storage: not a colour value');
   }
   return commit((r) => sync.setFields(r, SETTINGS_ID, fields), { ids: [SETTINGS_ID] });
+}
+
+/**
+ * Write a card (cardOps) or, with `card` null, delete it (removeCardOps), as ops on the shared
+ * settings record that sync like any setting. Only once settings are shared; before that it throws
+ * and writes nothing. No screen calls this in 1.26.0: only the tests. Returns the ops written.
+ */
+export async function saveCard(id, card) {
+  await open();
+  if (!settingsShared) throw new Error('Storage: cards need shared settings');
+  return commit((r) => (card === null ? removeCardOps(r, id) : cardOps(r, id, card)), { ids: [SETTINGS_ID] });
 }
 
 async function readSettings(store) {
