@@ -3,7 +3,8 @@
 // fixed clock (18 November 2026) against a throwaway database, with index.html's markup. Run it at
 // 320, 360 and 393px, with and without reduced motion emulated, and in English, the pseudo-locale
 // (?lang=xx) and zh-TW (?lang=zh-TW). Expected words come from t(), so every language checks the same
-// things. The tests run in order, as one session in the app: later ones add items.
+// things. The tests run in order, as one session in the app: later ones add items. 1.25.1 adds the
+// Name field's checks: no suggestion list, and the silent preset fill.
 
 import * as storage from '../js/storage.js';
 import { overlays, pressBack } from '../js/overlays.js';
@@ -292,6 +293,83 @@ test('a known service preselects its default group and opens More details by its
   await tick(30);
   eq(select().value, NEW_GROUP, 'New group… chosen: kept');
   assert(!nameField().hidden, 'with its field');
+  await closeSheets();
+});
+
+// 1.25.1: Name is typed by hand. The datalist of service names (drawn by the browser over a phone's
+// keyboard) is gone; a typed known name still fills the domain and group silently.
+const noList = (where) => {
+  const n = f().name;
+  eq([n.hasAttribute('list'), n.list, n.autocomplete], [false, null, 'off'], `${where}: Name has no list and autocomplete off`);
+  eq($$('datalist').length, 0, `${where}: no datalist in the page`);
+};
+// Anything that could open over the keyboard: a dialog, a popover, a listbox or menu that shows.
+const openThings = () => [
+  ...$$('dialog[open]').map((d) => `dialog#${d.id}`),
+  ...$$(':popover-open').map((p) => `popover#${p.id}`),
+  ...$$('[role="listbox"], [role="menu"], [role="combobox"]').filter(shown).map((el) => `${el.getAttribute('role')}#${el.id}`),
+];
+/** Type `s` into Name one character at a time, as a keyboard does. */
+const typeName = (s) => { for (let i = 1; i <= s.length; i++) setValue('name', s.slice(0, i)); };
+
+test('Name is typed by hand: no suggestion list, autocomplete off; a known name fills silently, any other opens nothing', async () => {
+  await openAdd();
+  await pickKind('expense');
+  noList('adding an expense');
+  f().name.focus();
+  const before = openThings();
+  eq(before, ['dialog#sub-dialog'], 'only the sheet is open');
+  typeName('Corner cafe');
+  await tick(30);
+  eq(openThings(), before, 'a name that is no service opens nothing');
+  eq(overlays.ids(), ['sub-dialog'], 'nothing new on the overlay stack');
+  eq(more().getAttribute('aria-expanded'), 'false', 'More details stays folded');
+  eq([f().domain.value, select().value], ['', ''], 'no domain, Uncategorised');
+  eq(document.activeElement, f().name, 'focus stays on Name');
+
+  setValue('name', '');
+  typeName('  net FLIX ');
+  await tick(30);
+  eq(openThings(), before, 'a known name opens nothing either');
+  eq([f().domain.value, select().value], ['netflix.com', t('group.preset.entertainment')], 'case and spacing ignored: the preset fills');
+  eq(more().getAttribute('aria-expanded'), 'true', 'More details opens by itself, as before');
+  eq(document.activeElement, f().name, 'focus still on Name');
+  noList('after typing');
+  await closeSheets();
+});
+
+test('a group picked by hand before typing a known name survives it and is saved', async () => {
+  await openAdd();
+  await pickKind('expense');
+  more().click();
+  choose('Zoo club');
+  typeName('Spotify');
+  setValue('price', '100');
+  setValue('nextRenewal', '2026-12-01');
+  await tick(30);
+  eq([f().domain.value, select().value], ['spotify.com', 'Zoo club'], 'the domain fills; the hand-picked group stays');
+  await save();
+  const s = await byName('Spotify');
+  eq([s.domain, s.category], ['spotify.com', 'Zoo club'], 'saved with the hand-picked group');
+});
+
+test('income and editing: no list; a known income name fills nothing', async () => {
+  await openAdd();
+  await pickKind('income');
+  noList('adding income');
+  f().name.focus();
+  typeName('Netflix');
+  await tick(30);
+  eq(openThings(), ['dialog#sub-dialog'], 'income: nothing opens');
+  eq([f().domain.value, select().value], ['', ''], 'income: no preset fill');
+  setValue('price', '50');
+  setValue('nextRenewal', '2026-12-01');
+  await save();
+  const inc = (await all()).find((s) => s.name === 'Netflix' && s.type === 'income');
+  eq([inc?.domain, inc?.category], ['', ''], 'income saved with no domain or category');
+  await openEdit('e-netflix');
+  noList('editing');
+  eq(f().name.value, 'Netflix', 'the edited name, as stored');
   await closeSheets();
 });
 

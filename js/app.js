@@ -2,7 +2,7 @@ import * as storage from './storage.js';
 import { deliverFile } from './files.js';
 import { isNative, platformName, plugin, setStatusBarStyle } from './platform.js';
 import { overlays, createBackHandler, setBackHandler, pressBack } from './overlays.js';
-import { SERVICES, DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
+import { DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
@@ -1733,7 +1733,6 @@ function mergeFormEdit(fromForm) {
 }
 
 function fillStaticLists() {
-  $('#service-names').innerHTML = SERVICES.map((s) => `<option value="${esc(s.name)}">`).join('');
   fillCurrencySelect(form.elements.currency, state.settings.defaultCurrency);
   fillCurrencySelect($('#set-currency'), state.settings.defaultCurrency);
 }
@@ -1838,8 +1837,6 @@ function syncFormMode() {
   if (once) clearErrors('nextRenewal');
 
   f.name.placeholder = t(income ? 'form.name.placeholder.income' : 'form.name.placeholder.expense');
-  // Service suggestions only make sense for expenses.
-  if (income) f.name.removeAttribute('list'); else f.name.setAttribute('list', 'service-names');
   f.notes.placeholder = t(income ? 'form.notes.placeholder.income' : 'form.notes.placeholder.expense');
   $('#label-price').textContent = t(income ? 'form.price.income' : 'form.price.expense');
   $('#label-cycle').textContent = t(income ? 'form.cycle.income' : 'form.cycle.expense');
@@ -1874,7 +1871,9 @@ function bindForm() {
 
   // Fill domain/category from a known service name, unless the user has typed their own. When adding,
   // a field filled that way is under More details, so it opens by itself to show it (as it opens for
-  // an edited item with a value there). Only opens, never folds; open or closed isn't saved.
+  // an edited item with a value there). Only opens, never folds; open or closed isn't saved. Name is
+  // typed by hand: it has no suggestion list (no datalist, autocomplete off), so nothing opens over
+  // a phone's keyboard; a typed known name fills these silently.
   const suggestFromName = () => {
     const svc = state.formType === 'income' ? null : matchService(f.name.value);
     const before = [f.domain.value, f.category.value];
