@@ -7,6 +7,7 @@
 
 import { generateKey, parseKey } from './crypto.js';
 import { normalizeRelayUrl, DEFAULT_RELAY_URL } from './sync.js';
+import { listCards, payOf } from './cards.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -78,6 +79,23 @@ export function initSyncScreen({ engine, vault, ui, unavailable = '', store = nu
     }
   };
   showFormat();
+
+  // Cards groundwork (1.26.0), read-only: how many live cards the household has, how many items say
+  // how they're paid, and the version notes of the other devices (version and data format only;
+  // no ids, keys or field names).
+  const showCards = async () => {
+    const out = $('#dev-cards');
+    if (!store || !out) return;
+    try {
+      const [rec, items, sync] = await Promise.all([store.getSettingsRecord(), store.getAll(), store.syncState()]);
+      const own = sync ? store.versionNoteField(sync.deviceId) : null;
+      const others = store.versionNotes(rec).filter((n) => n.field !== own).map((n) => `${n.v}/fmt ${n.fmt}`);
+      out.textContent = `cards ${listCards(rec).length} · items with pay ${items.filter((s) => payOf(s) !== '').length} · other devices: ${others.length ? others.join(', ') : 'none'}`;
+    } catch (err) {
+      out.textContent = `Could not read: ${err.message}`;
+    }
+  };
+  showCards();
 
   if (!engine) {
     $('#dev-status').textContent = unavailable || 'Sync is not available on this device.';
