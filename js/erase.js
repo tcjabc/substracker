@@ -55,6 +55,14 @@ export function staleExports(files, now) {
     .map((f) => f.name);
 }
 
+/**
+ * How long the delete may be held up before the person is told another window holds the data
+ * (runErase onBlocked). A delete is often held up for a moment by this page's own connection: closed
+ * just before, it only goes once its last read has finished (Android WebView, every erase). That is
+ * never said; only a delete still held up after this long is.
+ */
+export const BLOCKED_NOTICE_MS = 1000;
+
 /** The steps, in order. runErase runs them in this order and no other. */
 export const ERASE_STEPS = Object.freeze(['stop', 'database', 'secure', 'prefs', 'logos', 'exports', 'reload']);
 
@@ -69,18 +77,35 @@ const REPORTED = ['secure', 'prefs', 'logos'];
  *                           not be deleted; while another tab or window holds it, calls onBlocked and waits.
  *   secure(), prefs(), logos(), exports()   best effort, in this order
  *   reload()                open the app again, as a fresh first launch
+ * The delete being held up is passed on as `onBlocked()` only once it has lasted `blockedNoticeMs`
+ * (BLOCKED_NOTICE_MS), and at most once; a delete that ends sooner never calls it. When it was
+ * called, `onUnblocked()` follows as soon as the delete ends, before anything else runs.
  * `beforeReload(result)` runs between the last step and the reload (the "could not be reset" note).
  * Resolves { outcome, failed }: 'failed' when the database was not deleted (nothing was erased, no
  * reload, and it may simply run again), else 'erased' or 'partial' (failed names the steps).
  */
-export async function runErase(steps, { onBlocked = () => {}, beforeReload = async () => {} } = {}) {
+export async function runErase(steps, {
+  onBlocked = () => {}, onUnblocked = () => {}, beforeReload = async () => {}, blockedNoticeMs = BLOCKED_NOTICE_MS,
+} = {}) {
   try { steps.stop?.(); } catch { /* stopping is best effort: this device can't sync anyway (eraseBlock) */ }
   if (typeof steps.database !== 'function') return { outcome: 'failed', failed: ['database'] };
+  let timer = null;
+  let told = false;
+  const heldUp = () => {
+    if (told || timer !== null) return;
+    timer = setTimeout(() => { timer = null; told = true; try { onBlocked(); } catch { /* the wait goes on */ } }, blockedNoticeMs);
+  };
+  let deleted = true;
   try {
-    await steps.database({ onBlocked });
+    await steps.database({ onBlocked: heldUp });
   } catch {
-    return { outcome: 'failed', failed: ['database'] };
+    deleted = false;
   }
+  clearTimeout(timer);
+  timer = null;
+  if (told) { try { onUnblocked(); } catch { /* the erase goes on */ } }
+  told = true; // a late blocked event, after the delete ended, is never passed on
+  if (!deleted) return { outcome: 'failed', failed: ['database'] };
   const failed = [];
   for (const name of ['secure', 'prefs', 'logos', 'exports']) {
     try { await steps[name]?.(); } catch { if (REPORTED.includes(name)) failed.push(name); }

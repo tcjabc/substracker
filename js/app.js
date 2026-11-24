@@ -2386,10 +2386,16 @@ function bindErase() {
     $(FOCUS[name], dlg)?.focus(); // the least destructive choice first
   }
 
+  // The busy line is a polite live region: its words are written only when they change, so "Erasing…"
+  // is said once, and the other-window words only when the delete is really held up (runErase).
+  function say(message) {
+    if (busyLine.textContent !== message) busyLine.textContent = message;
+    busyLine.hidden = !message;
+  }
+
   function setBusy(message) {
     busy = Boolean(message);
-    busyLine.textContent = message;
-    busyLine.hidden = !message;
+    say(message);
     for (const b of holds) b.disabled = busy;
     go.disabled = busy || !slider.confirmed;
   }
@@ -2422,7 +2428,8 @@ function bindErase() {
       exports: () => removeCachedExports(),
       reload: eraseReload,
     }, {
-      onBlocked: () => setBusy(t('toast.blocked')), // another window holds the data: wait, no reload
+      onBlocked: () => setBusy(t('toast.blocked')), // another window still holds the data after a moment: wait, no reload
+      onUnblocked: () => say(''), // it let go: those words go, and nothing can be pressed still
       beforeReload: async (r) => {
         tellOtherTabs('erased');
         if (r.outcome !== 'partial') return;

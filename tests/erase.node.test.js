@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   eraseBlock, ownPrefKeys, staleExports, runErase, ERASE_STEPS, PREF_PREFIX, LOGO_CACHE, EXPORT_MAX_AGE_MS,
+  BLOCKED_NOTICE_MS,
 } from '../js/erase.js';
 import { LANG_PREF } from '../js/i18n.js';
 
@@ -107,11 +108,66 @@ test('runErase: the database not deleted → failed, nothing after it runs, no r
   assert.equal((await runErase({ stop })).outcome, 'failed', 'no database step: never "erased"');
 });
 
-test('runErase: blocked → onBlocked, then it waits for the delete; it reloads only once deleted', async () => {
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Fake steps whose delete reports "blocked" at each of `blockedAt` (ms), then settles at `doneAt` (rejecting with `fails`). */
+function heldUpSteps({ blockedAt = [0], doneAt, fails = false }) {
+  const { steps, log } = fakeSteps();
+  steps.database = ({ onBlocked }) => new Promise((resolve, reject) => {
+    log.push('database');
+    for (const ms of blockedAt) { if (ms === 0) onBlocked(); else setTimeout(onBlocked, ms); }
+    setTimeout(() => { log.push('deleted'); if (fails) reject(new Error('delete failed')); else resolve(); }, doneAt);
+  });
+  return { steps, log };
+}
+
+test('runErase: a delete held up only for a moment (blocked at once, deleted at 100 ms) never says so, then reloads', async () => {
+  assert.equal(BLOCKED_NOTICE_MS, 1000, 'about a second');
+  const { steps, log } = heldUpSteps({ blockedAt: [0, 40], doneAt: 100 });
+  const said = [];
+  const out = await runErase(steps, { onBlocked: () => said.push('blocked'), onUnblocked: () => said.push('unblocked') });
+  assert.deepEqual(out, { outcome: 'erased', failed: [] });
+  assert.equal(log.at(-1), 'reload');
+  await wait(BLOCKED_NOTICE_MS + 100);
+  assert.deepEqual(said, [], 'never said, not even later');
+  const late = heldUpSteps({ blockedAt: [150], doneAt: 100 }); // a stray blocked event after the delete
+  const lateSaid = [];
+  await runErase(late.steps, { onBlocked: () => lateSaid.push('blocked'), blockedNoticeMs: 20 });
+  await wait(100);
+  assert.deepEqual(lateSaid, [], 'a blocked event after the delete is never passed on');
+});
+
+test('runErase: a delete still held up after the delay → onBlocked once, no reload while waiting, then onUnblocked before anything else', async () => {
+  const { steps, log } = heldUpSteps({ blockedAt: [0, 10], doneAt: 200 });
+  const run = runErase(steps, {
+    blockedNoticeMs: 50, onBlocked: () => log.push('said blocked'), onUnblocked: () => log.push('said unblocked'),
+  });
+  await wait(25);
+  assert.ok(!log.includes('said blocked'), 'not yet: under the delay');
+  await wait(75);
+  assert.equal(log.filter((x) => x === 'said blocked').length, 1, 'said once the delay has passed, once');
+  assert.ok(!log.includes('reload'), 'no reload while it waits');
+  assert.deepEqual(await run, { outcome: 'erased', failed: [] });
+  assert.deepEqual(log, ['stop', 'database', 'said blocked', 'deleted', 'said unblocked', 'secure', 'prefs', 'logos', 'exports', 'reload']);
+});
+
+test('runErase: a held-up delete that then fails → failed, no reload; the words go if they were said', async () => {
+  const quick = heldUpSteps({ doneAt: 100, fails: true });
+  const saidQuick = [];
+  assert.equal((await runErase(quick.steps, { onBlocked: () => saidQuick.push('b'), onUnblocked: () => saidQuick.push('u') })).outcome, 'failed');
+  assert.deepEqual(saidQuick, [], 'failed before the delay: never said');
+  assert.ok(!quick.log.includes('reload'));
+  const slow = heldUpSteps({ doneAt: 150, fails: true });
+  const saidSlow = [];
+  assert.deepEqual(await runErase(slow.steps, { blockedNoticeMs: 50, onBlocked: () => saidSlow.push('b'), onUnblocked: () => saidSlow.push('u') }),
+    { outcome: 'failed', failed: ['database'] });
+  assert.deepEqual(saidSlow, ['b', 'u']);
+  assert.ok(!slow.log.includes('reload'), 'nothing after the database step');
+});
+
+test('runErase: it waits for the delete; it reloads only once deleted', async () => {
   const { steps, log } = fakeSteps({ blocked: true });
-  let blocked = 0;
-  const out = await runErase(steps, { onBlocked: () => { blocked++; } });
-  assert.equal(blocked, 1);
+  const out = await runErase(steps);
   assert.equal(out.outcome, 'erased');
   assert.deepEqual(log.slice(0, 3), ['stop', 'database', 'waited']);
   let release;

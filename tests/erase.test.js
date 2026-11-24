@@ -11,7 +11,7 @@ import { overlays, pressBack } from '../js/overlays.js';
 import { t } from '../js/i18n.js';
 import { backupLabel } from '../js/util.js';
 import { generateKey } from '../js/crypto.js';
-import { ERASE_CHANNEL, LOGO_CACHE } from '../js/erase.js';
+import { ERASE_CHANNEL, LOGO_CACHE, BLOCKED_NOTICE_MS, runErase } from '../js/erase.js';
 
 const results = [];
 const PREFIX = 'substracker-test-erase-';
@@ -60,6 +60,30 @@ function failDeletes() {
     return req;
   };
   return () => { delete indexedDB.deleteDatabase; };
+}
+
+/**
+ * Hold up the next indexedDB.deleteDatabase calls: "blocked" at once (as this page's own connection,
+ * still closing, does on Android), then fail at `ms`, until restored. Nothing is deleted.
+ */
+function blockThenFailDeletes(ms) {
+  indexedDB.deleteDatabase = () => {
+    const req = {};
+    setTimeout(() => req.onblocked?.(), 0);
+    setTimeout(() => { req.error = new DOMException('test: delete failed', 'UnknownError'); req.onerror?.(); }, ms);
+    return req;
+  };
+  return () => { delete indexedDB.deleteDatabase; };
+}
+
+/** Every text the erase sheet's busy line (a polite live region) is given, in order, until stopped. */
+function recordBusy() {
+  const line = $('#erase-busy');
+  const said = [];
+  const note = (records) => { for (const r of records) if (r.type === 'childList' || r.type === 'characterData') said.push(text(line)); };
+  const obs = new MutationObserver(note);
+  obs.observe(line, { childList: true, characterData: true, subtree: true });
+  return { said, stop: () => { note(obs.takeRecords()); obs.disconnect(); } };
 }
 
 /** A connection with no versionchange handler, as an old tab that never lets go. */
@@ -129,6 +153,29 @@ stest('blocked: a connection that won\'t let go makes the delete wait (onBlocked
   await run;
   assert(deleted, 'deleted once it closed');
   assert(!(await dbNames()).includes(c), 'gone');
+});
+
+stest('a delete held up only for a moment (blocked at once, let go 100 ms later): runErase never says so, and reloads', async () => {
+  const h = `${PREFIX}h-${stamp}`;
+  created.push(h);
+  storage.useDatabase(h);
+  await storage.save(item('h1'));
+  const raw = await holdOpen(h);
+  let rawBlocked = 0;
+  const said = [];
+  let reloaded = 0;
+  const run = runErase({
+    database: ({ onBlocked }) => storage.eraseDatabase({ onBlocked: () => { rawBlocked++; onBlocked(); } }),
+    reload: () => { reloaded++; },
+  }, { onBlocked: () => said.push('blocked'), onUnblocked: () => said.push('unblocked') });
+  await until(() => rawBlocked > 0, 'the delete is blocked');
+  await tick(100);
+  raw.close();
+  eq((await run).outcome, 'erased', 'erased');
+  await tick(BLOCKED_NOTICE_MS + 100);
+  eq(said, [], 'never said');
+  eq(reloaded, 1, 'reloaded');
+  assert(!(await dbNames()).includes(h), 'gone');
 });
 
 stest('a delete that fails erases nothing: the guard lifts, every item is there, and the same erase then runs', async () => {
@@ -438,6 +485,23 @@ test('an erase whose delete fails: "Nothing was erased", the sheet stays, every 
   await closeSheets();
 });
 
+test('an erase whose delete is held up only for a moment never shows the other-window words: "Erasing…" is said once', async () => {
+  await toStep2();
+  await confirmSlide();
+  const restore = blockThenFailDeletes(100);
+  const busy = recordBusy();
+  try {
+    $('#erase-go').click();
+    await until(() => text($('#erase-error')) === t('erase.failed'), 'the delete settles');
+    await tick(BLOCKED_NOTICE_MS + 100);
+  } finally { restore(); busy.stop(); }
+  eq(busy.said, [t('erase.busy'), ''], '"Erasing…" once, then cleared: never the other-window words');
+  assert($('#erase-busy').hidden, 'not busy');
+  assert(!$('#erase-go').disabled, 'Erase works again');
+  eq((await storage.getAll()).length, SEED.length, 'every item is there');
+  await closeSheets();
+});
+
 test('Erase: waits while another window holds the data (Back and Cancel do nothing), removes only this app\'s database, keys and logo cache, says what it couldn\'t reset, opens again', async () => {
   heard.length = 0;
   for (const name of [LOGO_CACHE, 'substracker-shell-erase-test', 'other-site-erase-test']) await (await caches.open(name)).put('/erase-test', new Response('x'));
@@ -447,10 +511,15 @@ test('Erase: waits while another window holds the data (Back and Cancel do nothi
   Storage.prototype.removeItem = function (k) { if (k === 'substracker.eraseSentinel') throw new Error('test: blocked'); return removeItem.call(this, k); };
   const holder = await holdOpen(dbName);
   const before = reloads;
+  let busy = null;
   try {
     await toStep2();
     await confirmSlide();
+    busy = recordBusy();
     $('#erase-go').click();
+    await tick(BLOCKED_NOTICE_MS * 0.6);
+    eq(text($('#erase-busy')), t('erase.busy'), 'held up, but not for long yet: still "Erasing…"');
+    eq(reloads, before, 'no reload');
     await until(() => text($('#erase-busy')) === t('toast.blocked'), 'waiting for the other window');
     assert(!$('#erase-busy').hidden, 'said');
     assert($('#erase-confirm-cancel').disabled && $('#erase-back').disabled && $('[data-erase-close]').disabled && $('#erase-go').disabled, 'nothing to press');
@@ -461,10 +530,15 @@ test('Erase: waits while another window holds the data (Back and Cancel do nothi
     assert(storage.wasErased(), 'storage refuses meanwhile');
     holder.close();
     await until(() => isOpen($('#confirm-dialog')) && text($('#confirm-message')) === t('erase.partial'), 'some settings could not be reset');
+    eq(text($('#erase-busy')), '', 'the other-window words went once it let go');
+    assert($('#erase-confirm-cancel').disabled && $('#erase-go').disabled, 'and nothing can be pressed still');
     eq(reloads, before, 'the reload waits for OK');
     confirmButton(t('common.ok')).click();
     await until(() => reloads === before + 1, 'opens again');
+    busy.stop();
+    eq(busy.said, [t('erase.busy'), t('toast.blocked'), ''], '"Erasing…" once, the other-window words once, then cleared');
   } finally {
+    busy?.stop();
     Storage.prototype.removeItem = removeItem;
     try { holder.close(); } catch { /* closed */ }
   }
