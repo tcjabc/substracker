@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek Budget erase tests</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>
+    /* Test page only; colours and spacing come from the app's tokens. */
+    .t-wrap { padding: var(--space-4); max-width: 48rem; margin: 0 auto; }
+    .t-summary { font-size: var(--text-md); margin: var(--space-3) 0; }
+    .t-list { list-style: none; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
+    .t-pass { color: var(--positive); }
+    .t-fail { color: var(--danger); }
+    .t-detail { color: var(--text-muted); white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div id="app-host"></div>
+  <main class="t-wrap" id="t-report" hidden>
+    <h1>Erase data on this device tests</h1>
+    <p class="t-detail">Erase data on this device (1.28.0): storage first (only its own database goes while another <code>substracker-test-erase-*</code> database survives, nothing reopens it, a blocked delete waits, a failed delete erases nothing and runs again, only the <code>substracker.</code> keys go, and what is left equals a fresh first launch apart from the device id), then the app with index.html's markup: Settings → This device, refused while sync is on, the backup step and its answers, the locked slide, Back on each step, focus, Reduce motion, both themes, another tab's erase, a failed erase, and a blocked, partly failing erase that removes only this app's database, keys and logo cache. Throwaway <code>substracker-test-erase-*</code> databases; the app's own data is not touched, and the page's own <code>substracker.</code> keys are put back afterwards. No request leaves the page. Run it at 320, 360 and 393px, with and without reduced motion emulated, in English, the pseudo-locale (<code>?lang=xx</code>) and Traditional Chinese (<code>?lang=zh-TW</code>).</p>
+    <p class="t-summary" id="summary">Running…</p>
+    <ul class="t-list" id="results"></ul>
+  </main>
+  <script type="module" src="erase.test.js"></script>
+</body>
+</html>
