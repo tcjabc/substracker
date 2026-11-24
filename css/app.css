@@ -1582,6 +1582,9 @@ dialog::backdrop { background: var(--scrim); }
   padding: var(--space-3) var(--space-4) calc(var(--space-3) + var(--safe-bottom));
   border-top: var(--border-width) solid var(--border);
 }
+/* A foot with three actions: the last one moves to a line of its own when they don't fit (long words, narrow phones). */
+.sheet-foot-wrap { flex-wrap: wrap; row-gap: var(--space-2); }
+.sheet-foot-wrap > :last-child { margin-inline-start: auto; }
 .spacer { flex: 1; }
 @media (min-width: 640px) {
   .sheet { margin: auto; border-radius: var(--radius-xl); max-height: 88vh; }
