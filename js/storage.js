@@ -62,11 +62,17 @@ let appVersion = null; // the app's version, for this device's version note (set
 let migrationFault = null; // tests only (setMigrationFault): the step of migrateFormat to fail at
 let onBlocked = () => {};
 let onEnqueued = () => {};
+// Erase data on this device (eraseDatabase), or another tab's erase (markErased): from then on open()
+// refuses, so no code still running in this page (a sync, a save, a colour repair) can create a new
+// database behind the erase. Only a new page (the reload that follows) opens one again.
+let erased = false;
+const ERASED = 'Storage: the data on this device was erased. Open the app again.';
 
 /** Point the module at another database (tests use a throwaway one). */
 export function useDatabase(name) {
   const old = dbPromise;
   dbPromise = null;
+  erased = false;
   dbName = name;
   source = RECORDS;
   migration = null;
@@ -135,6 +141,7 @@ function openRaw() {
 
 /** The open database, with the one-time migrations done. Every public function goes through this. */
 function open() {
+  if (erased) return Promise.reject(new Error(ERASED));
   if (dbPromise) return dbPromise;
   dbPromise = openRaw().then(async (db) => { await migrate(db); return db; });
   dbPromise.catch(() => { dbPromise = null; });
@@ -1437,6 +1444,71 @@ export function getPref(name) {
 export function setPref(name, value) {
   try { localStorage.setItem(PREF_PREFIX + name, value); } catch { /* private mode */ }
 }
+
+/**
+ * Erase data on this device (js/erase.js): remove every preference of this app, the language and the
+ * theme included: each key with the `substracker.` prefix, and only those (the origin may be shared
+ * with other sites; never localStorage.clear()). Returns how many were removed; throws if one is left.
+ */
+export function removeAllPrefs() {
+  let ls;
+  try { ls = globalThis.localStorage; } catch { return 0; } // storage blocked: nothing was kept
+  if (!ls) return 0;
+  const own = () => {
+    const keys = [];
+    for (let i = 0; i < ls.length; i++) { const k = ls.key(i); if (k?.startsWith(PREF_PREFIX)) keys.push(k); }
+    return keys;
+  };
+  const keys = own();
+  for (const k of keys) ls.removeItem(k);
+  if (own().length) throw new Error('Storage: some preferences could not be removed.');
+  return keys.length;
+}
+
+/* --------------------------------------------------------------------------
+   Erase data on this device (js/erase.js). The whole database is deleted: no record is written, no
+   op is made, so nothing can be sent to another device as a deletion. It names only this app's own
+   database (dbName), never another one on the origin.
+   -------------------------------------------------------------------------- */
+/**
+ * Guard storage, close this page's connection and delete the database. From the first line on,
+ * open() refuses (so in-flight code can't create a new database behind the erase). Resolves once it
+ * is deleted. While another tab or window holds it, `onBlocked` is called and the delete waits for
+ * it (it can't be cancelled). If the delete fails, nothing was erased: the guard is lifted, and the
+ * app goes on as before (it may run again).
+ */
+export async function eraseDatabase({ onBlocked: blocked = () => {} } = {}) {
+  erased = true;
+  const old = dbPromise;
+  dbPromise = null;
+  try { (await old)?.close(); } catch { /* it never opened: nothing to close */ }
+  try {
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.deleteDatabase(dbName);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error ?? new Error('Storage: the database could not be deleted.'));
+      req.onblocked = () => { try { blocked(); } catch (err) { console.error(err); } };
+    });
+  } catch (err) {
+    erased = false;
+    throw err;
+  }
+}
+
+/**
+ * Another open tab of this app is erasing (or `on` false: its erase failed and nothing was erased).
+ * While marked, open() refuses here too, and this page's connection is closed so the delete isn't held up.
+ */
+export function markErased(on = true) {
+  erased = Boolean(on);
+  if (!erased) return;
+  const old = dbPromise;
+  dbPromise = null;
+  old?.then((db) => db.close()).catch(() => {});
+}
+
+/** Whether this page's storage was erased (eraseDatabase or markErased) and refuses to open. */
+export const wasErased = () => erased;
 
 /** Ask the browser not to evict our data under storage pressure. Best effort, asked once per load. */
 let persistAsked = false;
