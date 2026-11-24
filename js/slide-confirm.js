@@ -38,10 +38,14 @@ export function slideKey(key, fraction) {
  * (role="slider"), [data-slide-label] and the fallback checkbox [data-slide-check].
  * `onChange(confirmed)` runs whenever the confirmation changes. Call reset() each time the
  * screen is shown: it clears the confirmation and starts the lock again.
+ * The words default to Import with AI's (ai.slide.*); another slider passes its own: `label`,
+ * `doneLabel` and `lockedLabel` on the track, and the thumb's aria-valuetext as `confirmedValue`,
+ * `lockedValue` and `notValue`.
  */
 export function createSlideConfirm(root, {
   onChange = () => {}, reduceMotion = () => false, lockMs = SLIDE_LOCK_MS, label = t('ai.slide.label'),
   doneLabel = t('ai.slide.done'), lockedLabel = t('ai.slide.locked'),
+  confirmedValue = t('ai.slide.value.confirmed'), lockedValue = t('ai.slide.value.locked'), notValue = t('ai.slide.value.not'),
 } = {}) {
   const track = root.querySelector('[data-slide-track]');
   const thumb = root.querySelector('[data-slide-thumb]');
@@ -64,7 +68,7 @@ export function createSlideConfirm(root, {
     root.classList.toggle('is-locked', locked);
     root.classList.toggle('is-done', confirmed);
     thumb.setAttribute('aria-disabled', String(locked || confirmed));
-    thumb.setAttribute('aria-valuetext', confirmed ? t('ai.slide.value.confirmed') : locked ? t('ai.slide.value.locked') : t('ai.slide.value.not'));
+    thumb.setAttribute('aria-valuetext', confirmed ? confirmedValue : locked ? lockedValue : notValue);
     text.textContent = confirmed ? doneLabel : locked ? lockedLabel : label;
     check.disabled = locked;
     check.checked = confirmed;
