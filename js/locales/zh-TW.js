@@ -808,4 +808,32 @@ export default {
   'ai.pay': '付款方式',
   'ai.pay.hint': '套用到所有支出列。可在下方個別更改。',
   'ai.pay.row': '第 {n} 筆的付款方式',
+
+  // Erase data on this device (1.28.0): Settings → This device and the erase sheet (js/app.js, js/erase.js)
+  'settings.device': '這台裝置',
+  'settings.erase': '清除這台裝置上的資料',
+  'settings.erase.hint': '將這台裝置重設為剛安裝 App 時的狀態。你的其他裝置會保留它們的資料。', // legal check
+  'erase.title': '清除這台裝置上的資料',
+  'erase.syncOn': '同步已開啟。請先在這台裝置上關閉同步，這樣清除的動作就絕不會傳送到你的其他裝置。',
+  'erase.syncUnknown': '無法確認同步是否開啟，因此沒有清除任何資料。請稍後再試一次。',
+  'erase.openSync': '前往同步設定',
+  'erase.counts': '這台裝置上有：{items}和 {cards}。',
+  'erase.cards.other': '{count} 張付款卡',
+  'erase.backup.hint': '選用。將你的 {items}和設定存成檔案，之後可以再匯入。',
+  'erase.backup.hintEmpty': '選用。這台裝置上沒有任何項目。',
+  'erase.ack.have': '我已經有備份',
+  'erase.ack.without': '不備份，繼續',
+  'erase.message': '只會從這台裝置移除所有項目、付款卡、群組顏色和設定。你的其他裝置會保留它們的資料。此動作無法復原。', // legal check
+  'erase.slide.label': '滑動以清除這台裝置上的資料',
+  'erase.slide.help': '拖曳到底，或使用方向鍵。稍等片刻後才會解鎖。',
+  'erase.slide.tick': '或勾選：清除這台裝置上的資料',
+  'erase.slide.done': '已確認 ✓',
+  'erase.slide.locked': '請先閱讀上方說明…',
+  'erase.slide.value.confirmed': '已確認',
+  'erase.slide.value.locked': '暫時鎖定',
+  'erase.slide.value.not': '未確認',
+  'erase.confirm': '清除',
+  'erase.busy': '正在清除…',
+  'erase.failed': '沒有清除任何資料。你可以再試一次。',
+  'erase.partial': '已清除。這台裝置上的部分設定無法重設。',
 };

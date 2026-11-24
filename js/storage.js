@@ -1510,6 +1510,9 @@ export function markErased(on = true) {
 /** Whether this page's storage was erased (eraseDatabase or markErased) and refuses to open. */
 export const wasErased = () => erased;
 
+/** The database this page uses (an erase in another tab names it, so a test page's is never confused with the app's). */
+export const databaseName = () => dbName;
+
 /** Ask the browser not to evict our data under storage pressure. Best effort, asked once per load. */
 let persistAsked = false;
 export async function requestPersistence() {

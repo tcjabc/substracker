@@ -55,6 +55,7 @@ const SHELL = [
   './js/import-ai-prompt.js',
   './js/import-ai-sheet.js',
   './js/slide-confirm.js',
+  './js/erase.js',
   './js/tab-pill.js',
   './js/swipe-nav.js',
   './js/wallet-math.js',

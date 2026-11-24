@@ -119,6 +119,9 @@ string that uses the term. Terms marked ⚠ are the ones I'm least sure about.
 | data | 資料 | |
 | storage | 儲存空間 | |
 | this device | 這台裝置 | |
+| other devices / your other devices | 其他裝置 / 你的其他裝置 | |
+| erase (data on this device) | 清除 | ⚠ 1.28.0: "Erase data on this device" → 清除這台裝置上的資料, as iOS's 清除所有內容和設定. Not 刪除, which is one item or card |
+| Open Sync (go to the Sync sheet) | 前往同步設定 | ⚠ Not 開啟同步, which reads as "turn sync on" (同步已開啟 = sync is on) |
 | save / saved | 儲存 / 已儲存 | |
 | delete / deleted | 刪除 / 已刪除 | |
 | cancel | 取消 | |

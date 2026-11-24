@@ -28,14 +28,16 @@ import { initLanguage, applyI18n, formatLocale, t, tHTML, LOCALES, getLangSettin
 import { dueSoon, WINDOWS, windowFrom, chipOnFrom, includeIncomeFrom } from './due-soon.js';
 import { createCalendar } from './calendar.js';
 import { WEEK_STARTS, weekStartFrom, resolveWeekStart, localeWeekStart } from './calendar-math.js';
-import { createKeyVault } from './secure-key.js';
+import { createKeyVault, nativeSecureStore } from './secure-key.js';
+import { eraseBlock, runErase, staleExports, LOGO_CACHE, ERASE_CHANNEL } from './erase.js';
+import { createSlideConfirm } from './slide-confirm.js';
 import { createYearChart } from './year-chart.js';
 import { rangeMonths, nowIndex, chartMonths } from './year-chart-math.js';
 import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight, shareText } from './donut-flat.js';
 import {
   CURRENCIES, localeCurrency, uid, esc, money, moneyParts, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom,
+  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom, backupLabel,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, undatedRecurring, incomeDue, undatedIncome, yearSummary,
@@ -210,6 +212,7 @@ async function init() {
   bindTabs();
   bindForm();
   bindSettings();
+  bindErase();
   bindGroupMerge();
   // Settings → Payment cards and the card sheet (1.27.0). A write reads the data again, so the
   // Wallet, the item sheet's options and the list all follow.
@@ -306,19 +309,27 @@ async function init() {
 /* --------------------------------------------------------------------------
    Sync (off until set up in Settings → Sync, or on the developer screen)
    -------------------------------------------------------------------------- */
+// The sync parts Erase data on this device needs ({ engine, vault, available }): it asks the vault
+// whether this device can sync, and stops the engine first. Null until startSync runs.
+let syncParts = null;
+
 async function startSync(unavailable) {
   let engine = null;
   // The household key: phone secure storage (Keystore/Keychain) where there is one, else IndexedDB.
   const vault = createKeyVault({ store: storage });
+  // For Erase data on this device: whether sync can run here, the vault to ask, and (below) the engine to stop.
+  syncParts = { engine: null, vault, available: !unavailable };
   if (!unavailable) {
     // Phones: move a key still in IndexedDB into secure storage (verified; a failure changes nothing).
     try { await vault.migrate(); } catch (err) { console.error(err); }
+    if (storage.wasErased()) return; // erased meanwhile: the app opens again as a fresh launch
     engine = createSyncEngine({
       store: { ...storage.syncStore, getConfig: vault.readConfig, setConfig: vault.setConfig, replaceWithRemote: vault.replaceWithRemote },
     });
     // Changes from other devices (items, the default currency, group colours): refresh the screens
     // the same way an import or edit does.
     engine.onRemoteChanges(() => reloadData({ remote: true }));
+    syncParts.engine = engine;
     engine.start().catch((err) => console.error(err)); // never blocks the app; failures show as status
   }
   let sheet = null;
@@ -2279,6 +2290,171 @@ function bindSettings() {
     deferredPrompt = null;
     $('#btn-install').hidden = true;
   });
+}
+
+/* --------------------------------------------------------------------------
+   Settings → This device → Erase data on this device (js/erase.js: the rules and the order)
+   -------------------------------------------------------------------------- */
+// Open the app again, as a fresh first launch: the address without ?dev=1 or ?lang=. Tests replace it
+// (the erase sheet's testReload), since a test page must stay where it is.
+const eraseReload = () => { const fn = $('#erase-dialog').testReload; if (fn) fn(); else location.replace('./'); };
+
+// Other open tabs of this app (web): told before the database goes, so none of them writes into a new
+// one, and told to open again once it has gone. A channel never hears its own messages, so this tab's
+// erase reaches only the others. Null where there's no BroadcastChannel (one tab only, as on a phone).
+const eraseChannel = (() => {
+  try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel(ERASE_CHANNEL) : null; } catch { return null; }
+})();
+eraseChannel?.addEventListener('message', (e) => {
+  const m = e.data;
+  if (!m || m.db !== storage.databaseName()) return;
+  if (m.type === 'erasing') { try { syncParts?.engine?.stop(); } catch { /* nothing to stop */ } storage.markErased(true); }
+  if (m.type === 'cancelled') storage.markErased(false);
+  if (m.type === 'erased') eraseReload();
+});
+const tellOtherTabs = (type) => { try { eraseChannel?.postMessage({ type, db: storage.databaseName() }); } catch { /* no other tabs to tell */ } };
+
+/** Android: the cached export files (js/files.js) older than 10 minutes. Failures are ignored. */
+async function removeCachedExports() {
+  const fs = plugin('Filesystem');
+  if (!fs) return;
+  const { files } = await fs.readdir({ path: '', directory: 'CACHE' });
+  for (const path of staleExports(files, Date.now())) {
+    try { await fs.deleteFile({ path, directory: 'CACHE' }); } catch { /* left for the system to clear */ }
+  }
+}
+
+/**
+ * The erase sheet: refused while this device can sync (with Open Sync); else step 1, what is here and
+ * an optional backup, answered either way ("I have a backup" / "Continue without one": the erase never
+ * follows an export by itself); step 2, this device only, the slide (locked at first) and Erase. Each
+ * step is on the overlay stack, so Android Back is its Cancel / Back; nothing closes while erasing.
+ */
+function bindErase() {
+  const dlg = $('#erase-dialog');
+  const busyLine = $('#erase-busy');
+  const errorLine = $('#erase-error');
+  const go = $('#erase-go');
+  const holds = ['[data-erase-close]', '#erase-confirm-cancel', '#erase-back'].map((s) => $(s, dlg));
+  let busy = false;
+  let view = '';
+  let backupSaved = false;
+
+  const slider = createSlideConfirm($('#erase-slide'), {
+    onChange: (on) => { go.disabled = busy || !on; },
+    reduceMotion: () => reduceEffects(),
+    label: t('erase.slide.label'), doneLabel: t('erase.slide.done'), lockedLabel: t('erase.slide.locked'),
+    confirmedValue: t('erase.slide.value.confirmed'), lockedValue: t('erase.slide.value.locked'), notValue: t('erase.slide.value.not'),
+  });
+
+  /** Why the erase can't run now (js/erase.js eraseBlock): asked when the sheet opens and again at Erase. */
+  async function block() {
+    if (!syncParts) return 'unknown'; // sync hasn't started yet: can't tell
+    let status = null;
+    let statusFailed = false;
+    if (syncParts.available) { try { status = await syncParts.vault.status(); } catch { statusFailed = true; } }
+    return eraseBlock({ syncAvailable: syncParts.available, status, statusFailed });
+  }
+
+  function renderBackup() {
+    const count = state.subs.length;
+    const items = t('common.items', { count });
+    const cards = t('erase.cards', { count: listCards(state.settingsRecord).length });
+    $('#erase-counts').textContent = t('erase.counts', { items, cards });
+    $('#erase-backup').textContent = backupLabel(count, backupSaved);
+    $('#erase-backup-hint').textContent = count ? t('erase.backup.hint', { items }) : t('erase.backup.hintEmpty');
+  }
+
+  const FOCUS = { blocked: '#erase-blocked-cancel', backup: '#erase-backup-cancel', confirm: '#erase-confirm-cancel' };
+  function show(name, reason = null) {
+    view = name;
+    for (const v of $$('[data-erase-view]', dlg)) v.hidden = v.dataset.eraseView !== name;
+    if (name === 'blocked') {
+      $('#erase-blocked-text').textContent = t(reason === 'sync' ? 'erase.syncOn' : 'erase.syncUnknown');
+      $('#erase-open-sync').hidden = reason !== 'sync';
+    }
+    if (name === 'backup') renderBackup();
+    if (name === 'confirm') {
+      // Back on step 2 goes to step 1, as its own Back button does; refused while erasing.
+      overlays.open('erase-step', { close: () => { if (!busy) show('backup'); }, isOpen: () => dialogOpen(dlg) && view === 'confirm' });
+      errorLine.textContent = '';
+      slider.reset(); // every time: confirmed again, after the lock
+      go.disabled = true;
+      requestAnimationFrame(() => slider.layout());
+    } else overlays.remove('erase-step');
+    $('.sheet-body', $(`[data-erase-view="${name}"]`, dlg))?.scrollTo?.(0, 0);
+    $(FOCUS[name], dlg)?.focus(); // the least destructive choice first
+  }
+
+  function setBusy(message) {
+    busy = Boolean(message);
+    busyLine.textContent = message;
+    busyLine.hidden = !message;
+    for (const b of holds) b.disabled = busy;
+    go.disabled = busy || !slider.confirmed;
+  }
+
+  const close = () => { if (!busy) closeDialog(dlg); };
+
+  async function open() {
+    if (busy || dialogOpen(dlg)) return;
+    backupSaved = false;
+    setBusy('');
+    const reason = await block();
+    openDialog(dlg, { back: close });
+    if (reason) show('blocked', reason); else show('backup');
+  }
+
+  async function erase() {
+    if (busy || !slider.confirmed) return;
+    errorLine.textContent = '';
+    setBusy(t('erase.busy'));
+    // Once more, now: sync may have been set up in another window since the sheet opened.
+    const reason = await block();
+    if (reason) { setBusy(''); show('blocked', reason); return; }
+    tellOtherTabs('erasing');
+    const result = await runErase({
+      stop: () => syncParts?.engine?.stop(),
+      database: ({ onBlocked }) => storage.eraseDatabase({ onBlocked }),
+      secure: () => nativeSecureStore()?.remove(), // web: none (the key was in the database)
+      prefs: () => storage.removeAllPrefs(),
+      logos: () => globalThis.caches?.delete(LOGO_CACHE),
+      exports: () => removeCachedExports(),
+      reload: eraseReload,
+    }, {
+      onBlocked: () => setBusy(t('toast.blocked')), // another window holds the data: wait, no reload
+      beforeReload: async (r) => {
+        tellOtherTabs('erased');
+        if (r.outcome !== 'partial') return;
+        await confirmDialog({ title: t('erase.title'), message: t('erase.partial'), actions: [{ label: t('common.ok'), value: true, kind: 'primary' }] });
+      },
+    });
+    if (result.outcome !== 'failed') return; // the app is opening again
+    tellOtherTabs('cancelled');
+    setBusy('');
+    errorLine.textContent = t('erase.failed'); // nothing was erased; Erase may run again
+  }
+
+  $('#btn-erase').addEventListener('click', open);
+  dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+  dlg.addEventListener('close', () => {
+    if (dialogOpen(dlg)) return; // opened again in between: this event belongs to the earlier visit
+    overlays.remove('erase-step');
+    slider.stop();
+    document.body.classList.remove('sheet-open');
+  });
+  $('[data-erase-close]', dlg).addEventListener('click', close);
+  for (const id of ['#erase-blocked-cancel', '#erase-backup-cancel', '#erase-confirm-cancel']) $(id, dlg).addEventListener('click', close);
+  $('#erase-open-sync').addEventListener('click', () => { closeDialog(dlg); $('#btn-sync').click(); });
+  $('#erase-backup').addEventListener('click', async () => {
+    const ok = (await exportData()) === true;
+    if (ok) backupSaved = true;
+    if (view === 'backup') renderBackup(); // and stays on this step
+  });
+  $('#erase-have-backup').addEventListener('click', () => show('confirm'));
+  $('#erase-no-backup').addEventListener('click', () => show('confirm'));
+  $('#erase-back').addEventListener('click', () => { if (!busy) show('backup'); });
+  go.addEventListener('click', erase);
 }
 
 /**

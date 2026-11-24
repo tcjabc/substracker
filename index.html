@@ -304,6 +304,16 @@
         </div>
         <p class="footnote" id="app-version"></p>
       </div>
+
+      <!-- Erase data on this device (js/erase.js, js/app.js bindErase): this device only, never the
+           household. The last group in Settings. -->
+      <div class="settings-group" id="device-settings">
+        <h2 class="group-title" data-i18n="settings.device">This device</h2>
+        <div class="panel panel-text">
+          <p data-i18n="settings.erase.hint">Resets this device as if the app were just installed. Your other devices keep their data.</p>
+          <button type="button" class="btn btn-danger" id="btn-erase" data-i18n="settings.erase">Erase data on this device</button>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -768,6 +778,82 @@
           <button type="button" class="btn btn-primary" id="ai-import" disabled data-i18n="ai.import">Import</button>
         </div>
       </div>
+    </form>
+  </dialog>
+
+  <!-- Erase data on this device (js/app.js bindErase, js/erase.js): refused while this device can
+       sync; then the counts and an optional backup with an explicit answer; then the slide to erase. -->
+  <dialog class="sheet" id="erase-dialog" aria-labelledby="erase-title">
+    <form id="erase-form" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h2 id="erase-title" data-i18n="erase.title">Erase data on this device</h2>
+        <button type="button" class="icon-btn" data-erase-close aria-label="Close" data-i18n-attr="aria-label:common.close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+
+      <!-- Refused: sync is on here (or its status couldn't be read) -->
+      <div class="sync-view" data-erase-view="blocked" hidden>
+        <div class="sheet-body">
+          <p class="sync-warning" id="erase-blocked-text" role="note" data-i18n="erase.syncOn">Sync is on. Turn off sync on this device first, so the erase is never sent to your other devices.</p>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="erase-blocked-cancel" data-i18n="common.cancel">Cancel</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-primary" id="erase-open-sync" data-i18n="erase.openSync">Open Sync</button>
+        </div>
+      </div>
+
+      <!-- 1. What is here, and a backup first (optional, answered either way) -->
+      <div class="sync-view" data-erase-view="backup" hidden>
+        <div class="sheet-body">
+          <p class="sync-text" id="erase-counts"></p>
+          <div class="ai-block">
+            <button type="button" class="btn" id="erase-backup" data-i18n="common.exportBackupFirst">Export a backup first</button>
+            <span class="setting-hint" id="erase-backup-hint"></span>
+          </div>
+          <div class="ai-block">
+            <button type="button" class="btn" id="erase-have-backup" data-i18n="erase.ack.have">I have a backup</button>
+            <button type="button" class="btn" id="erase-no-backup" data-i18n="erase.ack.without">Continue without one</button>
+          </div>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="erase-backup-cancel" data-i18n="common.cancel">Cancel</button>
+          <span class="spacer"></span>
+        </div>
+      </div>
+
+      <!-- 2. This device only; slide, then Erase -->
+      <div class="sync-view" data-erase-view="confirm" hidden>
+        <div class="sheet-body">
+          <p class="sync-warning" role="note" data-i18n="erase.message">Removes all items, cards, group colours and settings from this device only. Your other devices keep their data. This can't be undone.</p>
+          <div class="slide-confirm" id="erase-slide">
+            <div class="slide-track" data-slide-track>
+              <span class="slide-fill" aria-hidden="true"></span>
+              <span class="slide-label" data-slide-label aria-hidden="true" data-i18n="erase.slide.label">Slide to erase this device's data</span>
+              <span class="slide-thumb" data-slide-thumb role="slider" tabindex="0"
+                aria-label="Slide to erase this device's data" aria-describedby="erase-slide-help"
+                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-attr="aria-label:erase.slide.label">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+              </span>
+            </div>
+            <p class="setting-hint" id="erase-slide-help" data-i18n="erase.slide.help">Drag to the end, or use the arrow keys. It unlocks after a moment.</p>
+            <label class="sync-check-row">
+              <input type="checkbox" class="check" data-slide-check>
+              <span data-i18n="erase.slide.tick">Or tick: erase this device's data</span>
+            </label>
+          </div>
+          <p class="field-error" id="erase-error" role="alert"></p>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn" id="erase-confirm-cancel" data-i18n="common.cancel">Cancel</button>
+          <button type="button" class="btn" id="erase-back" data-i18n="common.back">Back</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn btn-danger" id="erase-go" disabled data-i18n="erase.confirm">Erase</button>
+        </div>
+      </div>
+
+      <p class="sync-busy" id="erase-busy" role="status" aria-live="polite" hidden></p>
     </form>
   </dialog>
 

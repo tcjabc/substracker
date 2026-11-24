@@ -832,4 +832,33 @@ export default {
   'ai.pay': 'Paid with',
   'ai.pay.hint': 'For every expense row. Change a row below to override it.',
   'ai.pay.row': 'Paid with, row {n}',
+
+  // Erase data on this device (1.28.0): Settings → This device and the erase sheet (js/app.js, js/erase.js)
+  'settings.device': 'This device',
+  'settings.erase': 'Erase data on this device',
+  'settings.erase.hint': 'Resets this device as if the app were just installed. Your other devices keep their data.', // legal check
+  'erase.title': 'Erase data on this device',
+  'erase.syncOn': 'Sync is on. Turn off sync on this device first, so the erase is never sent to your other devices.',
+  'erase.syncUnknown': "Couldn't check whether sync is on, so nothing was erased. Try again in a moment.",
+  'erase.openSync': 'Open Sync',
+  'erase.counts': 'On this device: {items} and {cards}.',
+  'erase.cards.one': '{count} payment card',
+  'erase.cards.other': '{count} payment cards',
+  'erase.backup.hint': 'Optional. Saves your {items} and settings as a file you can import again.',
+  'erase.backup.hintEmpty': 'Optional. There are no items on this device.',
+  'erase.ack.have': 'I have a backup',
+  'erase.ack.without': 'Continue without one',
+  'erase.message': "Removes all items, cards, group colours and settings from this device only. Your other devices keep their data. This can't be undone.", // legal check
+  'erase.slide.label': "Slide to erase this device's data",
+  'erase.slide.help': 'Drag to the end, or use the arrow keys. It unlocks after a moment.',
+  'erase.slide.tick': "Or tick: erase this device's data",
+  'erase.slide.done': 'Confirmed ✓',
+  'erase.slide.locked': 'Read the text above first…',
+  'erase.slide.value.confirmed': 'Confirmed',
+  'erase.slide.value.locked': 'Locked for a moment',
+  'erase.slide.value.not': 'Not confirmed',
+  'erase.confirm': 'Erase',
+  'erase.busy': 'Erasing…',
+  'erase.failed': 'Nothing was erased. You can try again.',
+  'erase.partial': 'Erased. Some settings on this device could not be reset.',
 };
