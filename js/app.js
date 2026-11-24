@@ -44,7 +44,7 @@ import {
   stripSummary, undatedItems, groupLabel,
 } from './insights-calc.js';
 
-const APP_VERSION = '1.27.0';
+const APP_VERSION = '1.28.0';
 // Format 5's first-launch step writes it into this device's version note (js/storage.js migrateFormat).
 storage.setAppVersion(APP_VERSION);
 
