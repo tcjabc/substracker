@@ -1460,7 +1460,7 @@ export function removeAllPrefs() {
     return keys;
   };
   const keys = own();
-  for (const k of keys) ls.removeItem(k);
+  for (const k of keys) { try { ls.removeItem(k); } catch { /* the others still go; checked below */ } }
   if (own().length) throw new Error('Storage: some preferences could not be removed.');
   return keys.length;
 }

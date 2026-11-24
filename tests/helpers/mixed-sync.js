@@ -19,6 +19,12 @@
 //                   (format 5), else importOps + settingsOps as 1.19.0's importAll
 //   formSave        app.js openForm, then readForm + mergeFormEdit (run from the version's app.js
 //                   source, with a stand-in form that behaves like the 1.19.0 page) + save
+//   turnOff         the Sync sheet's Turn off sync on this device (engine.disconnect)
+//   erase           app.js bindErase + js/erase.js (1.28.0): refused while the device can sync
+//                   (eraseBlock), engine.stop, storage.eraseDatabase (the whole store goes, no op is
+//                   made), then the fresh first launch the reload brings: a new device id, a new engine,
+//                   and format 5's step queuing only this device's version note (migrateFormat's
+//                   versionNoteOps). relaunch: a later launch's refreshVersionNote.
 //
 // Envelopes: crypto 'plain' (the default) seals an op as base64 JSON with the same envelope shape
 // ({ id, wall, c }) and runs the same checks crypto.open does after decrypting (a valid op, same
@@ -37,6 +43,8 @@ import { resolveNewGroup, NEW_GROUP } from '../../js/category-select.js';
 import { CATEGORY_MAX } from '../../js/import-ai.js';
 import * as cardsLib from '../../js/cards.js';
 import { nextCardColour, cardNameError } from '../../js/cards-ui.js';
+import { eraseBlock } from '../../js/erase.js';
+import { FORMAT } from '../../js/format-migration.js';
 
 export const RELAY_URL = 'https://relay.example';
 
@@ -309,12 +317,16 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
   const onRefused = (x) => s.refused.push(clone(x));
   const codec = household.crypto === 'real' ? realCrypto(mod, onRefused) : plainCrypto(mod, onRefused);
   const warnings = [];
-  const engine = mod.engine.createSyncEngine({
+  // A new engine on each launch: the first, and the one after an erase (the app's reload makes a new one).
+  let launches = 0;
+  const newEngine = () => mod.engine.createSyncEngine({
     store, transport, crypto: codec, env, timers: idleTimers(), now, random: () => 0.5,
     log: { warn: (m) => warnings.push(String(m)), error: (e) => warnings.push(String(e?.stack ?? e)) },
-    clientId: `client-${name}`,
+    clientId: `client-${name}${launches++ ? `-${launches}` : ''}`,
   });
+  let engine = newEngine();
   await engine.start();
+  let deviceId = name; // the device id in this device's stamps (s.clock.dev); a new one after an erase
 
   /** One local change, as storage's commit() makes it: ops applied to the replica and queued. */
   const local = (fn) => {
@@ -332,9 +344,47 @@ async function makeDevice(household, name, opts, { roomOf, unwrap, calls }) {
   const settings = () => storage.effectiveSettings(s.local, s.records.get(SETTINGS_ID));
 
   const device = {
-    name, version, label: mod.label, mod, s, engine, warnings, store, now,
+    name, version, label: mod.label, mod, s, warnings, store, now,
+    get engine() { return engine; },
+    get deviceId() { return deviceId; },
 
     sync: () => engine.syncNow(),
+    /** Settings → Sync → Turn off sync on this device: engine.disconnect (the key goes, the data stays). */
+    turnOff: () => engine.disconnect(),
+    /**
+     * Settings → This device → Erase data on this device, then the reload's fresh first launch.
+     * Refused (throws, nothing changes) while this device can sync, as js/erase.js eraseBlock refuses
+     * it. Otherwise: the engine stops; everything stored goes at once, as storage.eraseDatabase
+     * deletes the database (no record written, no op made, nothing pushed); the app opens again as a
+     * new install: new device id, new clock, empty outbox, cursor 0, no key, a new engine, and format
+     * 5's first-launch step queues this device's version note (migrateFormat's versionNoteOps), which
+     * waits in the outbox with no key to send it. Current version only. Returns the new device id.
+     */
+    async erase({ appVersion = '1.28.0' } = {}) {
+      if (version !== 'current') throw new Error(`${mod.label} has no erase`);
+      const status = { paired: Boolean(s.config.householdKey), enabled: Boolean(s.config.enabled), keyUnavailable: false };
+      if (eraseBlock({ syncAvailable: true, status })) throw new Error('Erase refused: this device can sync');
+      engine.stop();
+      // The database is deleted whole; preferences and the key go too.
+      deviceId = `${name}-new${launches}`;
+      s.clock = core.newClock(deviceId);
+      s.records = new Map();
+      s.outbox = new Map();
+      s.cursor = 0;
+      s.last = null;
+      s.local = {};
+      s.config = { relayUrl: '', householdKey: '', enabled: false };
+      // The reload: a fresh first launch.
+      engine = newEngine();
+      await engine.start();
+      device.relaunch({ appVersion });
+      return deviceId;
+    },
+    /** A launch's version note (migrateFormat on the first, refreshVersionNote later): queued only when due. */
+    relaunch({ appVersion = '1.28.0' } = {}) {
+      if (version !== 'current') throw new Error(`${mod.label}: relaunch follows the current storage only`);
+      return local((r) => storage.versionNoteOps(r, { deviceId, version: appVersion, fmt: FORMAT, now: now() }));
+    },
     offline() { net.up = false; env.online = false; },
     online() { net.up = true; env.online = true; },
     /** Join the household (a device made with joined: false): 'replace' or 'merge', as the Join screen does. */

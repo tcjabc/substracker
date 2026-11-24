@@ -6,3 +6,4 @@ import './mixed-format5.scenarios.js';
 import './mixed-groups.scenarios.js';
 import './mixed-cards.scenarios.js';
 import './mixed-cards-ui.scenarios.js';
+import './mixed-erase.scenarios.js';
