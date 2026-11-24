@@ -75,6 +75,8 @@ Migrations run once and are verified before the app switches over. Versions up t
 
 The app asks the browser for persistent storage (`navigator.storage.persist()`), so the data isn't cleared under storage pressure where the browser supports that.
 
+**Settings → This device → Erase data on this device** (1.28.0; `js/erase.js` for the rules and the order, `bindErase` in `js/app.js` for the sheet) resets this device to a fresh install, on Android, iOS and desktop alike. It reaches this device only: it is refused while this device can sync (in a household with its key readable: turn off sync first, so nothing is ever sent as a deletion), and it writes no record and makes no op; the whole database is deleted instead. Step 1 shows what is here (items, payment cards) and offers **Export a backup first**, then asks for an answer either way ("I have a backup" / "Continue without one"; an export never moves on by itself). Step 2 says it's this device only and can't be undone, with a slide to confirm locked for two seconds (and a checkbox), then **Erase**. The erase stops the sync engine; guards storage, so no code still running (or another open tab, told over a `BroadcastChannel`) can write into a new database behind it; deletes this app's database by name; removes the household key from the phone's secure store; removes every `substracker.` localStorage key (theme and language too) and only those; deletes the `substracker-logos` cache (the shell and three.js caches and the service worker stay: they are app code); on Android deletes its own cached export files older than ten minutes; then opens the app again (`location.replace('./')`), which starts as a first launch with a new device id. The origin can be shared with other sites (every project page on a GitHub Pages host), so it never clears localStorage, lists databases or deletes every cache. If another window holds the database the erase waits and says so; if the delete fails nothing was erased and it can run again; if a later step fails it says some settings couldn't be reset, then reopens. The household keeps this device's old version note (removing it would take an op). Android's own Auto Backup copy of app data isn't touched.
+
 Export files have this shape:
 
 ```json
@@ -220,6 +222,7 @@ js/count-anim.js      Rolling totals (the Money card's and the Wallet cards' fig
 js/tab-pill.js        The pill behind the active tab and its stretch
 js/swipe-nav.js       Swiping between the tabs: the thresholds, where a swipe may start, the step (decisions pure)
 js/slide-confirm.js   Slide to confirm (with a checkbox for keyboards and screen readers)
+js/erase.js           Erase data on this device: when it may run, what it may touch, the order of its steps (no DOM)
 js/csv-export.js      Export as CSV (Download CSV, Copy CSV): items for a spreadsheet, not a backup (pure)
 js/import-ai.js       Import with AI: reading and checking the reply, the review rows (pure)
 js/import-ai-prompt.js The text Import with AI copies for the person's own AI chat
@@ -259,6 +262,7 @@ tests/import-notes.html  In-browser tests for notes in Import with AI: the note 
 tests/groups.html     In-browser tests for groups: Tidy up groups, the 15-slot colour picker, one colour per group everywhere, default groups in the add sheet
 tests/format-migration.html  In-browser tests for format 5's first-launch step (IndexedDB): a fault at each step, retries, running twice
 tests/export-note.html  In-browser tests for the export's note when a backup falls back to format 4, and when a format 6 backup falls back without its cards
+tests/erase.html      In-browser tests for Erase data on this device: storage (only its own database and keys) and the sheet
 tests/i18n-frame.html The frame tests/i18n.html runs the app in
 tests/*.node.test.js  Node tests: sync core, crypto, recovery words, join choices, the sync engine (with an in-memory relay), the pure parts of js/storage.js, swiping between the tabs
 tests/legacy-1.19.0/  The frozen 1.19.0 modules the mixed-version harness (tests/helpers/mixed-sync.js) runs as an old device
@@ -317,6 +321,8 @@ With the server running, open <http://localhost:8090/tests/storage.html> for the
 <http://localhost:8090/tests/format-migration.html> runs format 5's first-launch step against throwaway `substracker-test-fmt-*` databases left as 1.22.2 leaves them: the verified run (this device's automatic colours as shared slots, the version note, item records and the settings store untouched, one outbox op per new field, then `schemaVersion` 5); a fault injected at each step (plan and write: every store exactly as before; read-back and switch: only the planned values added, nothing overwritten, not switched), each followed by a load that verifies; a fault that persists; running twice; an empty database; only picked colours; undated items; and a household record that already holds slots. `tests/format-migration.node.test.js` (also in America/New_York) covers the pure parts: 1.19.0's rules against the frozen modules, the stepper check on every month end and leap day (and that it does catch a stepper that is off), the colour plan, the read-back check, and the step in the mixed-version harness (two devices adopting offline converge with a 1.19.0 device, a 1.19.0 device that keeps picking `g` colours, a record that already has slots, empty and picks-only devices).
 
 <http://localhost:8090/tests/export-note.html> runs the app with a fixed clock: a format 5 export's usual note, and a backup that falls back to format 4 (an item 1.19.0 can't import) saying so in the language in use until dismissed, with every item in the file. Run it at 320, 360 and 393px, in English, `?lang=xx` and `?lang=zh-TW`.
+
+<http://localhost:8090/tests/erase.html> tests Erase data on this device against throwaway `substracker-test-erase-*` databases, with no request leaving the page. Storage first: only its own database goes while another one survives, nothing reopens it, a blocked delete waits, a failed delete erases nothing and runs again, only `substracker.` keys go, and what's left equals a fresh first launch apart from the device id. Then the app: This device as the last group; refused while sync is on (Open Sync); after Turn off, the counts, the backup and its answers, the locked slide, focus and Back on each step, Reduce motion, both themes, another tab's erase, a failed erase, and a blocked, partly failing erase that removes only this app's database, keys and logo cache and asks before reopening. Run it at 320, 360 and 393px, with and without reduced motion, in English, `?lang=xx` and `?lang=zh-TW`. `tests/erase.node.test.js` covers the rules and the order, and `tests/mixed-erase.scenarios.js` (in the mixed-version harness, with 1.19.0 and 1.25.1 devices) proves the erase reaches no other device: the relay gets nothing, the others lose nothing, and the erased device, joining again, sends only its new version note.
 
 None of these are part of the app: `tests/` isn't in the service worker's shell or in the native copy.
 
@@ -390,7 +396,7 @@ If you add a new file to the app shell, also add it to the `SHELL` list in `sw.j
 
 ## Backups
 
-Your data is stored in the browser on that device (and, if you set up sync, on your other devices too). Clearing site data, or uninstalling the home-screen app on iOS, deletes it. Use **Settings → Export** regularly and keep the JSON file somewhere safe. To move data to another device, export on one and import on the other.
+Your data is stored in the browser on that device (and, if you set up sync, on your other devices too). Clearing site data, or uninstalling the home-screen app on iOS, deletes it. Use **Settings → Export** regularly and keep the JSON file somewhere safe. To move data to another device, export on one and import on the other. **Settings → This device → Erase data on this device** clears this device only (turn off sync first); your other devices keep their data.
 
 ## Privacy note
 
