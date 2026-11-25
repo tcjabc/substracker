@@ -80,6 +80,10 @@
   --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
   --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
   --card-ring: var(--text); --card-ring-neutral: var(--text-muted);
+  /* Insights "Paid with" (1.29.0): the Cash and Not set slices, and a card whose colour this version
+     can't draw. Apart from the ten card fills (also under colour-vision simulation), from each other
+     and from the plates (tests/card-palette.node.test.js pins it); Not set is the neutral "Other". */
+  --pay-cash: #2f7d4f; --pay-none: var(--group-other); --pay-card-neutral: #33384a;
   /* Insights Ring (js/donut-3d.js): ground-shadow strength, glow on raised slices (a share of their
      colour), and the hemisphere light's sky and ground colours. */
   --ring-shadow: 0.28; --ring-glow: 0.07; --ring-sky: #ffffff; --ring-ground: #c9c6d6;
@@ -159,6 +163,7 @@
   --logo-xs: 22px;   /* the Wallet's logo chip */
   --card-glyph-sm: 14px;   /* the payment-card chip on a Wallet item's logo tile */
   --card-glyph-md: 24px;   /* the card glyph in Settings and the card sheet */
+  --card-glyph-xs: 9px;    /* a card date on a Calendar day, in one of its three dot slots (1.29.0) */
   --card-glyph-ring: 1.5px;
   --card-chip-offset: 3px;  /* how far the Wallet chip sits past the logo tile's corner */
   --card-chip-plate: 2px;   /* the ring of tile colour round the chip, so its outline always meets the tile */
@@ -286,6 +291,7 @@
     /* Card glyph fills: the same set as light (one set for both themes); keep the three blocks in step. */
     --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
     --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
+    --pay-cash: #2f7d4f; --pay-none: var(--group-other); --pay-card-neutral: #c9ccd8;
     --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
     --type-monthly: #5eead4;
     --type-annual: var(--accent);
@@ -344,6 +350,7 @@
   /* Card glyph fills: the same set as light (one set for both themes); keep the three blocks in step. */
   --card-c1: #b25024; --card-c2: #c08433; --card-c3: #bab405; --card-c4: #44a781; --card-c5: #156068;
   --card-c6: #2ab6f0; --card-c7: #6d6dbc; --card-c8: #7018b6; --card-c9: #f27dbd; --card-c10: #80361b;
+  --pay-cash: #2f7d4f; --pay-none: var(--group-other); --pay-card-neutral: #c9ccd8;
   --ring-shadow: 0.55; --ring-glow: 0.12; --ring-sky: #d8d8ea; --ring-ground: #24252e;
   --type-monthly: #5eead4;
   --type-annual: var(--accent);
@@ -809,6 +816,8 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .card-glyph[data-colour="c9"] { --card-fill: var(--card-c9); }
 .card-glyph[data-colour="c10"] { --card-fill: var(--card-c10); }
 .card-glyph-sm { --card-w: var(--card-glyph-sm); }
+/* A Calendar day's card date (1.29.0): 9px wide, so a hairline outline and no stripe. */
+.card-glyph-xs { --card-w: var(--card-glyph-xs); border-width: var(--border-width); background: var(--card-fill); }
 
 /* Settings → Payment cards: one row button per card (glyph, nickname, its days), then Add card. */
 .card-list { list-style: none; margin: 0; padding: 0; }

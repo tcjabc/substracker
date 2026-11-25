@@ -82,3 +82,36 @@ test(`the fills stay apart: seen distance >= ${MIN_SEEN}, deltaE >= ${MIN_DELTA_
     }
   }
 });
+
+// Insights "Paid with" (1.29.0): Cash, Not set (the neutral "Other", --group-other) and a card whose
+// colour this version can't draw sit beside the ten card fills in one chart. The numbers reached
+// (pinned): Cash 11.5 deltaE and 7.0 seen distance from the nearest fill; the neutral card 12.4 / 9.7
+// in light, 17.2 / 10.1 in dark.
+const PAY_MIN_DELTA_E = 11.4; // Cash and the neutral card: deltaE from the nearest fill
+const PAY_MIN_SEEN = 6.9; // and seen distance (normal + protan/deutan/tritan)
+const PAY_APART = 15; // Cash, Not set and the neutral card from each other, and each from the plates
+
+test('Paid with: Cash, Not set and the neutral card, in all three theme blocks, apart from the fills, each other and the plates', () => {
+  const fills = fillsAt(starts[0]).map(parseColour);
+  for (const [b, at] of starts.entries()) {
+    const block = css.slice(at, css.indexOf('--ring-shadow:', at));
+    assert.match(block, /--pay-none:\s*var\(--group-other\);/, `${BLOCKS[b]}: Not set is the neutral Other`);
+    const cash = hexAfter('pay-cash', at);
+    const neutral = hexAfter('pay-card-neutral', at);
+    assert.ok(cash && neutral && block.includes('--pay-cash:') && block.includes('--pay-card-neutral:'), `${BLOCKS[b]}: both defined in the block`);
+    const none = inkAt(at, 'group-other');
+    const pay = [cash, neutral].map(parseColour);
+    for (const p of pay) {
+      const dE = Math.min(...fills.map((f) => deltaE(p, f)));
+      const seen = Math.min(...fills.map((f) => seenDistance(p, f)));
+      assert.ok(+dE.toFixed(1) >= PAY_MIN_DELTA_E, `${BLOCKS[b]}: deltaE ${dE.toFixed(2)} from the nearest fill`);
+      assert.ok(+seen.toFixed(1) >= PAY_MIN_SEEN, `${BLOCKS[b]}: seen distance ${seen.toFixed(2)} from the nearest fill`);
+    }
+    const three = [...pay, parseColour(none)];
+    for (let i = 0; i < 3; i++) {
+      for (let j = i + 1; j < 3; j++) assert.ok(deltaE(three[i], three[j]) >= PAY_APART, `${BLOCKS[b]}: ${i} and ${j} apart`);
+      for (const p of platesAt(at).map(parseColour)) assert.ok(deltaE(three[i], p) >= PAY_APART, `${BLOCKS[b]}: ${i} clear of the plates`);
+    }
+  }
+  assert.match(css, /--card-glyph-xs:\s*9px;/, 'the Calendar marker is 9px wide');
+});
