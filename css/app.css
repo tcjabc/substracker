@@ -977,6 +977,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
    only card dates isn't tinted, but is still a day to tap. Its list ends with them under their own
    heading: the card's glyph and "Payment due: Visa", no amount. */
 .cal-day.has-cards { cursor: pointer; }
+/* The marker is 3px wider than a dot: on its day the gaps are a hairline, so two dots, the marker and
+   "+N" take no more room than three dots and "+N". */
+.cal-dots:has(.cal-card) { column-gap: var(--border-width); }
 .cal-cards-title { padding: var(--space-3) var(--space-4) 0; border-top: var(--border-width) solid var(--border); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
 .cal-list .cal-card-list { border-top: 0; margin-top: var(--space-1); }
 .card-date-mark { flex: none; display: grid; place-items: center; width: var(--logo-sm); height: var(--logo-sm); }
@@ -1147,6 +1150,11 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .ins-hero .chips { justify-content: center; margin-bottom: var(--space-3); }
 .ins-chart-head { margin-bottom: var(--space-2); }
 .ins-chart-head .section-title { font-size: var(--text-base); }
+/* By category | Paid with (1.29.0) in place of the heading (kept for screen readers), Ring | Donut |
+   List at the end; on a narrow screen or a long language the row wraps, the views staying on the right. */
+.ins-chart-head.has-by { flex-wrap: wrap; row-gap: var(--space-2); }
+.ins-chart-head.has-by > .ins-views { margin-inline-start: auto; }
+.legend-glyph { margin-inline: calc((var(--dot) - var(--card-glyph-sm)) / 2); }
 .ins-chart { flex: 1 0 auto; display: flex; flex-direction: column; }
 .ins-hero:not(.ins-hero-fill) .ins-chart { flex: none; }
 /* Ring and Donut (Month): the card is --ins-chart-h tall and stays pinned under the header while the

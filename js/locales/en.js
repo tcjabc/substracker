@@ -392,6 +392,11 @@ export default {
   'insights.notice.income.other': '{count} income items need a payment date, {amount} not shown',
   'insights.stat.counts': '{monthly} monthly · {annual} annual · {once} one-off',
   'insights.byCategory': 'By category',
+  // By category | Paid with (1.29.0): the month's outgoings by how they're paid (each card, Cash, Not set)
+  'insights.byPay': 'Paid with', // the heading (read aloud) and the legend's label
+  'insights.by.label': 'Show outgoings', // the switch, read aloud: Show outgoings, By category / Paid with
+  'insights.by.category': 'By category',
+  'insights.by.pay': 'Paid with',
   'insights.catView.label': 'Category view',
   'insights.catView.ring': '3D ring',
   'insights.catView.donut': 'Donut chart',
@@ -430,6 +435,13 @@ export default {
   'donut.ring.help': 'Drag to spin. Left and right arrow keys bring the previous or next category to the front. Amounts are listed below.',
   'donut.ring.describe': '{name}, {amount}, {share}',
   'donut.slice.title': '{name}: {amount} ({share})',
+  // Paid with (1.29.0): the same chart by payment method
+  'donut.otherCards': 'Other cards', // cards under 3% of the month, pooled
+  'donut.labelPay': 'Donut chart of outgoings by payment method for {month}. Amounts are listed below.',
+  'donut.keysHelpPay': 'Left and right arrow keys highlight the previous or next payment method.',
+  'donut.ring.labelPay': 'Outgoings by payment method for {month}',
+  'donut.ring.labelFrontPay': 'Outgoings by payment method for {month}. Front: {front}',
+  'donut.ring.helpPay': 'Drag to spin. Left and right arrow keys bring the previous or next payment method to the front. Amounts are listed below.',
 
   // Insights year chart (js/year-chart.js)
   'chart.label': 'Cash due per month. Use the arrow keys to move, Enter to open a month, Escape to close.',

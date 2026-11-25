@@ -294,6 +294,9 @@ export const reduceMotionFrom = (pref, systemReduce) => (pref === 'on' ? true : 
 /** Insights "By category" view from the saved preference: a saved Donut or List is kept, else the Ring. */
 export const catViewFrom = (pref) => (pref === 'donut' || pref === 'list' ? pref : 'ring');
 
+/** Insights month chart's "By category | Paid with" from the saved preference (1.29.0): a saved Paid with is kept, else By category. */
+export const insightsByFrom = (pref) => (pref === 'pay' ? 'pay' : 'category');
+
 /** The Insights year chart's stacking from the saved preference: a saved By type is kept, else By category. */
 export const yearStackFrom = (pref) => (pref === 'type' ? 'type' : 'category');
 

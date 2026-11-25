@@ -48,14 +48,15 @@ export function emptyDonutHTML(cur, monthName) {
 
 /**
  * The legend rows: name, item count or pooled names, amount and share. Each row is a button.
- * Insights shows it in its own panel under the chart (js/app.js renderInsights).
+ * Insights shows it in its own panel under the chart (js/app.js renderInsights). A slice may bring
+ * its own `glyph` markup (Paid with's card glyph, aria-hidden) in place of the colour dot.
  */
 export function legendHTML(slices, total, cur) {
   return `
       <div class="legend">
         ${slices.map((s) => `
         <button type="button" class="legend-row" data-slice="${esc(s.key)}" aria-pressed="false">
-          <span class="legend-dot" style="--swatch: ${s.swatch}" aria-hidden="true"></span>
+          ${s.glyph || `<span class="legend-dot" style="--swatch: ${s.swatch}" aria-hidden="true"></span>`}
           <span class="legend-text">
             <span class="legend-name">${esc(s.name)}</span>
             <span class="legend-sub">${esc(s.sub)}</span>
@@ -70,8 +71,9 @@ export function legendHTML(slices, total, cur) {
  * `note` (optional, plain text) is shown above it, used when it stands in for the Ring view.
  * `keys`: true makes the chart focusable, with arrow keys moving the highlight (as the Ring view
  * does). The donut is sized to the room the panel has (.ins-fit, a size container in app.css).
+ * `label` and `keysHelp` are the keys it reads out (Paid with has its own, 1.29.0).
  */
-export function donutHTML(slices, total, cur, monthName, { note = '', keys = false } = {}) {
+export function donutHTML(slices, total, cur, monthName, { note = '', keys = false, label = 'donut.label', keysHelp = 'donut.keysHelp' } = {}) {
   if (!slices.length) return emptyDonutHTML(cur, monthName);
   const C = 2 * Math.PI * DONUT.r;
   const gap = slices.length > 1 ? DONUT.gap : 0; // a single category is a full ring
@@ -91,14 +93,14 @@ export function donutHTML(slices, total, cur, monthName, { note = '', keys = fal
       ${note ? `<p class="ring-note">${esc(note)}</p>` : ''}
       <div class="ins-fit">
         <div class="donut" data-no-page-swipe${keys ? ' tabindex="0" data-donut-keys aria-describedby="donut-keys-help"' : ''}>
-          <svg viewBox="0 0 200 200" role="img" aria-label="${esc(t('donut.label', { month: monthName }))}">${arcs}</svg>
+          <svg viewBox="0 0 200 200" role="img" aria-label="${esc(t(label, { month: monthName }))}">${arcs}</svg>
           <div class="donut-center">
             <span class="donut-total ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span>
             <span class="donut-label">${esc(monthName)}</span>
           </div>
         </div>
       </div>
-      ${keys ? `<p class="sr-only" id="donut-keys-help">${esc(t('donut.keysHelp'))}</p>` : ''}
+      ${keys ? `<p class="sr-only" id="donut-keys-help">${esc(t(keysHelp))}</p>` : ''}
     </div>`;
 }
 

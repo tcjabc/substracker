@@ -8,7 +8,8 @@ import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
 import { createCardsUI, nextCardColour, cardNameError, cardGlyphHTML } from './cards-ui.js';
 import { cardDatesSoon } from './card-dates.js';
-import { listCards, cardNameProblem, cardByName, newCardId, payToSave, payCard, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH } from './cards.js';
+import { listCards, cardNameProblem, cardByName, newCardId, payToSave, payCard, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH, isCardColourKey } from './cards.js';
+import { paidWith, paidWithSlices, offersPaidWith } from './paid-with.js';
 import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
 import { createWallet } from './wallet.js';
@@ -38,7 +39,7 @@ import { donutSlices, donutHTML, emptyDonutHTML, legendHTML, applyDonutHighlight
 import {
   CURRENCIES, localeCurrency, uid, esc, money, moneyParts, cycleLabel, isIncome, isOnce, firstEmoji,
   nextRenewal, daysUntil, renewalText, parseDate, shortDate, todayStamp,
-  chooseImportMode, reduceMotionFrom, catViewFrom, yearStackFrom, viewFrom, backupLabel,
+  chooseImportMode, reduceMotionFrom, catViewFrom, insightsByFrom, yearStackFrom, viewFrom, backupLabel,
 } from './util.js';
 import {
   groupOf, byGroupName, breakdown, undatedRecurring, incomeDue, undatedIncome, yearSummary,
@@ -84,6 +85,7 @@ const state = {
   yearKey: storage.getPref('yearKey') === 'on', // year chart: Show key, per device
   // Insights "By category": the 3D Ring (default), the flat Donut or the List. A saved choice is kept.
   catView: catViewFrom(storage.getPref('catView')),
+  insightsBy: insightsByFrom(storage.getPref('insightsBy')), // By category | Paid with (1.29.0), per device
   donutActive: null, // highlighted donut slice key (the Ring's front slice), or null
   tab: ['subs', 'calendar', 'insights', 'settings'].includes(storage.getPref('tab')) ? storage.getPref('tab') : 'subs',
   period: storage.getPref('period') === 'annual' ? 'annual' : 'monthly', // the Money card's Monthly | Annual
@@ -1353,6 +1355,37 @@ function bindInsightsMode() {
 }
 
 /**
+ * The words the month chart says for By category or Paid with (1.29.0): the heading and the legend's
+ * label, and what the donut and the Ring read out. Plain keys, so the language tests see each one.
+ */
+function chartWords(byPay) {
+  return byPay ? {
+    title: 'insights.byPay', donut: 'donut.labelPay', keysHelp: 'donut.keysHelpPay',
+    ring: 'donut.ring.labelPay', ringFront: 'donut.ring.labelFrontPay', ringHelp: 'donut.ring.helpPay',
+  } : {
+    title: 'insights.byCategory', donut: 'donut.label', keysHelp: 'donut.keysHelp',
+    ring: 'donut.ring.label', ringFront: 'donut.ring.labelFront', ringHelp: 'donut.ring.help',
+  };
+}
+
+/**
+ * Paid with's rows (js/paid-with.js paidWithSlices) as the chart, legend and List draw them: each
+ * card by its nickname in its colour with its glyph (the neutral outline for a colour this version
+ * can't draw, and for Other cards), Cash and Not set as dots in their own colours.
+ */
+function payRows(groups) {
+  return groups.map((g) => {
+    const card = g.kind === 'card' ? g.card : null;
+    const label = card ? card.name : g.kind === 'cash' ? t('form.pay.cash') : g.kind === 'other' ? t('donut.otherCards') : t('form.pay.notSet');
+    const swatch = card && isCardColourKey(card.colour) ? `var(--card-${card.colour})`
+      : card || g.kind === 'other' ? 'var(--pay-card-neutral)' : g.kind === 'cash' ? 'var(--pay-cash)' : 'var(--pay-none)';
+    const glyph = card || g.kind === 'other' ? cardGlyphHTML(card ?? {}, { size: 'sm', extraClass: 'legend-glyph' }) : '';
+    const sub = g.kind === 'other' ? g.cards.map((c) => c.name).join(t('common.listSep')) : t('common.items', { count: g.count });
+    return { key: g.key, name: g.key, label, total: g.total, count: g.count, swatch, glyph, sub };
+  });
+}
+
+/**
  * Insights. Month: the month arrows, one line with the month's outgoings as a share of its income,
  * then the chart with the month total in it: the Ring or flat donut in a card capped at about 40% of
  * the screen and pinned under the header while the legend (with the month's plan counts) scrolls
@@ -1420,10 +1453,19 @@ function renderInsights() {
   const undatedInTotal = undatedIn.reduce((t, s) => t + s.price, 0);
   const nUndated = undated.length + undatedIn.length; // a count of items; amounts are never mixed
 
+  // By category, or Paid with (1.29.0, js/paid-with.js): the same month rows regrouped by how they're
+  // paid, so its slices add up to the same month total. Offered when there's a live card or one of
+  // this currency's expenses has Cash or a card; a saved Paid with shows By category otherwise.
+  const cardList = listCards(state.settingsRecord);
+  const offersBy = offersPaidWith(cardList, subs);
+  const byPay = offersBy && state.insightsBy === 'pay';
+  const words = chartWords(byPay);
   // `name` is the group's key (its colour is keyed by it); `label` is what shows.
-  const catList = due.byCategory.map((c) => ({ name: c.group, label: groupLabel(c.group), total: c.amount, count: c.items.length }));
-  const maxCat = catList[0]?.total || 1;
-  const slices = donutSlices(catList, monthly, (name) => swatchVar(groupSwatch(name)));
+  const catList = byPay ? payRows(paidWithSlices(paidWith(inMonth, cardList), monthly))
+    : due.byCategory.map((c) => ({ name: c.group, label: groupLabel(c.group), total: c.amount, count: c.items.length }));
+  const maxCat = Math.max(0, ...catList.map((c) => c.total)) || 1; // Not set is last, however large
+  const slices = byPay ? catList.map((c) => ({ key: c.key, name: c.label, total: c.total, sub: c.sub, swatch: c.swatch, glyph: c.glyph }))
+    : donutSlices(catList, monthly, (name) => swatchVar(groupSwatch(name)));
   // The Ring, unless something rules it out; then the flat donut stands in, saying why.
   const ringWhy = state.catView === 'ring' && slices.length ? ringBlocker() : '';
   const showRing = state.catView === 'ring' && slices.length && !ringWhy;
@@ -1467,16 +1509,21 @@ function renderInsights() {
       </div>`;
   const chartHTML = isList ? listHTML
     : !slices.length ? emptyDonutHTML(cur, monthName)
-    : showRing ? ringHTML(monthly, cur, monthName)
-    : donutHTML(slices, monthly, cur, monthName, state.catView === 'ring' ? { note: ringWhy, keys: true } : {});
+    : showRing ? ringHTML(monthly, cur, monthName, words)
+    : donutHTML(slices, monthly, cur, monthName, { ...(state.catView === 'ring' ? { note: ringWhy, keys: true } : {}), label: words.donut, keysHelp: words.keysHelp });
   // Ring and Donut: the chart card is capped in height and pinned under the header while the legend
   // scrolls beneath it (app.css .ins-pinned), so a row's slice turns or lights up right above it.
   const pinned = !isList && slices.length > 0;
   const legend = pinned ? `
-    <section class="panel ins-legend" aria-label="${esc(t('insights.byCategory'))}">
+    <section class="panel ins-legend" aria-label="${esc(t(words.title))}">
       ${legendHTML(slices, monthly, cur)}
       ${countsHTML}
     </section>` : '';
+  // By category | Paid with, before Ring | Donut | List, outside the capped chart card. The heading
+  // stays for screen readers, naming the choice; on a narrow screen the row wraps.
+  const byBtn = (by, key) => `<button type="button" class="seg-btn seg-btn-text" data-ins-by="${by}" aria-pressed="${(by === 'pay') === byPay}">${esc(t(key))}</button>`;
+  const byHTML = offersBy ? `
+        <div class="segmented ins-by" data-no-page-swipe role="group" aria-label="${esc(t('insights.by.label'))}">${byBtn('category', 'insights.by.category')}${byBtn('pay', 'insights.by.pay')}</div>` : '';
 
   root.innerHTML = `
     <div class="ins-hero${isList ? '' : ' ins-month-chart'}${pinned ? ' ins-pinned' : ''}">
@@ -1491,9 +1538,9 @@ function renderInsights() {
       </div>
       <p class="ins-pct${incomeMonth ? '' : ' ins-pct-none'}">${esc(pctLine)}</p>
       ${chipsHTML}
-      <div class="section-head ins-chart-head">
-        <h2 class="section-title" id="cat-title">${esc(t('insights.byCategory'))}</h2>
-        <div class="segmented" role="group" aria-label="${esc(t('insights.catView.label'))}">
+      <div class="section-head ins-chart-head${offersBy ? ' has-by' : ''}">
+        <h2 class="section-title${offersBy ? ' sr-only' : ''}" id="cat-title">${esc(t(words.title))}</h2>${byHTML}
+        <div class="segmented ins-views" role="group" aria-label="${esc(t('insights.catView.label'))}">
           ${catViewBtn('ring', t('insights.catView.ring'), '<ellipse cx="12" cy="11" rx="9" ry="4.5"/><ellipse cx="12" cy="11" rx="4" ry="1.8"/><path d="M3 11v2.5c0 2.5 4 4.5 9 4.5s9-2 9-4.5V11"/>')}
           ${catViewBtn('donut', t('insights.catView.donut'), '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V8.5"/>')}
           ${catViewBtn('list', t('insights.catView.list'), '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2"/><circle cx="3.5" cy="12" r="1.2"/><circle cx="3.5" cy="18" r="1.2"/>')}
@@ -1546,8 +1593,17 @@ function renderInsights() {
     storage.setPref('catView', state.catView);
     renderInsights();
   }));
+  // By category | Paid with: per device, apart from the view; the slices change, so no slice stays lit.
+  $$('[data-ins-by]', root).forEach((b) => b.addEventListener('click', () => {
+    if (state.insightsBy === b.dataset.insBy) return;
+    state.insightsBy = insightsByFrom(b.dataset.insBy);
+    storage.setPref('insightsBy', state.insightsBy);
+    state.donutActive = null;
+    renderInsights();
+    $(`#insights [data-ins-by="${state.insightsBy}"]`)?.focus();
+  }));
   if (showRing) {
-    mountRing(root, slices, monthly, cur, monthName);
+    mountRing(root, slices, monthly, cur, monthName, words);
     return;
   }
   // Tap a slice or legend row to highlight it; tap it again to clear.
@@ -1613,22 +1669,22 @@ function keyStep(e, i, n) {
  * one caption line under the ring names the front slice, its amount and share. The legend is apart,
  * under the card.
  */
-function ringHTML(total, cur, monthName) {
+function ringHTML(total, cur, monthName, words = chartWords(false)) {
   return `
     <div class="panel ins-chart">
       <div class="ins-fit">
         <div class="ring-stage" data-no-page-swipe tabindex="0" role="group" aria-roledescription="${esc(t('donut.ring.role'))}"
-          aria-label="${esc(t('donut.ring.label', { month: monthName }))}" aria-describedby="ring-help">
+          aria-label="${esc(t(words.ring, { month: monthName }))}" aria-describedby="ring-help">
           <div class="ring-total"><span class="ins-total" data-roll="month-due" data-value="${total}" data-cur="${esc(cur)}">${esc(money(total, cur))}</span></div>
           <div class="ring-caption" aria-hidden="true"><span class="ring-name"></span><span class="ring-amount"></span><span class="ring-share"></span></div>
         </div>
       </div>
-      <p class="sr-only" id="ring-help">${esc(t('donut.ring.help'))}</p>
+      <p class="sr-only" id="ring-help">${esc(t(words.ringHelp))}</p>
       <p class="sr-only" id="ring-live" aria-live="polite" aria-atomic="true"></p>
     </div>`;
 }
 
-async function mountRing(root, slices, total, cur, monthName) {
+async function mountRing(root, slices, total, cur, monthName, words = chartWords(false)) {
   const stage = $('.ring-stage', root);
   const rows = $$('.legend-row', root);
   const describe = (s) => t('donut.ring.describe', { name: s.name, amount: money(s.total, cur), share: shareText(s.total, total) });
@@ -1641,7 +1697,7 @@ async function mountRing(root, slices, total, cur, monthName) {
     $('.ring-name', stage).textContent = s.name;
     $('.ring-amount', stage).textContent = money(s.total, cur);
     $('.ring-share', stage).textContent = shareText(s.total, total);
-    stage.setAttribute('aria-label', t('donut.ring.labelFront', { month: monthName, front: describe(s) }));
+    stage.setAttribute('aria-label', t(words.ringFront, { month: monthName, front: describe(s) }));
     rows.forEach((r, k) => r.setAttribute('aria-pressed', String(k === i)));
   };
   // Announce once the ring is at rest, and only a slice that wasn't announced last.

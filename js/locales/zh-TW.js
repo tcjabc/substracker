@@ -381,6 +381,11 @@ export default {
   'insights.notice.income.other': '{count} 個收入項目需要入帳日期，未顯示 {amount}',
   'insights.stat.counts': '每月 {monthly} · 每年 {annual} · 一次性 {once}',
   'insights.byCategory': '依類別',
+  // 依類別｜付款方式（1.29.0）：本月支出依付款方式區分（各付款卡、現金、未設定）
+  'insights.byPay': '付款方式',
+  'insights.by.label': '支出顯示方式',
+  'insights.by.category': '依類別',
+  'insights.by.pay': '付款方式',
   'insights.catView.label': '類別檢視',
   'insights.catView.ring': '3D 環形圖',
   'insights.catView.donut': '圓環圖',
@@ -419,6 +424,13 @@ export default {
   'donut.ring.help': '拖曳即可旋轉。用左右方向鍵把上一個或下一個類別轉到前方。金額列在下方。',
   'donut.ring.describe': '{name}，{amount}，{share}',
   'donut.slice.title': '{name}：{amount}（{share}）',
+  // 付款方式（1.29.0）：同一張圖，依付款方式區分
+  'donut.otherCards': '其他付款卡',
+  'donut.labelPay': '{month}各付款方式支出的圓環圖。金額列在下方。',
+  'donut.keysHelpPay': '用左右方向鍵標示上一個或下一個付款方式。',
+  'donut.ring.labelPay': '{month}各付款方式支出',
+  'donut.ring.labelFrontPay': '{month}各付款方式支出。前方：{front}',
+  'donut.ring.helpPay': '拖曳即可旋轉。用左右方向鍵把上一個或下一個付款方式轉到前方。金額列在下方。',
 
   // Insights year chart (js/year-chart.js)
   'chart.label': '每月應付金額。用方向鍵移動，按 Enter 開啟月份，按 Esc 關閉。',
