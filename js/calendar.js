@@ -163,7 +163,9 @@ export function createCalendar(host, opts) {
       const dotHTML = dots.map((r) => `<i class="cal-dot${needsRing(dotColour(r), cellClass) ? ' cal-dot-ring' : ''}" style="--dot-colour: ${dotColour(r)}"></i>`).join('')
         + (marker ? cardGlyphHTML(marker, { size: 'xs', extraClass: 'cal-card' }) : '')
         + (more ? `<span class="cal-more">${esc(t('calendar.more', { count: more }))}</span>` : '');
-      const kinds = `${d.count ? ' has-items' : cards.length ? ' has-cards' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}`;
+      // has-card-mark: the day draws a card marker (its dot gaps narrow; a class, not :has(), which
+      // older WebViews skip).
+      const kinds = `${d.count ? ' has-items' : cards.length ? ' has-cards' : ''}${marker ? ' has-card-mark' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}`;
       return `<div role="gridcell" class="cal-cell" aria-selected="${sel}"><button type="button" class="cal-day${kinds}" data-day="${cell.day}" tabindex="${cell.day === tabDay ? 0 : -1}"${isToday ? ' aria-current="date"' : ''} aria-label="${esc(dayLabel(d, cards))}"><span class="cal-num" aria-hidden="true">${esc(num(cell.day))}</span><span class="cal-dots" aria-hidden="true">${dotHTML}</span></button></div>`;
     }).join('')}</div>`).join('');
 

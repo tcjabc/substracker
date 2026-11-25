@@ -978,8 +978,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
    heading: the card's glyph and "Payment due: Visa", no amount. */
 .cal-day.has-cards { cursor: pointer; }
 /* The marker is 3px wider than a dot: on its day the gaps are a hairline, so two dots, the marker and
-   "+N" take no more room than three dots and "+N". */
-.cal-dots:has(.cal-card) { column-gap: var(--border-width); }
+   "+N" take no more room than three dots and "+N". Keyed on a class js/calendar.js sets (not :has(),
+   which WebView 103 and older skip). */
+.cal-day.has-card-mark .cal-dots { column-gap: var(--border-width); }
 .cal-cards-title { padding: var(--space-3) var(--space-4) 0; border-top: var(--border-width) solid var(--border); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
 .cal-list .cal-card-list { border-top: 0; margin-top: var(--space-1); }
 .card-date-mark { flex: none; display: grid; place-items: center; width: var(--logo-sm); height: var(--logo-sm); }
