@@ -730,6 +730,9 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .due-list li:last-child .sub-row { border-bottom: 0; }
 .due-row .sub-text { min-width: 0; }
 .due-today .sub-plan { color: var(--warn); font-weight: var(--weight-semibold); }
+/* Card dates (1.29.0): after the items, under their own heading; no amounts. */
+.due-cards { margin-top: var(--space-4); }
+.due-cards-title { margin: 0 0 var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
 
 .money-group { margin-bottom: var(--space-6); }
 .group-head { display: flex; align-items: center; gap: var(--space-1); }

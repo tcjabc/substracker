@@ -719,6 +719,14 @@ export default {
   'dueSoon.hint': 'Tap an item to edit it.',
   'dueSoon.row': '{name}, {when}, {amount}',
   'dueSoon.row.income': '{name}, income, {when}, {amount}',
+  // Card dates in the window (1.29.0): listed apart, never in the number or a total.
+  'dueSoon.chipCards': 'Card dates', // the chip when no item is due but a card date is
+  'dueSoon.summaryNone': 'No items due in the next {days} days',
+  'dueSoon.cardCount.one': '{count} card date', // read aloud with the chip
+  'dueSoon.cardCount.other': '{count} card dates',
+  'dueSoon.hintCards': 'Tap an item or a card date to edit it.',
+  'dueSoon.hintCardsOnly': 'Tap a card date to edit the card.',
+  'cardDates.row': '{text}, {when}', // a card date in the due-soon sheet, read aloud
   'settings.dueSoon': 'Due soon',
   'settings.dueSoon.show': 'Show the due-soon chip',
   'settings.dueSoon.show.hint': 'A chip on the Money card with how many items come due soon. Tap it for the list.',

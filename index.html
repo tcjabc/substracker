@@ -517,7 +517,9 @@
       </div>
       <p class="sync-text" id="due-range"></p>
       <ul class="subs-list due-list" id="due-list"></ul>
-      <p class="footnote" data-i18n="dueSoon.hint">Tap an item to edit it.</p>
+      <!-- Card dates (1.29.0): filled by js/app.js fillDueList only when a card date is in the window -->
+      <div class="due-cards" id="due-cards" hidden></div>
+      <p class="footnote" id="due-hint" data-i18n="dueSoon.hint">Tap an item to edit it.</p>
     </div>
   </dialog>
 

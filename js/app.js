@@ -6,7 +6,8 @@ import { DEFAULT_GROUPS, matchService, cleanDomain } from './services.js';
 import { suggestMerges, mergeChanges, groupCounts } from './group-merge.js';
 import { planSlots, slotsFromRecord, slotFields } from './group-slots.js';
 import { categoryOptions, resolveNewGroup, NEW_GROUP } from './category-select.js';
-import { createCardsUI, nextCardColour, cardNameError } from './cards-ui.js';
+import { createCardsUI, nextCardColour, cardNameError, cardGlyphHTML } from './cards-ui.js';
+import { cardDatesSoon } from './card-dates.js';
 import { listCards, cardNameProblem, cardByName, newCardId, payToSave, payCard, PAY_NEW_CARD, PAY_NOT_SET, PAY_CASH } from './cards.js';
 import { CATEGORY_MAX } from './import-ai.js';
 import { logoHTML, initLogoHandling, loadDeferredLogos } from './logos.js';
@@ -691,6 +692,12 @@ let walletHost = null;
  * sheet. The chip isn't there at all when nothing is due or when it's turned off in Settings.
  * Plain text: its figures don't roll. Its settings are per-device preferences, never synced or
  * exported.
+ *
+ * Card dates (1.29.0, js/card-dates.js): a payment card's statement closing and payment due days in
+ * the same window are listed under their own "Card dates" heading, with no amounts, after the items.
+ * They show the chip too, but never change its number (the items in the window, as dueSoon() counts
+ * them): with no item due and a card date, it reads "Card dates" with no number. They are in no
+ * total, count or "need a date" line.
  */
 const dueSettings = () => ({
   on: chipOnFrom(storage.getPref('dueSoon')),
@@ -698,6 +705,7 @@ const dueSettings = () => ({
   includeIncome: includeIncomeFrom(storage.getPref('dueSoonIncome')),
 });
 let dueNow = null; // what the chip counts now (dueSoon()'s result), or null when it's hidden
+let dueCards = []; // the card dates in the same window (cardDatesSoon()), listed apart in the sheet
 
 /** "Today", "Tomorrow", "In 3 days" within the week, else the date; `inline` for a sentence. */
 const dueWhen = (r, { inline = false } = {}) => (r.days < 7 ? relativeDays(r.days, undefined, { capital: !inline }) : shortDate(r.date));
@@ -706,9 +714,13 @@ function renderDue() {
   const chip = $('#due-chip');
   const set = dueSettings();
   const cur = state.settings.defaultCurrency;
-  const res = dueSoon(state.subs, new Date(), { windowDays: set.windowDays, includeIncome: set.includeIncome, currency: cur });
-  const show = state.subs.length > 0 && set.on && res.count > 0;
+  const now = new Date();
+  const res = dueSoon(state.subs, now, { windowDays: set.windowDays, includeIncome: set.includeIncome, currency: cur });
+  // Beside the items, never among them: no amount, in no total or count.
+  const cards = cardDatesSoon(listCards(state.settingsRecord), now, { windowDays: res.windowDays });
+  const show = state.subs.length > 0 && set.on && (res.count > 0 || cards.length > 0);
   dueNow = show ? res : null;
+  dueCards = show ? cards : [];
   if (chip) chip.hidden = !show;
   if (!show) {
     if (dialogOpen($('#due-dialog'))) closeDialog($('#due-dialog'));
@@ -717,7 +729,10 @@ function renderDue() {
   // The sheet's top: how many and the default currency's total due; then, quiet, income coming in,
   // other currencies (not in any total) and undated items.
   const hasDue = res.rows.some((r) => r.currency === cur && !r.income);
-  const summary = t('dueSoon.summary', { count: res.count, days: res.windowDays });
+  const summary = res.count
+    ? t('dueSoon.summary', { count: res.count, days: res.windowDays })
+    : t('dueSoon.summaryNone', { days: res.windowDays });
+  const cardsWord = cards.length ? t('dueSoon.cardCount', { count: cards.length }) : '';
   const extra = [res.hasIncome ? t('dueSoon.income', { amount: money(res.incomeTotal, cur) }) : '', othersText(res.others)].filter(Boolean);
   $('#due-text').textContent = summary;
   $('#due-sum').textContent = hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '';
@@ -730,9 +745,9 @@ function renderDue() {
   }
   $('#due-notes').hidden = !extra.length && !res.undated.length;
   $('#due-notes').classList.toggle('has-both', extra.length > 0 && res.undated.length > 0);
-  // The chip: "3 due", read out with the totals.
-  $('#due-chip-text').textContent = t('dueSoon.chip', { count: res.count });
-  chip.setAttribute('aria-label', [summary, hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '', ...extra].filter(Boolean).join(' · '));
+  // The chip: "3 due", read out with the totals; "Card dates" when only card dates are in the window.
+  $('#due-chip-text').textContent = res.count ? t('dueSoon.chip', { count: res.count }) : t('dueSoon.chipCards');
+  chip.setAttribute('aria-label', [summary, hasDue ? t('dueSoon.total', { amount: money(res.total, cur) }) : '', ...extra, cardsWord].filter(Boolean).join(' · '));
   if (dialogOpen($('#due-dialog'))) fillDueList();
 }
 
@@ -756,6 +771,28 @@ function fillDueList() {
       <span class="sub-row-price"><span class="amount">${esc(amount)}</span>${note}</span>
     </button></li>`;
   }).join('');
+  // The card dates, under their own heading after the items: the card, its kind and when, no amount.
+  // Buttons to the card's sheet only where cards can be edited.
+  const box = $('#due-cards');
+  const writable = state.cardsWritable;
+  box.hidden = !dueCards.length;
+  box.innerHTML = dueCards.length ? `
+    <h3 class="due-cards-title" id="due-cards-title">${esc(t('cardDates.title'))}</h3>
+    <ul class="subs-list due-list" aria-labelledby="due-cards-title">${dueCards.map((r) => {
+      const text = t(r.kind === 'due' ? 'cardDates.due' : 'cardDates.cut', { name: r.card.name });
+      const label = t('cardDates.row', { text, when: dueWhen(r, { inline: true }) });
+      const inner = `<span class="card-date-mark">${cardGlyphHTML(r.card)}</span>
+      <span class="sub-text"><span class="sub-name">${esc(text)}</span><span class="sub-plan">${esc(dueWhen(r))}</span></span>`;
+      return writable
+        ? `<li><button type="button" class="sub-row due-row card-date-row${r.days === 0 ? ' due-today' : ''}" data-card="${esc(r.card.id)}" aria-label="${esc(t('cardDates.edit', { text: label }))}">${inner}</button></li>`
+        : `<li><div class="sub-row due-row card-date-row${r.days === 0 ? ' due-today' : ''}" aria-label="${esc(label)}" role="group">${inner}</div></li>`;
+    }).join('')}</ul>` : '';
+  // "Tap an item to edit it.", naming cards too when card dates can be tapped; none when nothing can.
+  const hint = $('#due-hint');
+  const tapCards = dueCards.length > 0 && writable;
+  const hintKey = res.rows.length ? (tapCards ? 'dueSoon.hintCards' : 'dueSoon.hint') : tapCards ? 'dueSoon.hintCardsOnly' : '';
+  hint.hidden = !hintKey;
+  if (hintKey) { hint.dataset.i18n = hintKey; hint.textContent = t(hintKey); }
 }
 
 function bindDue() {
@@ -775,6 +812,8 @@ function bindDue() {
   $$('[data-due-close]', dlg).forEach((b) => b.addEventListener('click', () => closeDialog(dlg)));
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg) { closeDialog(dlg); return; } // the backdrop
+    const cardRow = e.target.closest('[data-card]');
+    if (cardRow) { openCardDate(cardRow.dataset.card); return; } // closes this sheet first
     const row = e.target.closest('[data-id]');
     const sub = row && state.subs.find((s) => s.id === row.dataset.id);
     if (!sub) return;

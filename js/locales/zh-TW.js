@@ -699,6 +699,13 @@ export default {
   'dueSoon.hint': '點選項目即可編輯。',
   'dueSoon.row': '{name}，{when}，{amount}',
   'dueSoon.row.income': '{name}，收入，{when}，{amount}',
+  // 期間內的付款卡日期（1.29.0）：另外列出，不計入筆數或任何總額。
+  'dueSoon.chipCards': '付款卡日期',
+  'dueSoon.summaryNone': '{days} 天內沒有到期項目',
+  'dueSoon.cardCount.other': '{count} 個付款卡日期',
+  'dueSoon.hintCards': '點選項目或付款卡日期即可編輯。',
+  'dueSoon.hintCardsOnly': '點選付款卡日期即可編輯付款卡。',
+  'cardDates.row': '{text}，{when}',
   'settings.dueSoon': '即將到期',
   'settings.dueSoon.show': '顯示即將到期標籤',
   'settings.dueSoon.show.hint': '在「收支」頁的摘要卡上顯示近期到期的項目數，點一下即可查看清單。',
