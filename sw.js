@@ -39,6 +39,8 @@ const SHELL = [
   './js/category-select.js',
   './js/cards.js',
   './js/cards-ui.js',
+  './js/card-dates.js',
+  './js/paid-with.js',
   './js/format-migration.js',
   './js/legacy-step.js',
   './js/logos.js',

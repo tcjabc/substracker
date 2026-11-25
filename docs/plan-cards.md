@@ -3,9 +3,10 @@
 Status: **Release A (groundwork) is built** as 1.26.0 / versionCode 39 (on `main` at `a065fcb`): no
 visible UI change. **Release B (the cards UI) is built** on branch `cards-ui` as 1.27.0 / versionCode
 40, from `main` at `a065fcb`: Settings → Payment cards and the card sheet, the item sheet's Payment
-method, the Wallet chip, and Import with AI's Paid with (section 4). **Release C is not built**:
-Calendar and due-soon card dates, Insights "Paid with", statement amounts, native notifications
-(section 5).
+method, the Wallet chip, and Import with AI's Paid with (section 4). **Release C is built** on branch
+`cards-dates` as 1.29.0 / versionCode 42, from `main` at `338ac59`: Calendar and due-soon card dates
+and Insights "Paid with" (section 5). Statement amounts and native notifications are not part of
+it (section 6).
 
 ## 1. Data
 
@@ -75,7 +76,38 @@ There is no data to convert, so there is no first-launch step. The risk-bearing 
   group colours; the glyph's outline is the theme's text colour (tests/card-palette.node.test.js).
 - The readiness check was dropped: old devices keep `card_*` and `pay` (section 3).
 
-## 5. Release C (not built)
+## 5. Release C (built: 1.29.0)
 
-Calendar and due-soon card dates (the cut-off and due days), Insights "Paid with", statement
-amounts and native notifications.
+A UI-and-maths release: no storage, sync, export, format or group-name-hash change, and no card
+write. Card dates and Paid with only read the card values and `pay` fields already stored.
+
+- **Card dates** (`js/card-dates.js`, pure): a card's Statement closing day and Payment due day as
+  monthly dates, clamped by the shared stepper (`js/interval.js`: day 31 is the 30th in April and
+  the 28th or 29th in February). One date of each kind a month; a card with one day set gives one,
+  with none gives none (and is never "missing a date"); a deleted card gives none. They are
+  reminders, never money: no amount, never in `state.subs`, a total, a count of items or the
+  need-a-date line. The wording is Settings': "Statement closes: {name}", "Payment due: {name}".
+- **Calendar:** one of a day's three dot slots is a 9px card glyph (the card's colour; the neutral
+  outline for two or more cards or a colour this version can't draw), so two expense dots at most
+  and "+N" counts only the expense rows left out. A day with only card dates isn't tinted. The
+  day's label names each date; its list ends with a "Card dates" block with no amounts, each a
+  button to the card's sheet where cards can be edited (a plain row otherwise); Back closes the
+  sheet and stays on the Calendar. "No payments" replaces "nothing due" where card dates exist.
+- **Due soon:** the card dates in the same 3, 7 or 14-day window, after the items under their own
+  "Card dates" heading, no amounts; a tap closes the sheet and opens the card's. The chip shows when
+  an item or a card date is in the window; its number stays the items' (as before, with income when
+  that's on); with no item and a card date it reads "Card dates" with no number.
+- **Insights "By category | Paid with"** (`js/paid-with.js`, pure): the month chart's rows (the
+  chosen currency, cash basis, income excluded) regrouped by how they're paid: each live card in its
+  colour, Cash (`--pay-cash`), Not set (`--pay-none`, also a deleted card's, one not received yet or
+  a value this version can't read) last. Cards under 3% pool into "Other cards" when two or more do;
+  Cash and Not set never pool. The slices add up to By category's month total by construction (Node
+  tests over 24 and 48 months, also in New York time). In Ring, Donut and List; not on the year
+  chart. Shown only when a live card exists or an expense in that currency has Cash or a card. The
+  choice is a per-device preference (`insightsBy`), never synced or exported.
+
+## 6. Out of Release C
+
+Statement amounts and native notifications were decided out of Release C (1.29.0) and are not
+scheduled. A statement amount would be a figure beside the cash-basis totals, so it would need its
+own label (CLAUDE.md: never an unlabelled total); notifications would have to work on every OS.
