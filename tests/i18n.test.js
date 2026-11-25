@@ -40,7 +40,7 @@ const RELOAD = MODE === 'zh' && params.get('reload') === '1';
 const RELOAD_KEY = 'substracker-test-i18n-reload';
 const results = [];
 const dbName = `substracker-test-i18n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-const PREFS = ['tab', 'catView', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion', 'lang'];
+const PREFS = ['tab', 'catView', 'insightsBy', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion', 'lang'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }
@@ -761,7 +761,7 @@ async function run() {
   storage.setPref('yearRange', 'roll');
   storage.setPref('reduceMotion', 'on'); // no animations: every figure is plain text at once
   storage.setPref('theme', 'light');
-  for (const p of ['catView', 'yearStack', 'yearKey', 'groupSort', ...(reloaded ? [] : ['lang'])]) localStorage.removeItem(`substracker.${p}`);
+  for (const p of ['catView', 'insightsBy', 'yearStack', 'yearKey', 'groupSort', ...(reloaded ? [] : ['lang'])]) localStorage.removeItem(`substracker.${p}`);
   // zh-TW is picked in Settings → Language (what the app reads at start-up), on a browser in any language.
   if (MODE === 'zh' && !reloaded) localStorage.setItem('substracker.lang', 'zh-TW');
 

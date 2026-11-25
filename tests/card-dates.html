@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peek Budget card dates tests</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>
+    /* Test page only; colours and spacing come from the app's tokens. */
+    .t-wrap { padding: var(--space-4); max-width: 48rem; margin: 0 auto; }
+    .t-summary { font-size: var(--text-md); margin: var(--space-3) 0; }
+    .t-list { list-style: none; padding: 0; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
+    .t-pass { color: var(--positive); }
+    .t-fail { color: var(--danger); }
+    .t-detail { color: var(--text-muted); white-space: pre-wrap; }
+  </style>
+  <script>
+    // A fixed clock (18 November 2026, 10:00 local time), as in the calendar tests, that a test can
+    // move (window.testClock.set(2026, 10, 27)). Only `new Date()` and Date.now() change; dates built
+    // from parts, parsing and formatting are the real ones. Classic script: it runs before the modules.
+    (() => {
+      const RealDate = Date;
+      const start = new RealDate(2026, 10, 18, 10, 0, 0).getTime();
+      let fixed = start;
+      class FixedDate extends RealDate {
+        constructor(...args) { if (args.length) super(...args); else super(fixed); }
+        static now() { return fixed; }
+      }
+      window.Date = FixedDate;
+      window.testClock = {
+        set(y, m, d, h = 10) { fixed = new RealDate(y, m, d, h, 0, 0).getTime(); },
+        reset() { fixed = start; },
+      };
+    })();
+  </script>
+</head>
+<body>
+  <div id="app-host"></div>
+  <main class="t-wrap" id="t-report" hidden>
+    <h1>Card dates tests</h1>
+    <p class="t-detail">Payment card dates (1.29.0) on the Calendar and in the due-soon sheet: the card marker in one dot slot, the labels, the day list's Card dates block, a tap opening the card's sheet and Back, the chip's number staying the items', "Card dates" on the chip with no item due, and no total changing; with a fixed clock (18 November 2026) and a throwaway <code>substracker-test-carddates-*</code> database. The app's own data is not touched. Run it at 320, 360 and 393px, with and without reduced motion emulated, in English, the pseudo-locale (<code>?lang=xx</code>) and Traditional Chinese (<code>?lang=zh-TW</code>).</p>
+    <p class="t-summary" id="summary">Running…</p>
+    <ul class="t-list" id="results"></ul>
+  </main>
+  <script type="module" src="card-dates.test.js"></script>
+</body>
+</html>

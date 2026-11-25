@@ -17,7 +17,7 @@ import { SWIPE_NAV } from '../js/swipe-nav.js';
 const results = [];
 const dbName = `substracker-test-swipe-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const PREFS = ['tab', 'view', 'groupSort', 'period', 'theme', 'reduceMotion', 'lang', 'dueSoon', 'dueSoonDays', 'dueSoonIncome',
-  'dueSoonDismissed', 'weekStart', 'catView', 'insightsMode', 'yearKey', 'yearRange', 'yearStack'];
+  'dueSoonDismissed', 'weekStart', 'catView', 'insightsBy', 'insightsMode', 'yearKey', 'yearRange', 'yearStack'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }

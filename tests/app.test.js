@@ -20,7 +20,7 @@ import { logoHTML } from '../js/logos.js';
 
 const results = [];
 const dbName = `substracker-test-app-${Date.now()}`;
-const PREFS = ['tab', 'catView', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion'];
+const PREFS = ['tab', 'catView', 'insightsBy', 'view', 'groupSort', 'period', 'insightsMode', 'yearRange', 'yearStack', 'yearKey', 'theme', 'reduceMotion'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 
 function test(name, fn) { results.push({ name, fn }); }

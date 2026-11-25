@@ -19,7 +19,7 @@ import { wrapRel } from '../js/year-chart-math.js';
 
 const results = [];
 const dbName = `substracker-test-insights-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-const PREFS = ['tab', 'view', 'groupSort', 'period', 'theme', 'reduceMotion', 'lang', 'insightsMode', 'catView', 'yearRange', 'yearStack', 'yearKey'];
+const PREFS = ['tab', 'view', 'groupSort', 'period', 'theme', 'reduceMotion', 'lang', 'insightsMode', 'catView', 'insightsBy', 'yearRange', 'yearStack', 'yearKey'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 const params = new URLSearchParams(location.search);
 const HOLD = params.get('hold') === '1';

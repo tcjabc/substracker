@@ -19,7 +19,7 @@ import { WALLET_KEYS } from '../js/wallet-math.js';
 
 const results = [];
 const dbName = `substracker-test-groups-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-const PREFS = ['tab', 'view', 'period', 'theme', 'reduceMotion', 'lang', 'insightsMode', 'catView', 'yearRange', 'yearStack', 'yearKey', 'groupSort'];
+const PREFS = ['tab', 'view', 'period', 'theme', 'reduceMotion', 'lang', 'insightsMode', 'catView', 'insightsBy', 'yearRange', 'yearStack', 'yearKey', 'groupSort'];
 const savedPrefs = Object.fromEntries(PREFS.map((p) => [p, storage.getPref(p)]));
 const params = new URLSearchParams(location.search);
 const HOLD = params.get('hold') === '1';
