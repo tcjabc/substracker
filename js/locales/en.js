@@ -743,15 +743,24 @@ export default {
   'calendar.keys': 'Arrow keys move between days, Page Up and Page Down change the month, Enter shows the day.',
   'calendar.income': '{amount} income',
   'calendar.nothingMonth': 'Nothing due in {month}',
+  'calendar.nothingMonth.cards': 'No payments planned in {month}', // the month has card dates but no items
   'calendar.more': '+{count}', // after the first three dots of a day
   'calendar.day.payments.one': '{count} payment',
   'calendar.day.payments.other': '{count} payments',
   'calendar.day.nothing': 'nothing due',
+  'calendar.day.noPayments': 'no payments', // read aloud: a day with card dates but no items
   'calendar.day.today': 'today',
   'calendar.list.label': 'Due on {date}',
   'calendar.list.empty': 'Nothing due on this day',
+  'calendar.list.noPayments': 'No payments on this day', // the day has card dates but no items
   'calendar.row': '{name}, {group}, {amount}',
   'calendar.row.income': '{name}, income, {amount}',
+  // Card dates (1.29.0): a payment card's statement closing and payment due days, as reminders on the
+  // Calendar and in the due-soon sheet. Never with an amount.
+  'cardDates.title': 'Card dates',
+  'cardDates.due': 'Payment due: {name}',
+  'cardDates.cut': 'Statement closes: {name}',
+  'cardDates.edit': '{text}. Edit card', // read aloud on a card date that opens the card's sheet
   'settings.calendar': 'Calendar',
   'settings.weekStart': 'Week starts on',
   'settings.weekStart.auto': 'Automatic ({day})',

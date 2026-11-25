@@ -970,6 +970,14 @@ input[type="date"].input { appearance: none; -webkit-appearance: none; }
 .cal-list .due-list { margin-top: var(--space-2); border-top: var(--border-width) solid var(--border); }
 .cal-list > .cal-note { margin: var(--space-1) 0 0; padding: 0 var(--space-4) var(--space-3); text-align: left; }
 .cal-list-title:last-child, .cal-list-sum:last-child { padding-bottom: var(--space-3); }
+/* Card dates (1.29.0): one slot of a day's dots is a small card glyph (js/calendar.js); a day with
+   only card dates isn't tinted, but is still a day to tap. Its list ends with them under their own
+   heading: the card's glyph and "Payment due: Visa", no amount. */
+.cal-day.has-cards { cursor: pointer; }
+.cal-cards-title { padding: var(--space-3) var(--space-4) 0; border-top: var(--border-width) solid var(--border); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-muted); }
+.cal-list .cal-card-list { border-top: 0; margin-top: var(--space-1); }
+.card-date-mark { flex: none; display: grid; place-items: center; width: var(--logo-sm); height: var(--logo-sm); }
+.card-date-row .sub-name { white-space: normal; }
 
 /* Empty state */
 .empty-state { text-align: center; padding: var(--space-10) var(--space-4); display: grid; justify-items: center; gap: var(--space-3); }

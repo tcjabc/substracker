@@ -18,8 +18,18 @@
 //
 // Motion: a swipe drags the weeks and slides them out; with "Reduce motion and effects" the month
 // just changes (no animation frames). Only the three cash-flow figures may roll (opts.roll).
+//
+// Card dates (1.29.0, js/card-dates.js): a card's statement closing and payment due days, reminders
+// beside the money, never in it. A day with card dates gives one of its three dot slots to a small
+// card glyph (in the card's colour, or the neutral outline for two or more cards or a colour this
+// version can't draw), so it shows at most two expense dots and "+N" counts only the expense rows
+// left out. The day's label names each card date, and its list ends with a "Card dates" block of
+// its own with no amounts. A day with only card dates isn't tinted: the tint means money moves.
+// No figure, count, In / Out / Left over or "N items need a date" line ever includes a card date.
 
 import { monthGrid, occurrences, addMonths, dayDots, moveDay } from './calendar-math.js';
+import { cardDatesInMonth, cardMarker } from './card-dates.js';
+import { cardGlyphHTML } from './cards-ui.js';
 import { t, dateWords, weekdayStyle, formatLocale } from './i18n.js';
 import { esc, money } from './util.js';
 import { othersText, parseColour, contrast } from './wallet-math.js';
@@ -55,6 +65,9 @@ const todayParts = () => { const d = new Date(); return { year: d.getFullYear(),
  *   dotColour(group)   a CSS colour for an expense group's dot (its picked or automatic colour)
  *   logo(s)            logo markup for an item in the day's list
  *   onEdit(item)       open an item's edit sheet (a row, or the "N items need a date" line)
+ *   cards()            optional: the live payment cards (js/cards.js listCards), for their dates
+ *   cardsWritable()    optional: whether a card can be edited here; its dates are buttons only then
+ *   onCard(id)         optional: open card `id`'s sheet (a card date in the day's list)
  *   roll(el, key, value, currency)  optional: a cash-flow figure ('in', 'out' or 'left', its size), so it can roll
  * update() draws it again (new items, settings or theme); its month and selected day are kept.
  */
@@ -72,6 +85,7 @@ export function createCalendar(host, opts) {
   let selected = now0.day; // the current month opens on today
   let focusDay = null;     // the day in the tab order when it isn't the selected one
   let occ = null;
+  let cardDays = []; // the shown month's card dates, one list per day (js/card-dates.js)
   let destroyed = false;
   let ringCache = new Map();
   const reduced = () => !!opts.reduced?.();
@@ -84,11 +98,14 @@ export function createCalendar(host, opts) {
   const monthName = (m = shown) => dateWords(new Date(m.year, m.month, 1), { month: 'long', year: 'numeric' });
   const fullDate = (day) => dateWords(dayDate(day), { day: 'numeric', month: 'long', year: 'numeric' });
   const extras = (d) => [d.income > 0 ? t('calendar.income', { amount: money(d.income, cur()) }) : '', othersText(d.others)].filter(Boolean);
-  function dayLabel(d) {
+  /** A card date's words: "Payment due: Visa" or "Statement closes: Visa". */
+  const cardDateText = (e) => t(e.kind === 'due' ? 'cardDates.due' : 'cardDates.cut', { name: e.card.name });
+  function dayLabel(d, cards = []) {
     const today = sameDay({ ...shown, day: d.day }, todayParts());
+    const none = cards.length ? t('calendar.day.noPayments') : t('calendar.day.nothing');
     return [fullDate(d.day), today ? t('calendar.day.today') : '',
-      d.count ? t('calendar.day.payments', { count: d.count }) : t('calendar.day.nothing'),
-      d.total > 0 ? money(d.total, cur()) : '', ...extras(d)].filter(Boolean).join(t('common.listSep'));
+      d.count ? t('calendar.day.payments', { count: d.count }) : none,
+      d.total > 0 ? money(d.total, cur()) : '', ...extras(d), ...cards.map(cardDateText)].filter(Boolean).join(t('common.listSep'));
   }
 
   /* Dots -------------------------------------------------------------------------------------- */
@@ -124,6 +141,8 @@ export function createCalendar(host, opts) {
     const ws = opts.weekStart();
     const g = monthGrid(shown.year, shown.month, ws);
     occ = occurrences(opts.items(), shown.year, shown.month, { currency: cur() });
+    // Beside the items, never among them: the card dates have no amount and are in no figure.
+    cardDays = cardDatesInMonth(opts.cards?.() ?? [], shown.year, shown.month);
     const today = todayParts();
     const c = cur();
     const tabDay = selected ?? focusDay ?? (isCurrent() ? today.day : 1);
@@ -136,11 +155,16 @@ export function createCalendar(host, opts) {
       const d = occ.days[cell.day - 1];
       const isToday = sameDay(cell, today);
       const sel = selected === cell.day;
-      const { dots, more } = dayDots(d.rows);
+      const cards = cardDays[cell.day - 1] ?? [];
+      const marker = cardMarker(cards);
+      // A card marker takes one of the three slots; "+N" counts only the expense rows left out.
+      const { dots, more } = dayDots(d.rows, marker ? 2 : 3);
       const cellClass = sel ? 'has-items is-selected' : 'has-items';
       const dotHTML = dots.map((r) => `<i class="cal-dot${needsRing(dotColour(r), cellClass) ? ' cal-dot-ring' : ''}" style="--dot-colour: ${dotColour(r)}"></i>`).join('')
+        + (marker ? cardGlyphHTML(marker, { size: 'xs', extraClass: 'cal-card' }) : '')
         + (more ? `<span class="cal-more">${esc(t('calendar.more', { count: more }))}</span>` : '');
-      return `<div role="gridcell" class="cal-cell" aria-selected="${sel}"><button type="button" class="cal-day${d.count ? ' has-items' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}" data-day="${cell.day}" tabindex="${cell.day === tabDay ? 0 : -1}"${isToday ? ' aria-current="date"' : ''} aria-label="${esc(dayLabel(d))}"><span class="cal-num" aria-hidden="true">${esc(num(cell.day))}</span><span class="cal-dots" aria-hidden="true">${dotHTML}</span></button></div>`;
+      const kinds = `${d.count ? ' has-items' : cards.length ? ' has-cards' : ''}${isToday ? ' is-today' : ''}${sel ? ' is-selected' : ''}`;
+      return `<div role="gridcell" class="cal-cell" aria-selected="${sel}"><button type="button" class="cal-day${kinds}" data-day="${cell.day}" tabindex="${cell.day === tabDay ? 0 : -1}"${isToday ? ' aria-current="date"' : ''} aria-label="${esc(dayLabel(d, cards))}"><span class="cal-num" aria-hidden="true">${esc(num(cell.day))}</span><span class="cal-dots" aria-hidden="true">${dotHTML}</span></button></div>`;
     }).join('')}</div>`).join('');
 
     // Under the heading: the month's In, Out and Left over in the default currency (the cash basis,
@@ -174,9 +198,9 @@ export function createCalendar(host, opts) {
         <div role="rowgroup" class="cal-weeks">${weeks}</div>
       </div>
       <p class="sr-only" id="cal-keys">${esc(t('calendar.keys'))}</p>
-      ${occ.count ? '' : `<p class="cal-note cal-empty">${esc(t('calendar.nothingMonth', { month: monthName() }))}</p>`}
+      ${occ.count ? '' : `<p class="cal-note cal-empty">${esc(t(cardDays.some((l) => l.length) ? 'calendar.nothingMonth.cards' : 'calendar.nothingMonth', { month: monthName() }))}</p>`}
       ${occ.undated.length ? `<button type="button" class="summary-note summary-note-action cal-undated" data-id="${esc(occ.undated[0].id)}">${esc(t('dueSoon.undated', { count: occ.undated.length }))}</button>` : ''}
-      ${selected ? listHTML(occ.days[selected - 1]) : ''}`;
+      ${selected ? listHTML(occ.days[selected - 1], cardDays[selected - 1] ?? []) : ''}`;
     host.append(live);
     fitFlow();
     for (const el of host.querySelectorAll('.cal-flow-amount')) opts.roll?.(el, el.dataset.flow, Number(el.dataset.value), c);
@@ -204,7 +228,26 @@ export function createCalendar(host, opts) {
   }) : null;
   fitter?.observe(host);
 
-  function listHTML(d) {
+  /**
+   * The day's card dates under their own heading: the card's glyph and "Payment due: Visa", no
+   * amount. A button that opens the card's sheet where cards can be edited, else a plain row.
+   */
+  function cardsHTML(cards) {
+    if (!cards.length) return '';
+    const writable = !!opts.cardsWritable?.() && !!opts.onCard;
+    const rows = cards.map((e) => {
+      const text = cardDateText(e);
+      const inner = `<span class="card-date-mark">${cardGlyphHTML(e.card)}</span><span class="sub-text"><span class="sub-name">${esc(text)}</span></span>`;
+      return writable
+        ? `<li><button type="button" class="sub-row due-row card-date-row" data-card="${esc(e.card.id)}" aria-label="${esc(t('cardDates.edit', { text }))}">${inner}</button></li>`
+        : `<li><div class="sub-row due-row card-date-row">${inner}</div></li>`;
+    }).join('');
+    return `
+        <h4 class="cal-cards-title">${esc(t('cardDates.title'))}</h4>
+        <ul class="due-list cal-card-list">${rows}</ul>`;
+  }
+
+  function listHTML(d, cards = []) {
     const c = cur();
     const sum = [d.total > 0 ? t('dueSoon.total', { amount: money(d.total, c) }) : '', ...extras(d)].filter(Boolean);
     const rows = d.rows.map((r) => {
@@ -223,7 +266,8 @@ export function createCalendar(host, opts) {
       <section class="cal-list" aria-label="${esc(t('calendar.list.label', { date: fullDate(d.day) }))}">
         <h3 class="cal-list-title">${esc(dateWords(dayDate(d.day), { weekday: 'long', day: 'numeric', month: 'long' }))}</h3>
         ${sum.length ? `<p class="cal-list-sum">${esc(sum.join(' · '))}</p>` : ''}
-        ${d.rows.length ? `<ul class="due-list">${rows}</ul>` : `<p class="cal-note">${esc(t('calendar.list.empty'))}</p>`}
+        ${d.rows.length ? `<ul class="due-list">${rows}</ul>` : `<p class="cal-note">${esc(t(cards.length ? 'calendar.list.noPayments' : 'calendar.list.empty'))}</p>`}
+        ${cardsHTML(cards)}
       </section>`;
   }
 
@@ -267,6 +311,8 @@ export function createCalendar(host, opts) {
     }
     const day = e.target.closest('.cal-day');
     if (day) { select(Number(day.dataset.day)); return; }
+    const cardRow = e.target.closest('[data-card]');
+    if (cardRow) { opts.onCard?.(cardRow.dataset.card); return; }
     const row = e.target.closest('[data-id]');
     if (row) {
       const s = opts.items().find((x) => x.id === row.dataset.id);

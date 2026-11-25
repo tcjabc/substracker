@@ -1007,6 +1007,18 @@ let calendarHost = null;
 
 /** Whether the Calendar tab is what's on screen (its month figure may roll). */
 const calendarOnScreen = () => state.tab === 'calendar' && document.visibilityState === 'visible';
+/**
+ * Open card `id`'s sheet from one of its dates (the Calendar's day list, the due-soon sheet), on the
+ * overlay stack over the tab in use, so Back closes it there. The due-soon sheet closes first, as it
+ * does for an item row. Only where cards can be edited (the rows are plain text otherwise).
+ */
+function openCardDate(id) {
+  if (!state.cardsWritable || !cardsUI) return;
+  const due = $('#due-dialog');
+  if (dialogOpen(due)) closeDialog(due);
+  cardsUI.open(id);
+}
+
 /** The calendar's selected day as YYYY-MM-DD (for the + button), or '' when no day is selected. */
 function calendarDay() {
   const s = calendar?.state;
@@ -1035,6 +1047,10 @@ function renderCalendar() {
       dotColour: (group) => swatchVar(groupSwatch(group)),
       logo: (s) => logoHTML(s, 'sm'),
       onEdit: (s) => openForm(s),
+      // Card dates (1.29.0, js/card-dates.js): beside the items, never among them.
+      cards: () => listCards(state.settingsRecord),
+      cardsWritable: () => state.cardsWritable,
+      onCard: (id) => openCardDate(id),
       // Only the month's In, Out and Left over roll (from the old month's to the new one's); the
       // days are text. Left over rolls its size: it shows no sign.
       roll: (el, key, value, cur) => roller.show(value > 0 ? el : null, `calendar:${key}`, value, cur, { visible: calendarOnScreen() }),
